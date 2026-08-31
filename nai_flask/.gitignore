@@ -1,0 +1,8 @@
+__pycache__/
+.pytest_cache/
+*.py[cod]
+.venv/
+config.json
+config.local.json
+data/*.json
+data/*.json.bak

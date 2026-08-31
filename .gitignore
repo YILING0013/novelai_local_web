@@ -1,0 +1,45 @@
+# 本地配置与凭据
+config.local.json
+**/config.local.json
+**/config.local
+**/config.local.*
+**/.env
+**/.env.*
+!**/.env.example
+
+# Python
+**/.venv/
+**/venv/
+**/__pycache__/
+**/.pytest_cache/
+**/*.py[cod]
+
+# Node / Next.js
+**/node_modules/
+**/.next/
+**/out/
+**/build/
+**/coverage/
+
+# 本地数据与运行结果
+data/
+**/data/
+**/runtime_data/
+**/output/
+**/signatures/
+**/static/user_images/
+**/static/temp_images/
+**/*.log
+**/*.tmp
+**/*.bak
+**/account-change-recovery.json
+
+# 浏览器测试状态
+.playwright-cli/
+**/playwright/.auth/
+
+# 编辑器与系统文件
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

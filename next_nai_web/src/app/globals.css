@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* 自定义滚动条样式 */
+::-webkit-scrollbar {
+  width: 2px; /* 滚动条宽度 */
+  height: 2px; /* 滚动条高度 */
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #888888; /* 滚动条滑块颜色 */
+  border-radius: 1px; /* 滚动条滑块圆角 */
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #555555; /* 滚动条滑块悬停时的颜色 */
+}
+
+::-webkit-scrollbar-track {
+  background-color: #f1f1f1; /* 滚动条轨道背景色 */
+  border-radius: 1px; /* 滚动条轨道圆角 */
+}
+
+::-webkit-scrollbar-track:hover {
+  background-color: #ddd; /* 滚动条轨道悬停时的颜色 */
+}

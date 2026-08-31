@@ -1,0 +1,5 @@
+{
+  "port": 5000,
+  "data_dir": "data",
+  "upstream_timeout_seconds": 120
+}

@@ -1,0 +1,9 @@
+Flask>=3.1,<4
+Pillow>=11,<13
+PyNaCl>=1.5,<2
+argon2-cffi>=25,<26
+requests>=2.32,<3
+waitress>=3,<4
+
+# Tests
+pytest>=9.0.3,<10

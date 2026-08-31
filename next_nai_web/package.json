@@ -1,0 +1,47 @@
+{
+  "name": "next_nai_web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "test": "node --test",
+    "build": "next build",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@emotion/cache": "^11.14.0",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@mui/icons-material": "^6.4.5",
+    "@mui/material": "^6.4.5",
+    "@mui/material-nextjs": "^6.4.12",
+    "exifreader": "^4.44.0",
+    "file-saver": "^2.0.5",
+    "gsap": "^3.13.0",
+    "jszip": "^3.10.1",
+    "lucide-react": "^0.525.0",
+    "next": "^15.5.24",
+    "pako": "^2.1.0",
+    "png-chunk-text": "^1.0.0",
+    "png-chunks-extract": "^1.0.0",
+    "react": "^19.0.0",
+    "react-colorful": "^5.6.1",
+    "react-dom": "^19.0.0",
+    "react-zoom-pan-pinch": "^3.7.0",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "eslint": "^9",
+    "eslint-config-next": "^15.5.24",
+    "postcss": "^8.5.26",
+    "tailwindcss": "^3.4.1"
+  },
+  "overrides": {
+    "brace-expansion@<=1.1.17": "1.1.18",
+    "brace-expansion@2.0.0 - 2.1.3": "2.1.4",
+    "js-yaml@4.0.0 - 4.3.0": "4.3.2",
+    "postcss@<=8.5.22": "8.5.26",
+    "sharp@<0.35.0": "0.35.4"
+  }
+}
