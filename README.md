@@ -16,6 +16,7 @@
 </p>
 
 <p align="center">
+  <a href="https://nai.idlecloud.cc">在线网站</a> ·
   <a href="#项目简介">项目简介</a> ·
   <a href="#页面预览">页面预览</a> ·
   <a href="#功能概览">功能概览</a> ·
@@ -23,6 +24,10 @@
   <a href="#使用说明">使用说明</a> ·
   <a href="#开发与测试">开发与测试</a>
 </p>
+
+## 在线网站
+
+在线生成体验：[IDLECLOUD AI WEB](https://nai.idlecloud.cc)
 
 ## 项目简介
 
