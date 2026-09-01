@@ -130,12 +130,16 @@ const paintingWorkspaceenUS = {
       "anlas": {
         "openDetails": "View Anlas details",
         "unavailable": "Unavailable",
+        "balance": "Balance",
         "total": "Total Anlas",
         "title": "Anlas balance",
         "stale": "This account snapshot may be out of date.",
         "fixed": "Fixed Anlas",
         "purchased": "Purchased Anlas",
-        "updatedAt": "Updated at"
+        "updatedAt": "Updated at",
+        "estimatedSingleCost": "Est. {cost}",
+        "estimatedBatchCost": "Each {perImage} · Batch {total}",
+        "estimatedCostHelp": "Estimated Anlas for the current settings. Standard-size images show 0 with an active subscription."
       },
       "errorRecords": {
         "code": "Error type",

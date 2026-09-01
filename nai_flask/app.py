@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import math
 import os
 import secrets
@@ -19,7 +20,16 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
-from flask import Flask, Response, current_app, g, jsonify, request, send_file
+from flask import (
+    Flask,
+    Response,
+    current_app,
+    g,
+    has_request_context,
+    jsonify,
+    request,
+    send_file,
+)
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from api_utils.custom_errors import ExposableError
@@ -45,12 +55,61 @@ from api_utils.novelai_payload_builder import (
 BASE_DIR = Path(__file__).resolve().parent
 MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 DIRECTOR_TOOLS = frozenset({"lineart", "sketch", "declutter", "emotion", "colorize"})
+IMAGE_ENDPOINT_LOG_NAMES = {
+    "generate_image": "generate",
+    "augment_image": "augment",
+    "upscale_image": "upscale",
+}
 TRUSTED_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 LOCAL_CONFIG_KEYS = frozenset({
     "port",
     "data_dir",
     "upstream_timeout_seconds",
 })
+
+
+def _filter_normal_waitress_queue_depth(record: logging.LogRecord) -> bool:
+    """只隐藏 Waitress 在线程刚被占用时产生的 depth=1 噪音。"""
+
+    return record.getMessage() != "Task queue depth is 1"
+
+
+def _configure_runtime_logging() -> None:
+    """配置本地 CMD 可读的单一标准日志管线。"""
+
+    raw_level = os.getenv("NOVELAI_LOCAL_LOG_LEVEL", "INFO").strip().upper()
+    log_level = getattr(logging, raw_level, logging.INFO)
+    if not isinstance(log_level, int):
+        log_level = logging.INFO
+    logging.basicConfig(
+        level=log_level,
+        format=(
+            "%(asctime)s level=%(levelname)s role=local pid=%(process)d "
+            "thread=%(threadName)s logger=%(name)s %(message)s"
+        ),
+    )
+    logging.getLogger().setLevel(log_level)
+    logging.getLogger("waitress").setLevel(logging.INFO)
+    queue_logger = logging.getLogger("waitress.queue")
+    if _filter_normal_waitress_queue_depth not in queue_logger.filters:
+        queue_logger.addFilter(_filter_normal_waitress_queue_depth)
+
+
+_configure_runtime_logging()
+
+
+def _safe_traceback_frames(error: Exception) -> str:
+    """保留异常调用位置，同时省略可能包含凭据的异常消息和源码行。"""
+
+    frames = []
+    traceback_frame = error.__traceback__
+    while traceback_frame is not None:
+        code = traceback_frame.tb_frame.f_code
+        frames.append(
+            f"{Path(code.co_filename).name}:{traceback_frame.tb_lineno}:{code.co_name}"
+        )
+        traceback_frame = traceback_frame.tb_next
+    return " > ".join(frames[-8:]) or "-"
 
 
 class ApiError(Exception):
@@ -112,7 +171,7 @@ def _error_response(error: ApiError | NovelAIUpstreamError) -> tuple[Response, i
         "code": error.code,
         "certain": not uncertain,
         "uncertain": uncertain,
-        "correlation_id": _correlation_id(),
+        "correlation_id": _request_correlation_id(),
     }
     payload.update(getattr(error, "extra", {}) or {})
     return jsonify(payload), int(error.status_code)
@@ -146,17 +205,25 @@ def _current_session() -> tuple[str | None, dict[str, Any] | None]:
     app = current_app
     session_id = request.cookies.get(app.config["SESSION_COOKIE_NAME"])
     if not session_id:
+        g.request_authenticated = False
+        g.request_login_mode = "none"
         return None, None
     now = time.monotonic()
     with app.extensions["session_lock"]:
         entry = app.extensions["local_sessions"].get(session_id)
         if entry is None:
+            g.request_authenticated = False
+            g.request_login_mode = "none"
             return None, None
         if now - entry["last_used_at"] > app.config["SESSION_TTL_SECONDS"]:
             app.extensions["local_sessions"].pop(session_id, None)
             _clear_session_batches(app, session_id)
+            g.request_authenticated = False
+            g.request_login_mode = "none"
             return None, None
         entry["last_used_at"] = now
+        g.request_authenticated = True
+        g.request_login_mode = entry["login_mode"]
         return session_id, entry
 
 
@@ -188,6 +255,9 @@ def _delete_session(session_id: str | None) -> None:
     with app.extensions["session_lock"]:
         app.extensions["local_sessions"].pop(session_id, None)
     _clear_session_batches(app, session_id)
+    if has_request_context():
+        g.request_authenticated = False
+        g.request_login_mode = "none"
 
 
 def _set_session_cookie(response: Response, session_id: str) -> None:
@@ -238,6 +308,8 @@ def session_required(*, csrf: bool = False) -> Callable[[Callable[..., Any]], Ca
                     raise ApiError("The CSRF token is invalid.", 403, "CSRF_INVALID")
             g.local_session_id = session_id
             g.local_session = entry
+            g.request_authenticated = True
+            g.request_login_mode = entry["login_mode"]
             return function(*args, **kwargs)
 
         return wrapped
@@ -328,6 +400,8 @@ def _refresh_account_snapshot(
 ) -> dict[str, Any]:
     """刷新账户快照；失败时按调用场景保留 last-good。"""
 
+    started_at = time.perf_counter()
+    correlation_id = _request_correlation_id()
     try:
         raw_snapshot = current_app.extensions["novelai_client"].account_snapshot(entry["token"])
         snapshot = _build_account_snapshot(
@@ -337,15 +411,39 @@ def _refresh_account_snapshot(
         )
         entry["account_snapshot"] = snapshot
         entry["last_snapshot"] = copy.deepcopy(snapshot)
+        current_app.logger.info(
+            "event=account_refresh result=success stale=false login_mode=%s "
+            "elapsed_ms=%.2f correlation_id=%s",
+            entry["login_mode"],
+            (time.perf_counter() - started_at) * 1000,
+            correlation_id,
+        )
         return snapshot
     except NovelAIUpstreamError as exc:
         if exc.status_code == 401 and not preserve_success_on_unauthorized:
+            current_app.logger.warning(
+                "event=account_refresh result=failed stale=false login_mode=%s "
+                "error_code=%s certain=true elapsed_ms=%.2f correlation_id=%s",
+                entry["login_mode"],
+                exc.code,
+                (time.perf_counter() - started_at) * 1000,
+                correlation_id,
+            )
             raise
         snapshot = copy.deepcopy(entry["last_snapshot"])
         snapshot["stale"] = True
         entry["account_snapshot"] = snapshot
         if exc.status_code == 401:
             entry["refresh_unauthorized"] = True
+        current_app.logger.warning(
+            "event=account_refresh result=stale stale=true login_mode=%s "
+            "error_code=%s certain=%s elapsed_ms=%.2f correlation_id=%s",
+            entry["login_mode"],
+            exc.code,
+            str(exc.status_code < 500).lower(),
+            (time.perf_counter() - started_at) * 1000,
+            correlation_id,
+        )
         return snapshot
 
 
@@ -425,7 +523,18 @@ def _image_operation(
 
     app = current_app._get_current_object()
     operation_lock = app.extensions["image_operation_lock"]
+    operation_name = IMAGE_ENDPOINT_LOG_NAMES.get(request.endpoint or "", "image")
+    correlation_id = _request_correlation_id()
     if not operation_lock.acquire(blocking=False):
+        app.logger.warning(
+            "event=image_batch_result operation=%s result=busy batched=%s index=%d "
+            "batch_size=%s error_code=IMAGE_OPERATION_BUSY certain=true correlation_id=%s",
+            operation_name,
+            str(batch_id is not None).lower(),
+            index,
+            batch_size if batch_size is not None else "-",
+            correlation_id,
+        )
         raise ApiError(
             "Another image operation is still running.",
             409,
@@ -503,9 +612,18 @@ def _image_operation(
                         {"retry_after": round(remaining, 3)},
                     )
         operation_started = True
+        app.logger.info(
+            "event=image_batch_start operation=%s batched=%s index=%d batch_size=%s "
+            "correlation_id=%s",
+            operation_name,
+            str(batch_id is not None).lower(),
+            index,
+            batch_size if batch_size is not None else "-",
+            correlation_id,
+        )
         yield
         completed = True
-    except Exception:
+    except Exception as error:
         if operation_started and batch_id is not None:
             with app.extensions["batch_lock"]:
                 state = app.extensions["batch_states"].get(batch_id)
@@ -513,8 +631,25 @@ def _image_operation(
                     # 首次发送失败后批次立即终止，调用方不得自动重放同一 index。
                     state["terminal"] = "failed"
                     state["updated_at"] = app.config["MONOTONIC_CLOCK"]()
+        error_code = getattr(error, "code", "INTERNAL_ERROR")
+        certain = not (
+            isinstance(error, NovelAIUpstreamError) and error.status_code >= 500
+        ) and not (isinstance(error, ApiError) and error.uncertain)
+        app.logger.warning(
+            "event=image_batch_result operation=%s result=%s batched=%s index=%d "
+            "batch_size=%s error_code=%s certain=%s correlation_id=%s",
+            operation_name,
+            "failed" if operation_started else "rejected",
+            str(batch_id is not None).lower(),
+            index,
+            batch_size if batch_size is not None else "-",
+            error_code,
+            str(certain).lower(),
+            correlation_id,
+        )
         raise
     finally:
+        terminal = "single"
         if completed and batch_id is not None:
             with app.extensions["batch_lock"]:
                 state = app.extensions["batch_states"].get(batch_id)
@@ -527,6 +662,20 @@ def _image_operation(
                     if batch_size is not None and index == batch_size - 1:
                         state["terminal"] = "completed"
                     state["updated_at"] = app.config["MONOTONIC_CLOCK"]()
+                    terminal = state["terminal"] or "continuing"
+                elif state is not None and state["cancelled"]:
+                    terminal = "cancelled"
+        if completed:
+            app.logger.info(
+                "event=image_batch_result operation=%s result=success batched=%s index=%d "
+                "batch_size=%s terminal=%s correlation_id=%s",
+                operation_name,
+                str(batch_id is not None).lower(),
+                index,
+                batch_size if batch_size is not None else "-",
+                terminal,
+                correlation_id,
+            )
         operation_lock.release()
 
 
@@ -551,6 +700,62 @@ def _correlation_id() -> str:
 
     alphabet = string.ascii_letters + string.digits
     return "".join(secrets.choice(alphabet) for _ in range(6))
+
+
+def _request_correlation_id() -> str:
+    """读取当前 API 请求关联 ID；无请求上下文时生成独立 ID。"""
+
+    if has_request_context():
+        correlation_id = getattr(g, "request_correlation_id", None)
+        if isinstance(correlation_id, str) and correlation_id:
+            return correlation_id
+    return _correlation_id()
+
+
+def _controlled_api_route() -> str | None:
+    """返回受 Flask 路由表控制的 API 模板，不记录用户提交的原始 URL。"""
+
+    if not request.path.startswith("/api"):
+        return None
+    route = request.url_rule.rule if request.url_rule is not None else None
+    if isinstance(route, str) and route.startswith("/api"):
+        return route
+    return "/api/<unmatched>"
+
+
+def _request_auth_log_fields(app: Flask) -> tuple[bool, str]:
+    """读取请求对应的认证状态，不返回或记录 opaque Session ID。"""
+
+    authenticated = getattr(g, "request_authenticated", None)
+    login_mode = getattr(g, "request_login_mode", None)
+    if isinstance(authenticated, bool):
+        safe_login_mode = (
+            login_mode if login_mode in {"persistent_token", "password"} else "none"
+        )
+        return authenticated, safe_login_mode
+
+    session_id = request.cookies.get(app.config["SESSION_COOKIE_NAME"])
+    if not session_id:
+        return False, "none"
+    with app.extensions["session_lock"]:
+        entry = app.extensions["local_sessions"].get(session_id)
+        if entry is None:
+            return False, "none"
+        mode = entry.get("login_mode")
+        return True, mode if mode in {"persistent_token", "password"} else "none"
+
+
+def _log_local_json(operation: str, collection: str, value: Any) -> None:
+    """记录本地 JSON 操作类型和条目数，绝不记录实际内容。"""
+
+    item_count = len(value) if isinstance(value, (dict, list)) else 0
+    current_app.logger.info(
+        "event=local_json operation=%s collection=%s item_count=%d correlation_id=%s",
+        operation,
+        collection,
+        item_count,
+        _request_correlation_id(),
+    )
 
 
 def _account_change_correlation_id() -> str:
@@ -675,6 +880,66 @@ def create_app(
     )
 
     @app.before_request
+    def log_api_request_start() -> None:
+        """记录 API 请求开始信息，不读取正文、查询值或认证材料。"""
+
+        route = _controlled_api_route()
+        if route is None:
+            return
+        g.request_started_at = time.perf_counter()
+        g.request_correlation_id = _correlation_id()
+        authenticated, login_mode = _request_auth_log_fields(app)
+        g.request_authenticated = authenticated
+        g.request_login_mode = login_mode
+        g.request_route = route
+        app.logger.info(
+            "event=api_request_start method=%s route=%s authenticated=%s "
+            "login_mode=%s correlation_id=%s",
+            request.method,
+            route,
+            str(authenticated).lower(),
+            login_mode,
+            g.request_correlation_id,
+        )
+
+    @app.after_request
+    def log_api_request_complete(response: Response) -> Response:
+        """记录 API 终态、耗时和稳定错误码，不解析成功响应正文。"""
+
+        route = getattr(g, "request_route", None)
+        started_at = getattr(g, "request_started_at", None)
+        if not isinstance(route, str) or not isinstance(started_at, float):
+            return response
+        authenticated, login_mode = _request_auth_log_fields(app)
+        error_code = "-"
+        certain = response.status_code < 500
+        if response.status_code >= 400 and response.is_json:
+            payload = response.get_json(silent=True)
+            if isinstance(payload, dict):
+                if isinstance(payload.get("code"), str):
+                    error_code = payload["code"]
+                if isinstance(payload.get("certain"), bool):
+                    certain = payload["certain"]
+        level = logging.ERROR if response.status_code >= 500 else (
+            logging.WARNING if response.status_code >= 400 else logging.INFO
+        )
+        app.logger.log(
+            level,
+            "event=api_request_complete method=%s route=%s status=%d elapsed_ms=%.2f "
+            "authenticated=%s login_mode=%s error_code=%s certain=%s correlation_id=%s",
+            request.method,
+            route,
+            response.status_code,
+            (time.perf_counter() - started_at) * 1000,
+            str(authenticated).lower(),
+            login_mode,
+            error_code,
+            str(certain).lower(),
+            _request_correlation_id(),
+        )
+        return response
+
+    @app.before_request
     def enforce_local_request_boundary() -> Response | None:
         """阻止非 loopback Host 和未批准浏览器 Origin。"""
 
@@ -784,9 +1049,12 @@ def create_app(
 
         if app.config.get("PROPAGATE_EXCEPTIONS"):
             raise error
-        correlation_id = _correlation_id()
-        app.logger.exception(
-            "Unhandled local API error correlation_id=%s",
+        correlation_id = _request_correlation_id()
+        app.logger.error(
+            "event=unhandled_api_error error_type=%s traceback=%s "
+            "certain=false correlation_id=%s",
+            type(error).__name__,
+            _safe_traceback_frames(error),
             correlation_id,
         )
         return jsonify({
@@ -830,6 +1098,12 @@ def create_app(
             account_snapshot,
             login_mode="persistent_token",
         )
+        g.request_authenticated = True
+        g.request_login_mode = "persistent_token"
+        app.logger.info(
+            "event=session_login result=success login_mode=persistent_token correlation_id=%s",
+            _request_correlation_id(),
+        )
         response = jsonify({
             "authenticated": True,
             "csrf_token": entry["csrf_token"],
@@ -866,6 +1140,12 @@ def create_app(
             login_mode="password",
             account_email=normalized_email,
         )
+        g.request_authenticated = True
+        g.request_login_mode = "password"
+        app.logger.info(
+            "event=session_login result=success login_mode=password correlation_id=%s",
+            _request_correlation_id(),
+        )
         response = jsonify({
             "authenticated": True,
             "csrf_token": entry["csrf_token"],
@@ -880,6 +1160,11 @@ def create_app(
         """清除当前进程中的令牌、CSRF 与批次状态。"""
 
         _delete_session(g.local_session_id)
+        app.logger.info(
+            "event=session_logout result=success login_mode=%s correlation_id=%s",
+            g.local_session["login_mode"],
+            _request_correlation_id(),
+        )
         response = jsonify({"authenticated": False})
         _expire_session_cookie(response)
         return response
@@ -957,6 +1242,11 @@ def create_app(
                 409,
                 "IMAGE_OPERATION_BUSY",
             )
+        app.logger.info(
+            "event=account_change_start operation=%s correlation_id=%s",
+            operation,
+            correlation_id,
+        )
         try:
             _ensure_no_account_recovery()
             new_token = app.extensions["account_change_coordinator"].change(
@@ -982,6 +1272,11 @@ def create_app(
                 g.local_session["last_snapshot"]["information"]["email_verified"] = None
             snapshot = _refresh_account_snapshot(g.local_session)
             app.extensions["account_change_coordinator"].finalize()
+            app.logger.info(
+                "event=account_change_result operation=%s result=success correlation_id=%s",
+                operation,
+                correlation_id,
+            )
         finally:
             current_password = None
             target_password = None
@@ -1194,6 +1489,13 @@ def create_app(
                 )
             state["cancelled"] = True
             state["updated_at"] = app.config["MONOTONIC_CLOCK"]()
+        app.logger.info(
+            "event=image_batch_result operation=cancel result=cancelled batched=true "
+            "index=%d batch_size=%s terminal=cancelled correlation_id=%s",
+            state["next_index"],
+            state["batch_size"] if state["batch_size"] is not None else "-",
+            _request_correlation_id(),
+        )
         account_snapshot = _refresh_account_snapshot(g.local_session)
         return jsonify({
             "cancelled": True,
@@ -1357,6 +1659,7 @@ def create_app(
         settings = app.extensions["local_store"].read("settings")
         if not isinstance(settings, dict):
             raise LocalStoreError("settings has an invalid shape")
+        _log_local_json("read", "settings", settings)
         return jsonify({"settings": settings})
 
     @app.put("/api/local/settings")
@@ -1368,6 +1671,7 @@ def create_app(
         if not isinstance(settings, dict):
             raise ApiError("settings must be a JSON object.")
         saved = app.extensions["local_store"].write("settings", settings)
+        _log_local_json("write", "settings", saved)
         return jsonify({"settings": saved})
 
     @app.get("/api/local/random-prompts")
@@ -1378,6 +1682,7 @@ def create_app(
         prompts = app.extensions["local_store"].read("random-prompts")
         if not isinstance(prompts, dict):
             raise LocalStoreError("random-prompts has an invalid shape")
+        _log_local_json("read", "random-prompts", prompts)
         return jsonify({"random_prompts": prompts})
 
     @app.put("/api/local/random-prompts")
@@ -1389,6 +1694,7 @@ def create_app(
         if not isinstance(prompts, dict):
             raise ApiError("random_prompts must be a JSON object.")
         saved = app.extensions["local_store"].write("random-prompts", prompts)
+        _log_local_json("write", "random-prompts", saved)
         return jsonify({"random_prompts": saved})
 
     @app.get("/api/local/notes")
@@ -1399,6 +1705,7 @@ def create_app(
         notes = app.extensions["local_store"].read("notes")
         if not isinstance(notes, list):
             raise LocalStoreError("notes has an invalid shape")
+        _log_local_json("read", "notes", notes)
         return jsonify({"notes": notes})
 
     @app.post("/api/local/notes")
@@ -1420,7 +1727,8 @@ def create_app(
             notes.append(note)
             return notes
 
-        app.extensions["local_store"].mutate("notes", append_note)
+        saved_notes = app.extensions["local_store"].mutate("notes", append_note)
+        _log_local_json("create", "notes", saved_notes)
         return jsonify({"note": note}), 201
 
     @app.put("/api/local/notes")
@@ -1441,6 +1749,7 @@ def create_app(
             if len(set(note_titles)) != len(note_titles):
                 raise ApiError("Imported note titles must be unique.", 409, "NOTE_TITLE_EXISTS")
             saved_notes = app.extensions["local_store"].write("notes", prepared_notes)
+            _log_local_json("import", "notes", saved_notes)
             return jsonify({"notes": saved_notes})
 
         note_payload = payload.get("note")
@@ -1488,7 +1797,8 @@ def create_app(
             updated["note"] = saved_note
             return notes
 
-        app.extensions["local_store"].mutate("notes", replace_note)
+        saved_notes = app.extensions["local_store"].mutate("notes", replace_note)
+        _log_local_json("update", "notes", saved_notes)
         return jsonify({"note": updated["note"]})
 
     @app.delete("/api/local/notes")
@@ -1525,7 +1835,8 @@ def create_app(
                 raise ApiError("The note selector is ambiguous.", 409, "NOTE_AMBIGUOUS")
             return notes[:positions[0]] + notes[positions[0] + 1:]
 
-        app.extensions["local_store"].mutate("notes", remove_note)
+        saved_notes = app.extensions["local_store"].mutate("notes", remove_note)
+        _log_local_json("delete", "notes", saved_notes)
         return jsonify({"deleted": True})
 
     @app.get("/", defaults={"frontend_path": ""})
@@ -1573,6 +1884,14 @@ def create_app(
             ))
         return send_file(index_path, conditional=True)
 
+    app.logger.info(
+        "event=service_initialized bind=%s:%d threads=4 storage=local_json "
+        "frontend_built=%s upstream_host=image.novelai.net upstream_timeout_seconds=%.1f",
+        app.config["HOST"],
+        app.config["PORT"],
+        str((Path(app.config["FRONTEND_OUT_DIR"]) / "index.html").is_file()).lower(),
+        float(app.config["UPSTREAM_TIMEOUT_SECONDS"]),
+    )
     return app
 
 

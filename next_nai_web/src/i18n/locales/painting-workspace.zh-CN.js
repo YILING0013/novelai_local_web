@@ -130,12 +130,16 @@ const paintingWorkspacezhCN = {
       "anlas": {
         "openDetails": "查看 Anlas 明细",
         "unavailable": "不可用",
+        "balance": "余额",
         "total": "Anlas 总数",
         "title": "Anlas 点数",
         "stale": "当前账户快照可能已经过期。",
         "fixed": "固定 Anlas",
         "purchased": "购买 Anlas",
-        "updatedAt": "更新时间"
+        "updatedAt": "更新时间",
+        "estimatedSingleCost": "预计 {cost}",
+        "estimatedBatchCost": "单张 {perImage} · 本批 {total}",
+        "estimatedCostHelp": "当前参数预计消耗的 Anlas；有效订阅的普通小图显示为 0。"
       },
       "errorRecords": {
         "code": "错误类型",

@@ -72,7 +72,10 @@ import {
   isNovelAIV4OrAboveModel as isV4Model,
   isNovelAIVibeModel,
 } from './utils/modelUtils';
-import { calculateNovelAIImageCost } from './utils/novelAICost.mjs';
+import {
+  estimateNovelAIGenerationCost,
+  isDisplayableNovelAICost,
+} from './utils/novelAICost.mjs';
 import { loadModelPromptCache, persistModelPromptCache } from './utils/promptCache';
 import { useI18n } from '@/i18n/I18nProvider';
 import {
@@ -239,11 +242,12 @@ const getResponsiveGenerateButtonContent = ({
   isMobile
 }) => {
   const compactText = buttonState.shortText || buttonState.text;
-  const hasCost = buttonState.cost > 0;
+  const hasCost = isDisplayableNovelAICost(buttonState.cost);
+  const costLabel = buttonState.costLabel || String(buttonState.cost);
   const costTextWidth = hasCost
-    ? estimateButtonTextWidth(String(buttonState.cost), isMobile ? 11 : 10)
+    ? estimateButtonTextWidth(costLabel, isMobile ? 10 : 10)
     : 0;
-  const costWidth = hasCost ? 28 + costTextWidth : 0;
+  const costWidth = hasCost ? 24 + costTextWidth : 0;
   const costGap = hasCost ? (isMobile ? 10 : 14) : 0;
 
   if (!availableWidth) {
@@ -264,8 +268,8 @@ const getResponsiveGenerateButtonContent = ({
   const iconOnlyWidth = buttonPadding + iconWidth;
   const fullLabelWidth = buttonPadding + iconWidth + labelGap + fullTextWidth;
   const compactLabelWidth = buttonPadding + iconWidth + labelGap + compactTextWidth;
-  const minimumCostVisibleWidth = hasCost ? iconOnlyWidth + costGap + costWidth : 0;
-  const showCost = hasCost && availableWidth >= minimumCostVisibleWidth;
+  // 预计消耗属于生成前的必要状态，即使窄屏隐藏按钮文字也不能把它一并隐藏。
+  const showCost = hasCost;
   const contentWidth = showCost
     ? Math.max(0, availableWidth - costGap - costWidth)
     : availableWidth;
@@ -290,7 +294,7 @@ const getResponsiveGenerateButtonContent = ({
 
 // 使用GenerationContext包装的AIPaintingPage内部组件
 const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
-  const { t } = useI18n();
+  const { t, formatNumber } = useI18n();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const accountDefaultModel = DEFAULT_PAINTING_MODEL_ID;
@@ -710,13 +714,11 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
 
   // 按 NovelAI 当前计费顺序计算生成点数。
   const calculateGenerationCost = useCallback((params, currentEditParameters) => {
-    if (!params.use_upscale_credits) return 0;
-
     const isSmeaSupported = !isV4Model(params.model);
     const editParameters = currentEditParameters === undefined
       ? params.imageToImage
       : currentEditParameters;
-    return calculateNovelAIImageCost({
+    return estimateNovelAIGenerationCost({
       model: params.model,
       width: params.width,
       height: params.height,
@@ -727,8 +729,11 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
       hasMask: Boolean(editParameters?.mask),
       strength: editParameters?.strength,
       inpaintImg2ImgStrength: editParameters?.inpaintStrength,
+      subscriptionActive: liveAccountSnapshot?.subscription?.active === true,
+      useUpscaleCredits: params.use_upscale_credits === true,
+      batchSize: params.batchSize,
     });
-  }, []);
+  }, [liveAccountSnapshot?.subscription?.active]);
 
   // 获取按钮状态的函数
   const getGenerateButtonState = () => {
@@ -742,6 +747,16 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
       generationParams,
       isInpaintMode ? inpaintCostParameters : imageToImageCostParameters,
     );
+    const costLabel = estimatedCost.perImage === -3
+      ? null
+      : (estimatedCost.count > 1
+        ? t('painting.workspace.anlas.estimatedBatchCost', {
+          perImage: formatNumber(estimatedCost.perImage),
+          total: formatNumber(estimatedCost.total),
+        })
+        : t('painting.workspace.anlas.estimatedSingleCost', {
+          cost: formatNumber(estimatedCost.perImage),
+        }));
 
     if (
       isV4
@@ -760,7 +775,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
         color: 'primary',
         icon: <WarningIcon />,
         disabled: true,
-        cost: 0,
+        cost: null,
       };
     }
 
@@ -775,7 +790,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
         color: 'error',
         icon: <CancelIcon />,
         disabled: false,
-        cost: 0,
+        cost: null,
       };
     }
 
@@ -795,11 +810,11 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
         color: 'primary',
         icon: isInpaintMode ? <ImageIcon /> : null,
         disabled: true,
-        cost: 0,
+        cost: null,
       };
     }
 
-    if (estimatedCost === -3) {
+    if (estimatedCost.perImage === -3) {
       return {
         text: t('painting.workspace.actions.generationSettingsTooExpensive'),
         shortText: t('painting.workspace.actions.adjustGenerationSettings'),
@@ -807,7 +822,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
         color: 'error',
         icon: <WarningIcon />,
         disabled: true,
-        cost: 0,
+        cost: null,
       };
     }
 
@@ -822,7 +837,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
         color: 'primary',
         icon: <ImageIcon />,
         disabled: false,
-        cost: estimatedCost,
+        cost: estimatedCost.perImage,
+        costTotal: estimatedCost.total,
+        costCount: estimatedCost.count,
+        costLabel,
       };
     }
 
@@ -837,7 +855,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
       color: 'primary',
       icon: null,
       disabled: false,
-      cost: estimatedCost,
+      cost: estimatedCost.perImage,
+      costTotal: estimatedCost.total,
+      costCount: estimatedCost.count,
+      costLabel,
     };
   };
   // 确保生成按钮初始化正确显示参数
@@ -1816,18 +1837,111 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
 
   const renderAnlasStatus = () => {
     const total = liveAccountSnapshot?.anlas?.total;
+    const displayTotal = total === null || total === undefined
+      ? t('painting.workspace.anlas.unavailable')
+      : formatNumber(total);
     return (
       <Tooltip title={t('painting.workspace.anlas.openDetails')} arrow>
         <Button
           size="small"
           onClick={() => setAnlasDialogOpen(true)}
-          startIcon={<MonetizationOnIcon />}
-          sx={{ minWidth: 0, px: 1.25, whiteSpace: 'nowrap' }}
+          aria-label={`${t('painting.workspace.anlas.balance')}: ${displayTotal}`}
+          sx={{
+            minWidth: 0,
+            minHeight: 36,
+            px: 0.75,
+            py: 0.5,
+            gap: 0.65,
+            borderRadius: 1.5,
+            border: `1px solid ${alpha(theme.palette.divider, 0.24)}`,
+            bgcolor: alpha(theme.palette.primary.main, 0.055),
+            color: 'text.primary',
+            textTransform: 'none',
+            whiteSpace: 'nowrap',
+            lineHeight: 1,
+            '&:hover': {
+              bgcolor: alpha(theme.palette.primary.main, 0.1),
+              borderColor: alpha(theme.palette.primary.main, 0.28),
+            },
+          }}
         >
-          {total === null || total === undefined
-            ? t('painting.workspace.anlas.unavailable')
-            : total}
+          <Box
+            component="span"
+            sx={{
+              width: 24,
+              height: 24,
+              borderRadius: '50%',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              bgcolor: alpha(theme.palette.primary.main, 0.12),
+              color: 'primary.main',
+              lineHeight: 0,
+            }}
+          >
+            <MonetizationOnIcon sx={{ display: 'block', fontSize: 17 }} />
+          </Box>
+          <Typography
+            component="span"
+            variant="caption"
+            sx={{ color: 'text.secondary', fontWeight: 500, lineHeight: 1 }}
+          >
+            {t('painting.workspace.anlas.balance')}
+          </Typography>
+          <Typography
+            component="span"
+            variant="body2"
+            sx={{ fontWeight: 700, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}
+          >
+            {displayTotal}
+          </Typography>
         </Button>
+      </Tooltip>
+    );
+  };
+
+  const renderGenerationCost = (buttonState, compact = false) => {
+    if (!isDisplayableNovelAICost(buttonState.cost)) return null;
+
+    return (
+      <Tooltip title={t('painting.workspace.anlas.estimatedCostHelp')} arrow>
+        <Box
+          component="span"
+          aria-label={buttonState.costLabel}
+          sx={{
+            flexShrink: 0,
+            minHeight: compact ? 24 : 26,
+            px: compact ? 0.6 : 0.75,
+            py: 0.35,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: compact ? 0.35 : 0.45,
+            borderRadius: 1,
+            bgcolor: 'rgba(0,0,0,0.16)',
+            border: '1px solid rgba(255,255,255,0.16)',
+            lineHeight: 1,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <MonetizationOnIcon
+            sx={{ display: 'block', flexShrink: 0, fontSize: compact ? 13 : 14, color: '#FFE082' }}
+          />
+          <Typography
+            component="span"
+            variant="caption"
+            sx={{
+              color: 'inherit',
+              fontSize: compact ? '0.625rem' : '0.68rem',
+              fontWeight: 600,
+              lineHeight: 1,
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {buttonState.costLabel}
+          </Typography>
+        </Box>
       </Tooltip>
     );
   };
@@ -2369,26 +2483,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                             )}
                           </Box>
 
-                        {buttonContent.showCost && (
-                          <Box sx={{ flexShrink: 0, display: 'flex', justifyContent: 'flex-end' }}>
-                            <Box
-                              sx={{
-                                bgcolor: 'rgba(0,0,0,0.2)',
-                                borderRadius: '6px',
-                                px: 0.75,
-                                py: 0.25,
-                                display: 'flex',
-                                alignItems: 'center',
-                                fontSize: '0.7rem'
-                              }}
-                            >
-                              <Typography variant="caption" sx={{ color: '#fff', fontWeight: 'bold' }}>
-                                {buttonState.cost}
-                              </Typography>
-                              <MonetizationOnIcon sx={{ fontSize: '0.75rem', ml: 0.5, color: '#FFD700' }} />
-                            </Box>
-                          </Box>
-                        )}
+                        {buttonContent.showCost && renderGenerationCost(buttonState)}
                       </Button>
                     );
                   })()}
@@ -2549,7 +2644,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                 />
               </Paper>
 
-              {/* 移动端抽屉内也保留一个简单的验证状态显示，但使用新图标 */}
+              {/* 移动端抽屉与桌面、底栏复用同一个紧凑余额状态块。 */}
               <Paper
                 elevation={0}
                 sx={{
@@ -2559,11 +2654,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                   bgcolor: theme.palette.background.paper,
                   border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
                   display: 'flex',
-                  justifyContent: 'space-between',
+                  justifyContent: 'center',
                   alignItems: 'center'
                 }}
               >
-                <Typography>{t('painting.workspace.anlas.total')}</Typography>
                 {renderAnlasStatus()}
               </Paper>
             </Box>
@@ -2655,8 +2749,9 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
               const darkColor = isError ? theme.palette.error.dark : theme.palette.primary.dark;
 
               return (
-                <Box ref={setMobileGenerateButtonContainer} sx={{ display: 'flex', flexGrow: 1, minWidth: 0, ml: 1.5, alignItems: 'center', maxWidth: '100%' }}>
+                <Box sx={{ display: 'flex', flexGrow: 1, minWidth: 0, ml: 1.5, alignItems: 'center', maxWidth: '100%' }}>
                   <Button
+                    ref={setMobileGenerateButtonContainer}
                     variant="contained"
                     disabled={buttonState.disabled}
                     onClick={buttonState.action}
@@ -2729,25 +2824,8 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                       )}
                     </Box>
 
-                    {/* 移动端点数显示 */}
-                    {buttonContent.showCost && (
-                      <Box
-                        sx={{
-                          bgcolor: 'rgba(0,0,0,0.2)',
-                          borderRadius: '4px',
-                          px: 0.5,
-                          display: 'flex',
-                          alignItems: 'center',
-                          fontSize: '0.65rem',
-                          flexShrink: 0,
-                        }}
-                      >
-                        <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 'bold' }}>
-                          {buttonState.cost}
-                        </Typography>
-                        <MonetizationOnIcon sx={{ fontSize: '0.7rem', ml: 0.2, color: '#FFD700' }} />
-                      </Box>
-                    )}
+                    {/* 移动端同样始终显示可生成请求的预计点数。 */}
+                    {buttonContent.showCost && renderGenerationCost(buttonState, true)}
                   </Button>
 
                   {/* 移动端打开参数菜单的按钮 */}

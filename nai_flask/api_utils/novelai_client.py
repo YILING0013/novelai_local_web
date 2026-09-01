@@ -7,6 +7,8 @@ import base64
 import binascii
 import io
 import json
+import logging
+import time
 import zipfile
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -32,6 +34,31 @@ from .account_change import (
 NOVELAI_ORIGIN = "https://image.novelai.net"
 NOVELAI_HOST = "image.novelai.net"
 MAX_UPSTREAM_BODY_BYTES = 80 * 1024 * 1024
+OFFICIAL_OPERATION_NAMES = {
+    ("POST", "/user/login"): "password_login",
+    ("GET", "/user/data"): "read_user_data",
+    ("GET", "/user/keystore"): "read_keystore",
+    ("POST", "/user/change-access-key"): "change_access_key",
+    ("PUT", "/user/keystore"): "write_keystore",
+    ("GET", "/user/information"): "account_information",
+    ("GET", "/user/subscription"): "account_subscription",
+    ("POST", "/ai/generate-image"): "generate_image",
+    ("POST", "/ai/encode-vibe"): "encode_vibe",
+    ("POST", "/ai/augment-image"): "augment_image",
+    ("POST", "/ai/upscale"): "upscale_image",
+    ("GET", "/ai/generate-image/suggest-tags"): "suggest_tags",
+}
+logger = logging.getLogger(__name__)
+
+
+def _safe_log_correlation_id(value: Any) -> str:
+    """只允许短 ASCII 标识进入日志，拒绝换行和任意用户文本。"""
+
+    text = str(value or "")
+    allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+    if 1 <= len(text) <= 64 and all(character in allowed for character in text):
+        return text
+    return "-"
 
 
 @dataclass
@@ -123,11 +150,34 @@ class NovelAIClient:
         headers.setdefault("Accept", "*/*")
         headers.setdefault("Origin", "https://novelai.net")
         headers.setdefault("Referer", "https://novelai.net/")
-        headers.setdefault("X-Correlation-ID", correlation_id or tools.correlation_id_generator())
+        upstream_correlation_id = headers.setdefault(
+            "X-Correlation-ID",
+            correlation_id or tools.correlation_id_generator(),
+        )
         headers.setdefault("x-initiated-at", tools.get_z_time_now())
         if token:
             headers["Authorization"] = f"Bearer {token}"
 
+        normalized_method = method.upper()
+        logged_method = (
+            normalized_method
+            if normalized_method in {"GET", "POST", "PUT"}
+            else "OTHER"
+        )
+        operation_name = OFFICIAL_OPERATION_NAMES.get(
+            (normalized_method, path),
+            "official_request",
+        )
+        safe_correlation_id = _safe_log_correlation_id(upstream_correlation_id)
+        started_at = time.perf_counter()
+        logger.info(
+            "event=novelai_request_start operation=%s method=%s host=%s "
+            "correlation_id=%s",
+            operation_name,
+            logged_method,
+            NOVELAI_HOST,
+            safe_correlation_id,
+        )
         try:
             response = self._request_func(
                 method,
@@ -138,12 +188,32 @@ class NovelAIClient:
                 **kwargs,
             )
         except requests.Timeout as exc:
+            logger.warning(
+                "event=novelai_request_complete operation=%s method=%s host=%s "
+                "status=timeout result=failed elapsed_ms=%.2f error_code=NOVELAI_TIMEOUT "
+                "certain=false correlation_id=%s",
+                operation_name,
+                logged_method,
+                NOVELAI_HOST,
+                (time.perf_counter() - started_at) * 1000,
+                safe_correlation_id,
+            )
             raise NovelAIUpstreamError(
                 "The NovelAI request timed out.",
                 504,
                 "NOVELAI_TIMEOUT",
             ) from exc
         except requests.RequestException as exc:
+            logger.warning(
+                "event=novelai_request_complete operation=%s method=%s host=%s "
+                "status=unavailable result=failed elapsed_ms=%.2f "
+                "error_code=NOVELAI_UNAVAILABLE certain=false correlation_id=%s",
+                operation_name,
+                logged_method,
+                NOVELAI_HOST,
+                (time.perf_counter() - started_at) * 1000,
+                safe_correlation_id,
+            )
             raise NovelAIUpstreamError(
                 "The NovelAI service could not be reached.",
                 502,
@@ -151,6 +221,35 @@ class NovelAIClient:
             ) from exc
 
         status_code = int(response.status_code)
+        log_level = logging.ERROR if status_code >= 500 else (
+            logging.WARNING if status_code >= 300 else logging.INFO
+        )
+        if 200 <= status_code < 300:
+            error_code = "-"
+        elif 300 <= status_code < 400:
+            error_code = "NOVELAI_REDIRECT_REJECTED"
+        elif status_code == 401:
+            error_code = "NOVELAI_UNAUTHORIZED"
+        elif status_code == 429:
+            error_code = "NOVELAI_RATE_LIMITED"
+        else:
+            error_code = "NOVELAI_REQUEST_REJECTED"
+        logger.log(
+            log_level,
+            "event=novelai_request_complete operation=%s method=%s host=%s status=%d "
+            "result=%s elapsed_ms=%.2f error_code=%s certain=%s correlation_id=%s",
+            operation_name,
+            logged_method,
+            NOVELAI_HOST,
+            status_code,
+            "success" if 200 <= status_code < 300 else (
+                "failed" if status_code >= 500 else "rejected"
+            ),
+            (time.perf_counter() - started_at) * 1000,
+            error_code,
+            str(status_code < 500).lower(),
+            safe_correlation_id,
+        )
         if status_code in accepted_error_statuses:
             return response
         if 300 <= status_code < 400:
@@ -582,15 +681,34 @@ class NovelAIClient:
         """发送一次绝不重试、绝不重定向的官方账户 mutation。"""
 
         url = f"{NOVELAI_ORIGIN}{path}"
+        upstream_correlation_id = tools.correlation_id_generator()
         headers = {
             "Accept": "application/json",
             "Content-Type": "application/json",
             "Authorization": f"Bearer {token}",
             "Origin": "https://novelai.net",
             "Referer": "https://novelai.net/",
-            "X-Correlation-ID": tools.correlation_id_generator(),
+            "X-Correlation-ID": upstream_correlation_id,
             "x-initiated-at": tools.get_z_time_now(),
         }
+        normalized_method = method.upper()
+        logged_method = (
+            normalized_method if normalized_method in {"POST", "PUT"} else "OTHER"
+        )
+        operation_name = OFFICIAL_OPERATION_NAMES.get(
+            (normalized_method, path),
+            "account_mutation",
+        )
+        safe_correlation_id = _safe_log_correlation_id(upstream_correlation_id)
+        started_at = time.perf_counter()
+        logger.info(
+            "event=novelai_request_start operation=%s method=%s host=%s "
+            "correlation_id=%s",
+            operation_name,
+            logged_method,
+            NOVELAI_HOST,
+            safe_correlation_id,
+        )
         try:
             response = self._request_func(
                 method,
@@ -601,10 +719,55 @@ class NovelAIClient:
                 allow_redirects=False,
             )
         except requests.RequestException as exc:
+            logger.error(
+                "event=novelai_request_complete operation=%s method=%s host=%s "
+                "status=unknown result=uncertain elapsed_ms=%.2f "
+                "error_code=ACCOUNT_CHANGE_UNCERTAIN certain=false correlation_id=%s",
+                operation_name,
+                logged_method,
+                NOVELAI_HOST,
+                (time.perf_counter() - started_at) * 1000,
+                safe_correlation_id,
+            )
             raise CredentialChangeUncertain(
                 "官方账户变更请求的结果无法确认"
             ) from exc
         status_code = int(response.status_code)
+        if 200 <= status_code < 300:
+            logger.info(
+                "event=novelai_request_complete operation=%s method=%s host=%s status=%d "
+                "result=success elapsed_ms=%.2f certain=true correlation_id=%s",
+                operation_name,
+                logged_method,
+                NOVELAI_HOST,
+                status_code,
+                (time.perf_counter() - started_at) * 1000,
+                safe_correlation_id,
+            )
+        elif 400 <= status_code < 500:
+            logger.warning(
+                "event=novelai_request_complete operation=%s method=%s host=%s status=%d "
+                "result=rejected elapsed_ms=%.2f error_code=ACCOUNT_CHANGE_REJECTED "
+                "certain=true correlation_id=%s",
+                operation_name,
+                logged_method,
+                NOVELAI_HOST,
+                status_code,
+                (time.perf_counter() - started_at) * 1000,
+                safe_correlation_id,
+            )
+        else:
+            logger.error(
+                "event=novelai_request_complete operation=%s method=%s host=%s status=%d "
+                "result=uncertain elapsed_ms=%.2f error_code=ACCOUNT_CHANGE_UNCERTAIN "
+                "certain=false correlation_id=%s",
+                operation_name,
+                logged_method,
+                NOVELAI_HOST,
+                status_code,
+                (time.perf_counter() - started_at) * 1000,
+                safe_correlation_id,
+            )
         if 200 <= status_code < 300:
             return response
         if 400 <= status_code < 500:

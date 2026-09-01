@@ -10,6 +10,14 @@ const V5_MODEL_FAMILY = new Set([
 ]);
 
 /**
+ * 判断一个预计成本是否应在生成按钮中展示，0 是有效成本，负值和空状态不是。
+ *
+ * @param {unknown} cost 预计单张 Anlas。
+ * @returns {boolean} 可展示时返回 true。
+ */
+export const isDisplayableNovelAICost = (cost) => Number.isFinite(cost) && cost >= 0;
+
+/**
  * 按 NovelAI 当前网页公式估算一次图像请求的 Anlas 点数。
  *
  * @param {object} options 生成尺寸、步数、模型与编辑强度。
@@ -44,4 +52,43 @@ export const calculateNovelAIImageCost = ({
 
   if (perImageCost > NOVELAI_MAX_ANLAS_PER_IMAGE) return -3;
   return perImageCost;
+};
+
+/**
+ * 计算界面应展示的单张与连续生成预计 Anlas 消耗。
+ *
+ * @param {object} options 生成参数、官方订阅状态与连续生成数量。
+ * @returns {{rawPerImage: number, perImage: number, total: number|null, count: number, subscriptionFree: boolean}}
+ *   原始单张成本、实际单张成本、本批总成本、数量及是否命中订阅小图免费条件。
+ */
+export const estimateNovelAIGenerationCost = ({
+  subscriptionActive = false,
+  useUpscaleCredits = false,
+  batchSize = 1,
+  ...imageOptions
+}) => {
+  const rawPerImage = calculateNovelAIImageCost(imageOptions);
+  const count = Math.max(1, Math.trunc(Number(batchSize)) || 1);
+
+  if (rawPerImage === -3) {
+    return {
+      rawPerImage,
+      perImage: -3,
+      total: null,
+      count,
+      subscriptionFree: false,
+    };
+  }
+
+  // 本地版按官方账户快照判断：有效订阅的普通小图不扣 Anlas，大图仍按公式计费。
+  const subscriptionFree = subscriptionActive === true && useUpscaleCredits !== true;
+  const perImage = subscriptionFree ? 0 : rawPerImage;
+
+  return {
+    rawPerImage,
+    perImage,
+    total: perImage * count,
+    count,
+    subscriptionFree,
+  };
 };

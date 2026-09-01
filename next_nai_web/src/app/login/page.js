@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Alert, Box, Button, Container, Fade, Paper, TextField, Typography,
+  Alert, Box, Button, Container, Divider, Fade, Paper, TextField, Typography,
   alpha, useMediaQuery, useTheme,
 } from '@mui/material';
 import AccountCircleRoundedIcon from '@mui/icons-material/AccountCircleRounded';
@@ -121,6 +121,15 @@ export default function LoginPage() {
     '&:active': { transform: 'translateY(0)' },
     '&:disabled': { bgcolor: alpha('#7986CB', 0.5), color: alpha('#ffffff', 0.5) },
   };
+  const accountSwitchButtonStyle = {
+    color: alpha('#ffffff', 0.72),
+    textTransform: 'none',
+    fontWeight: 400,
+    '&:hover': {
+      color: '#ffffff',
+      backgroundColor: alpha('#ffffff', 0.06),
+    },
+  };
   const languageSwitcherStyle = {
     bgcolor: alpha('#111827', 0.72),
     borderRadius: 2,
@@ -203,18 +212,6 @@ export default function LoginPage() {
                 ) : (
                   <Fade in key={loginMode} timeout={250}>
                     <Box>
-                      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.25, mb: 2.5 }}>
-                        <Button fullWidth variant={loginMode === 'token' ? 'contained' : 'outlined'}
-                          onClick={() => { setLoginMode('token'); setError(''); }} startIcon={<KeyRoundedIcon />}
-                          sx={{ minHeight: 44, textTransform: 'none' }}>
-                          {t('login.local.pat')}
-                        </Button>
-                        <Button fullWidth variant={loginMode === 'password' ? 'contained' : 'outlined'}
-                          onClick={() => { setLoginMode('password'); setError(''); }} startIcon={<AccountCircleRoundedIcon />}
-                          sx={{ minHeight: 44, textTransform: 'none' }}>
-                          {t('login.local.emailPassword')}
-                        </Button>
-                      </Box>
                       {loginMode === 'token' ? (
                         <TextField autoFocus fullWidth label={t('login.local.pat')} type="password" autoComplete="off"
                           value={token} onChange={(event) => setToken(event.target.value)} onKeyDown={handleFormKeyDown}
@@ -243,6 +240,23 @@ export default function LoginPage() {
                         disabled={loading || (loginMode === 'token' ? !token.trim() : !email.trim() || !password)}
                         onClick={handleSubmit} sx={primaryButtonStyle}>
                         {loading ? t('login.loggingIn') : t('login.login')}
+                      </Button>
+                      <Divider sx={{
+                        my: { xs: 1.5, md: 3 },
+                        '&::before, &::after': { borderColor: alpha('#ffffff', 0.1) },
+                      }}>
+                        <Typography variant="caption" sx={{ color: alpha('#ffffff', 0.4), px: 1 }}>
+                          {t('login.or')}
+                        </Typography>
+                      </Divider>
+                      <Button fullWidth size="small"
+                        startIcon={loginMode === 'token' ? <AccountCircleRoundedIcon /> : <KeyRoundedIcon />}
+                        onClick={() => {
+                          setLoginMode((current) => current === 'token' ? 'password' : 'token');
+                          setError('');
+                        }}
+                        sx={accountSwitchButtonStyle}>
+                        {loginMode === 'token' ? t('login.local.useEmailPassword') : t('login.local.usePat')}
                       </Button>
                     </Box>
                   </Fade>
