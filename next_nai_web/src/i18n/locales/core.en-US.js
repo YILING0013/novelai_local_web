@@ -143,6 +143,7 @@ const coreenUS = {
       "seed": "Seed",
       "prompt32": "First 32 prompt characters",
       "timestamp": "Timestamp",
+      "datetime": "Current time (YYYY-MM-DD_HH-mm-ss)",
       "random": "Random string"
     },
     "backgroundPresets": {

@@ -1955,7 +1955,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
           flexDirection: isMobile ? 'column' : 'row',
           overflowX: 'hidden',
           position: 'relative',
-          pb: isMobile ? '60px' : 0,
+          pb: isMobile ? { xs: '116px', sm: '60px' } : 0,
           backgroundColor: theme.palette.background.default,
         }}
         onDragOverCapture={(event) => {
@@ -2326,15 +2326,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                 overflow: 'hidden',
               }}
             >
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, minWidth: 0 }}>
-                {/* 验证状态 - 使用新的简洁图标样式 */}
-                <Box sx={{ flexShrink: 0 }}>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                {/* 点数、批量状态和错误入口在空间不足时共同留在第一行。 */}
+                <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                   {renderAnlasStatus()}
-                </Box>
-
-                {/* 生成按钮区域 - 占据剩余空间 */}
-                <Box sx={{ flex: 1, minWidth: 0, maxWidth: '100%', display: 'flex', alignItems: 'center', gap: 1, overflow: 'hidden' }}>
-                  {/* 批量进度指示器 */}
                   {batchStatus.active && (
                     <Tooltip title={t('painting.workspace.actions.viewBatchDetails')} placement="top">
                       <IconButton
@@ -2342,7 +2337,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                         onClick={() => setBatchDialogOpen(true)}
                         size="small"
                         color="error"
-                        sx={{ flexShrink: 0 }}
+                        sx={{ ml: 0.5, flexShrink: 0 }}
                       >
                         <Badge
                           badgeContent={`${batchStatus.current}/${batchStatus.total}`}
@@ -2371,7 +2366,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                       color={workspaceErrors.length > 0
                         ? 'error'
                         : 'default'}
-                      sx={{ flexShrink: 0 }}
+                      sx={{ ml: 0.5, flexShrink: 0 }}
                     >
                       <Badge
                         badgeContent={workspaceErrors.length}
@@ -2387,7 +2382,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                       </Badge>
                     </IconButton>
                   </Tooltip>
+                </Box>
 
+                {/* 生成按钮至少保留 220px；不足时自动换到完整的第二行。 */}
+                <Box sx={{ flex: '1 1 220px', minWidth: 0, maxWidth: '100%', display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
                   <Box ref={setDesktopGenerateButtonContainer} sx={{ flex: 1, minWidth: 0, maxWidth: '100%' }}>
                     {/* 生成按钮 - 机械按键质感 */}
                     {(() => {
@@ -2679,8 +2677,9 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
               borderTop: `1px solid ${themeColors.mobileBottomBorder}`,
               zIndex: 1200,
               display: 'flex',
-              justifyContent: 'space-between',
+              flexWrap: 'wrap',
               alignItems: 'center',
+              gap: 1,
             }}
           >
             {/* 移动端底栏沿用原状态位展示 NovelAI Anlas 总额。 */}
@@ -2749,7 +2748,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
               const darkColor = isError ? theme.palette.error.dark : theme.palette.primary.dark;
 
               return (
-                <Box sx={{ display: 'flex', flexGrow: 1, minWidth: 0, ml: 1.5, alignItems: 'center', maxWidth: '100%' }}>
+                <Box sx={{ display: 'flex', flex: '1 1 220px', minWidth: 0, alignItems: 'center', maxWidth: '100%' }}>
                   <Button
                     ref={setMobileGenerateButtonContainer}
                     variant="contained"

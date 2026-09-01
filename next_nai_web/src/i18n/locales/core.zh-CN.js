@@ -143,6 +143,7 @@ const corezhCN = {
       "seed": "种子号",
       "prompt32": "正面提示词前 32 位",
       "timestamp": "时间戳",
+      "datetime": "当前时间（年-月-日_时-分-秒）",
       "random": "随机字符串"
     },
     "backgroundPresets": {

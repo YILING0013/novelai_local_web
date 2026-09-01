@@ -7,6 +7,7 @@ export const DOWNLOAD_NAMING_METHODS = [
   { value: 'seed', labelKey: 'settings.naming.seed' },
   { value: 'prompt32', labelKey: 'settings.naming.prompt32' },
   { value: 'timestamp', labelKey: 'settings.naming.timestamp' },
+  { value: 'datetime', labelKey: 'settings.naming.datetime' },
   { value: 'random', labelKey: 'settings.naming.random' },
 ];
 
@@ -130,6 +131,9 @@ export const generateFileName = (image = {}, imageSettings = {}, options = {}) =
       break;
     case 'timestamp':
       coreName = Date.now();
+      break;
+    case 'datetime':
+      coreName = formatDate(new Date(), 'yyyy-MM-dd_HH-mm-ss');
       break;
     case 'random':
       coreName = generateRandomString(settings.randomStringLength || 8);

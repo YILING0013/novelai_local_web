@@ -21,7 +21,8 @@ export default function LoginPage() {
   const { t } = useI18n();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [mounted, setMounted] = useState(false);
-  const backgroundImage = '/reference_img/3GGAQa90Mj6TbucNXrQPUUd1wdSMVaEJ.webp';
+  const [backgroundImage, setBackgroundImage] = useState('/reference_img/3GGAQa90Mj6TbucNXrQPUUd1wdSMVaEJ.webp');
+  const [panelImage, setPanelImage] = useState('/reference_img/1rvLGpK6gQUlnDsdBUu9pFRZ2ByMn3Nj.webp');
   const [loginMode, setLoginMode] = useState('token');
   const [token, setToken] = useState('');
   const [email, setEmail] = useState('');
@@ -34,7 +35,52 @@ export default function LoginPage() {
   });
 
   useEffect(() => {
-    setMounted(true);
+    let active = true;
+
+    fetch('/metadata.json')
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then((metadata) => {
+        if (!active) return;
+        const entries = Object.entries(metadata);
+        const filenames = entries.map(([filename]) => filename);
+        if (filenames.length > 0) {
+          const landscapeFilenames = entries
+            .filter(([, entry]) => {
+              const [width, height] = entry?.basic_info?.size || [];
+              return width >= height;
+            })
+            .map(([filename]) => filename);
+          const portraitFilenames = entries
+            .filter(([, entry]) => {
+              const [width, height] = entry?.basic_info?.size || [];
+              return height > width;
+            })
+            .map(([filename]) => filename);
+          const backgroundCandidates = window.innerWidth >= 768
+            ? landscapeFilenames
+            : portraitFilenames;
+          const backgroundFilename = (backgroundCandidates.length > 0 ? backgroundCandidates : filenames)[
+            Math.floor(Math.random() * (backgroundCandidates.length || filenames.length))
+          ];
+          const panelCandidates = (portraitFilenames.length > 0 ? portraitFilenames : filenames)
+            .filter((filename) => filename !== backgroundFilename);
+          const panelFilename = panelCandidates[Math.floor(Math.random() * panelCandidates.length)];
+
+          setBackgroundImage(`/reference_img/${encodeURIComponent(backgroundFilename)}`);
+          if (panelFilename) setPanelImage(`/reference_img/${encodeURIComponent(panelFilename)}`);
+        }
+      })
+      .catch((requestError) => {
+        console.warn('Unable to load random login background:', requestError);
+      })
+      .finally(() => {
+        if (active) setMounted(true);
+      });
+
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -154,7 +200,7 @@ export default function LoginPage() {
             border: `1px solid ${alpha('#ffffff', 0.05)}`,
           }}>
             <Box sx={{
-              display: { xs: 'none', md: 'block' }, width: '40%', background: `url(${backgroundImage})`,
+              display: { xs: 'none', md: 'block' }, width: '40%', background: `url(${panelImage})`,
               backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative',
             }} />
             <Box sx={{
