@@ -43,3 +43,17 @@ data/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# 个人参考资源与数据库（已有公共资源仍需逐项审查）
+**/*.db
+**/*.db-*
+**/*.sqlite
+**/*.sqlite-*
+**/*.sqlite3
+**/*.sqlite3-*
+**/public/reference_img/
+**/artist-thread-images/
+**/image-reference-images/
+
+# 仅供本机使用的 Windows 后台启动脚本
+/scripts/start-background.py

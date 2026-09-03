@@ -42,6 +42,7 @@ import {
   Brightness4 as DarkModeIcon,
   Brightness7 as LightModeIcon,
   Brush as BrushIcon,
+  Collections as CollectionsIcon,
   ChevronLeft as ChevronLeftIcon,
   ChevronRight as ChevronRightIcon,
   Close as CloseIcon,
@@ -50,12 +51,17 @@ import {
   Refresh as RefreshIcon,
   Settings as SettingsIcon,
   Star as StarIcon,
+  Style as StyleIcon,
+  ViewList as TemplateIcon,
   VerifiedUser as VerifiedUserIcon,
   VpnKey as KeyIcon,
   Warning as WarningIcon,
 } from '@mui/icons-material';
 import AIPaintingPage from '@/components/ai-painting/AIPaintingPage';
 import SettingsPage from '@/components/settings/SettingsPage';
+import ArtistReferencePage from '@/components/references/ArtistReferencePage';
+import ImageReferencePage from '@/components/references/ImageReferencePage';
+import PromptTemplatePage from '@/components/references/PromptTemplatePage';
 import apiClient from '@/utils/ApiClient';
 import { useI18n } from '@/i18n/I18nProvider';
 import LanguageSwitcher from '@/components/i18n/LanguageSwitcher';
@@ -546,6 +552,9 @@ export default function MainPage() {
     if (storage) migrateLegacyPageColors(storage);
     return [
       { id: PAGE_IDS.AI_PAINTING, labelKey: 'pages.aiPainting', icon: <BrushIcon />, component: <AIPaintingPage />, color: readPageColor(storage, PAGE_IDS.AI_PAINTING), confirmOnClose: true },
+      { id: PAGE_IDS.ARTIST_REFERENCE, labelKey: 'pages.artistReference', icon: <StyleIcon />, component: <ArtistReferencePage />, color: readPageColor(storage, PAGE_IDS.ARTIST_REFERENCE), confirmOnClose: false },
+      { id: PAGE_IDS.IMAGE_REFERENCE, labelKey: 'pages.imageReference', icon: <CollectionsIcon />, component: <ImageReferencePage />, color: readPageColor(storage, PAGE_IDS.IMAGE_REFERENCE), confirmOnClose: false },
+      { id: PAGE_IDS.PROMPT_TEMPLATE, labelKey: 'pages.promptTemplate', icon: <TemplateIcon />, component: <PromptTemplatePage />, color: readPageColor(storage, PAGE_IDS.PROMPT_TEMPLATE), confirmOnClose: false },
       { id: PAGE_IDS.SETTINGS, labelKey: 'pages.settings', icon: <SettingsIcon />, color: readPageColor(storage, PAGE_IDS.SETTINGS), confirmOnClose: false },
     ];
   });
@@ -573,6 +582,15 @@ export default function MainPage() {
     setActivePage(page.id);
     if (isMobile) setOpenDrawer(false);
   }, [isMobile]);
+
+  useEffect(() => {
+    const openRequestedPage = (event) => {
+      const requested = visiblePages.find((page) => page.id === event.detail);
+      if (requested) handleOpenPage(requested);
+    };
+    window.addEventListener('novelai:open-page', openRequestedPage);
+    return () => window.removeEventListener('novelai:open-page', openRequestedPage);
+  }, [handleOpenPage, visiblePages]);
 
   useEffect(() => {
     if (!authChecking && openPages.length === 0 && visiblePages.length > 0) handleOpenPage(visiblePages[0]);

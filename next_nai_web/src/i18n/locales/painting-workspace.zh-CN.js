@@ -412,6 +412,8 @@ const paintingWorkspacezhCN = {
         "apply": "应用"
       },
       "gallery": {
+        "resultEmptyTitle": "生成结果会显示在这里",
+        "resultEmptyDescription": "设置提示词和参数后点击生成；参考图库已移动到左侧“图片参考”。",
         "officialUpscale": "官方 Upscale",
         "officialUpscaling": "官方 Upscale 处理中…",
         "needInspiration": "需要灵感？",
