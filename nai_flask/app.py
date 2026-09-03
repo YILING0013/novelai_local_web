@@ -837,8 +837,8 @@ def _prepare_artist_thread(thread: Any, inherited_id: str | None = None) -> dict
     }
 
 
-def _save_artist_thread_image(data_url: Any, original_name: Any, image_dir: Path) -> dict[str, str]:
-    """校验浏览器上传的图片并保存为本地画师串资源。"""
+def _decode_reference_image(data_url: Any, original_name: Any) -> dict[str, Any]:
+    """Validate entirely in memory and return bytes for the configured SQLite store."""
 
     if not isinstance(data_url, str) or "," not in data_url:
         raise ApiError("A valid image data URL is required.", 400, "IMAGE_INVALID")
@@ -861,28 +861,15 @@ def _save_artist_thread_image(data_url: Any, original_name: Any, image_dir: Path
     extension = extensions.get(image_format)
     if not extension:
         raise ApiError("The uploaded image format is not supported.", 400, "IMAGE_FORMAT_UNSUPPORTED")
-    image_dir.mkdir(parents=True, exist_ok=True)
     filename = f"{uuid.uuid4().hex}{extension}"
-    target = image_dir / filename
-    target.write_bytes(raw)
     return {
         "id": uuid.uuid4().hex,
         "filename": filename,
         "image_url": None,
         "original_name": str(original_name or filename)[:255],
         "mime_type": f"image/{'jpeg' if extension == '.jpg' else image_format}",
+        "data": raw,
     }
-
-
-def _decode_reference_image(data_url: Any, original_name: Any) -> dict[str, Any]:
-    """Validate an uploaded data URL and return bytes suitable for a SQLite BLOB."""
-    temp_dir = BASE_DIR / "data" / ".upload-validation"
-    saved = _save_artist_thread_image(data_url, original_name, temp_dir)
-    path = temp_dir / saved["filename"]
-    try:
-        return {**saved, "data": path.read_bytes()}
-    finally:
-        path.unlink(missing_ok=True)
 
 
 def _ensure_no_account_recovery() -> None:

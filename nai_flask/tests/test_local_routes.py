@@ -1,8 +1,60 @@
+import base64
+from pathlib import Path
+
+import pytest
+
 from conftest import ORIGIN, PNG_BASE64, login
 
 
 def headers(csrf):
     return {"Origin": ORIGIN, "X-CSRF-Token": csrf}
+
+
+@pytest.mark.parametrize("collection,key", [
+    ("artist-threads", "artist_thread"),
+    ("image-references", "image_reference"),
+])
+def test_reference_upload_needs_no_temporary_files(client, app, monkeypatch, collection, key):
+    csrf = login(client)
+    # The fixture puts DATA_DIR outside the source tree. Deny Python file writes
+    # after initialization; SQLite can still write its configured database.
+    def deny_write(*args, **kwargs):
+        raise PermissionError("Source tree is read-only")
+
+    monkeypatch.setattr(Path, "mkdir", deny_write)
+    monkeypatch.setattr(Path, "write_bytes", deny_write)
+    response = client.post(
+        f"/api/local/{collection}",
+        json={"title": "Synthetic reference", "images": [{
+            "data_url": f"data:image/png;base64,{PNG_BASE64}",
+            "original_name": "synthetic.png",
+        }]},
+        headers=headers(csrf),
+    )
+    assert response.status_code == 201
+    stored = response.get_json()[key]["images"][0]
+    image_response = client.get(stored["url"])
+    assert image_response.status_code == 200
+    assert image_response.mimetype == "image/png"
+    assert image_response.data == base64.b64decode(PNG_BASE64)
+    image_response.close()
+    assert app.extensions["reference_store"].path.parent == Path(app.config["DATA_DIR"])
+    assert not (Path(app.config["DATA_DIR"]) / ".upload-validation").exists()
+
+
+@pytest.mark.parametrize("encoded", ["not-base64!", base64.b64encode(b"not an image").decode()])
+def test_reference_upload_rejects_invalid_image_without_saving(client, encoded):
+    csrf = login(client)
+    response = client.post(
+        "/api/local/image-references",
+        json={"title": "Invalid reference", "images": [{
+            "data_url": f"data:image/png;base64,{encoded}",
+        }]},
+        headers=headers(csrf),
+    )
+    assert response.status_code == 400
+    assert response.get_json()["code"] == "IMAGE_INVALID"
+    assert client.get("/api/local/image-references").get_json() == {"image_references": []}
 
 
 def test_artist_thread_crud_with_local_image(client):
