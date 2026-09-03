@@ -1,15 +1,24 @@
 export const PAGE_IDS = Object.freeze({
   AI_PAINTING: 'ai-painting',
+  ARTIST_REFERENCE: 'artist-reference',
+  IMAGE_REFERENCE: 'image-reference',
+  PROMPT_TEMPLATE: 'prompt-template',
   SETTINGS: 'settings',
 });
 
 export const PAGE_COLOR_DEFAULTS = Object.freeze({
   [PAGE_IDS.AI_PAINTING]: '#00796B',
+  [PAGE_IDS.ARTIST_REFERENCE]: '#7B1FA2',
+  [PAGE_IDS.IMAGE_REFERENCE]: '#1976D2',
+  [PAGE_IDS.PROMPT_TEMPLATE]: '#00838F',
   [PAGE_IDS.SETTINGS]: '#E64A19',
 });
 
 export const LEGACY_PAGE_COLOR_NAMES = Object.freeze({
   [PAGE_IDS.AI_PAINTING]: ['AI 绘画'],
+  [PAGE_IDS.ARTIST_REFERENCE]: ['画师串参考'],
+  [PAGE_IDS.IMAGE_REFERENCE]: ['图片参考'],
+  [PAGE_IDS.PROMPT_TEMPLATE]: ['提示词模板'],
   [PAGE_IDS.SETTINGS]: ['设置'],
 });
 

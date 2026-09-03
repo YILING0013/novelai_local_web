@@ -429,6 +429,7 @@ const ItemDisplay = ({
   onError = null,
   disableVibeAction = false,
   isUpscaling = false,
+  showReferenceGallery = true,
 }) => {
   const { t } = useI18n();
   const theme = useTheme();
@@ -543,10 +544,10 @@ const ItemDisplay = ({
   }, [fetchImageParameters]);
 
   useEffect(() => {
-    if (!item && referenceImages.length === 0 && !loadingReferenceImages) {
+    if (!item && showReferenceGallery && referenceImages.length === 0 && !loadingReferenceImages) {
       fetchReferenceImages();
     }
-  }, [item, fetchReferenceImages, loadingReferenceImages, referenceImages.length]);
+  }, [item, fetchReferenceImages, loadingReferenceImages, referenceImages.length, showReferenceGallery]);
 
   const handleCloseNotification = () => {
     setNotification({ ...notification, open: false });
@@ -800,7 +801,7 @@ const ItemDisplay = ({
               </>
             )}
           </TransformWrapper>
-      ) : (
+      ) : showReferenceGallery ? (
         <ReferenceImageGallery
           referenceImages={referenceImages}
           loadingReferenceImages={loadingReferenceImages}
@@ -809,6 +810,14 @@ const ItemDisplay = ({
           onImageClick={handleReferenceImageClick}
           onRefresh={fetchReferenceImages}
         />
+      ) : (
+        <Box sx={{ textAlign: 'center', color: 'text.secondary', px: 3 }}>
+          <AddPhotoIcon sx={{ fontSize: 72, opacity: 0.22, mb: 1 }} />
+          <Typography variant="h6">{t('painting.workspace.gallery.resultEmptyTitle')}</Typography>
+          <Typography variant="body2" sx={{ mt: 0.75 }}>
+            {t('painting.workspace.gallery.resultEmptyDescription')}
+          </Typography>
+        </Box>
       )}
     </Box>
   );

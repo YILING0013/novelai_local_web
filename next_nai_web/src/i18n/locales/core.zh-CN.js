@@ -117,6 +117,9 @@ const corezhCN = {
   },
   "pages": {
     "aiPainting": "AI 绘画",
+    "artistReference": "画师串参考",
+    "imageReference": "图片参考",
+    "promptTemplate": "提示词模板",
     "settings": "设置"
   },
   "tools": {
