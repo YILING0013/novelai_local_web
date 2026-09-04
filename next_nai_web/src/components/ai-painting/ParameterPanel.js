@@ -125,7 +125,7 @@ const ParameterPanel = ({
     model: accountDefaultModel,
     width: 1024,
     height: 1024,
-    steps: 23,
+    steps: 28,
     guidanceScale: 5,
     seed: '',
     sampler: 'k_euler',
@@ -286,7 +286,7 @@ const ParameterPanel = ({
     const normalizedInitialParams = normalizeNovelAISmeaParams(initialParams);
     const normalizedNovelAIParams = sanitizeNovelAIV5GenerationParams(normalizedInitialParams);
     if (normalizedNovelAIParams.steps !== normalizedInitialParams.steps) {
-      // V5 普通模式现以 23 步为上限，旧缓存必须同步回写，避免刷新后再次越界。
+      // V5 普通模式现以 28 步为上限，旧缓存必须同步回写，避免刷新后再次越界。
       localStorage.setItem('aiImageParams_steps', JSON.stringify(normalizedNovelAIParams.steps));
     }
 

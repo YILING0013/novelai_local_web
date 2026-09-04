@@ -2,11 +2,26 @@
 // 批量生成控制类
 class BatchGenerationController {
   constructor(clock = {}) {
-    this.clock = {
-      now: typeof clock.now === 'function' ? clock.now : () => Date.now(),
-      setTimeout: typeof clock.setTimeout === 'function' ? clock.setTimeout : setTimeout,
-      clearTimeout: typeof clock.clearTimeout === 'function' ? clock.clearTimeout : clearTimeout,
-    };
+  // 原生 Window.setTimeout/clearTimeout 需要正确的调用上下文。
+  // 如果直接保存后再以 this.clock.setTimeout(...) 调用，部分浏览器会抛出
+  // TypeError: Illegal invocation，导致首张成功后批量流程立即进入失败清理。
+  const now = typeof clock.now === 'function'
+    ? clock.now.bind(clock)
+    : () => Date.now();
+
+  const setTimeoutFn = typeof clock.setTimeout === 'function'
+    ? clock.setTimeout.bind(clock)
+    : globalThis.setTimeout.bind(globalThis);
+
+  const clearTimeoutFn = typeof clock.clearTimeout === 'function'
+    ? clock.clearTimeout.bind(clock)
+    : globalThis.clearTimeout.bind(globalThis);
+
+  this.clock = {
+    now,
+    setTimeout: setTimeoutFn,
+    clearTimeout: clearTimeoutFn,
+  };
     // 批量生成状态
     this.status = {
       active: false,      // 是否正在进行批量生成
