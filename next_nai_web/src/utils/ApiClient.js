@@ -223,6 +223,50 @@ class ApiClient {
     return { ...response, texts: response.notes || [] };
   }
 
+  async getArtistThreads() {
+    const response = await this.request('/local/artist-threads');
+    return response.artist_threads || [];
+  }
+
+  async createArtistThread(thread) {
+    const response = await this.request('/local/artist-threads', {
+      method: 'POST',
+      body: thread,
+    });
+    return response.artist_thread;
+  }
+
+  async updateArtistThread(id, changes) {
+    const response = await this.request(`/local/artist-threads/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: changes,
+    });
+    return response.artist_thread;
+  }
+
+  async deleteArtistThread(id) {
+    return this.request(`/local/artist-threads/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
+  async getImageReferences() {
+    const response = await this.request('/local/image-references');
+    return response.image_references || [];
+  }
+
+  async createImageReference(reference) {
+    const response = await this.request('/local/image-references', { method: 'POST', body: reference });
+    return response.image_reference;
+  }
+
+  async updateImageReference(id, changes) {
+    const response = await this.request(`/local/image-references/${encodeURIComponent(id)}`, { method: 'PUT', body: changes });
+    return response.image_reference;
+  }
+
+  async deleteImageReference(id) {
+    return this.request(`/local/image-references/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
   async saveTexts(title, positivePrompt, negativePrompt, imageUrl, characterTabs) {
     return this.request('/local/notes', {
       method: 'POST',

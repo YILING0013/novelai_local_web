@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import copy
+import base64
+import binascii
 import json
 import logging
 import math
@@ -13,6 +15,7 @@ import string
 import threading
 import time
 import uuid
+from io import BytesIO
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from functools import wraps
@@ -31,6 +34,7 @@ from flask import (
     send_file,
 )
 from werkzeug.exceptions import RequestEntityTooLarge
+from PIL import Image as PillowImage
 
 from api_utils.custom_errors import ExposableError
 from api_utils.account_change import (
@@ -41,6 +45,7 @@ from api_utils.account_change import (
     RecoveryJournal,
 )
 from api_utils.local_store import LocalJsonStore, LocalStoreError
+from api_utils.reference_store import ReferenceStore
 from api_utils.image_validation import validate_base64_image, validate_generation_images
 from api_utils.novelai_client import NovelAIClient, NovelAIUpstreamError
 from api_utils.novelai_payload_builder import (
@@ -783,6 +788,90 @@ def _prepare_note(note: Any, inherited_id: str | None = None) -> dict[str, Any]:
     return prepared
 
 
+def _prepare_artist_thread(thread: Any, inherited_id: str | None = None) -> dict[str, Any]:
+    """校验并规范化一条本地画师串记录。"""
+
+    if not isinstance(thread, dict):
+        raise ApiError("artist_thread must be a JSON object.")
+    title = str(thread.get("title") or "").strip()
+    prompt = str(thread.get("prompt") or "").strip()
+    if not title or len(title) > 200:
+        raise ApiError("artist_thread.title must contain 1 to 200 characters.")
+    if len(prompt) > 100_000:
+        raise ApiError("artist_thread.prompt is too long.")
+    thread_id = thread.get("id", inherited_id) or uuid.uuid4().hex
+    if not isinstance(thread_id, str) or not thread_id.strip() or len(thread_id) > 128:
+        raise ApiError("artist_thread.id is invalid.")
+    images = thread.get("images", [])
+    if not isinstance(images, list) or len(images) > 30:
+        raise ApiError("artist_thread.images must be an array with at most 30 entries.")
+    prepared_images = []
+    for image in images:
+        if not isinstance(image, dict):
+            raise ApiError("artist_thread image is invalid.")
+        image_id = str(image.get("id") or uuid.uuid4().hex)
+        filename = image.get("filename")
+        image_url = image.get("image_url")
+        if filename is not None and (not isinstance(filename, str) or Path(filename).name != filename):
+            raise ApiError("artist_thread image filename is invalid.")
+        if image_url is not None and (
+            not isinstance(image_url, str) or not image_url.startswith("/reference_img/")
+        ):
+            raise ApiError("artist_thread image URL is invalid.")
+        if not filename and not image_url:
+            raise ApiError("artist_thread image source is required.")
+        prepared_images.append({
+            "id": image_id,
+            "filename": filename,
+            "image_url": image_url,
+            "original_name": str(image.get("original_name") or filename or "reference image")[:255],
+            "mime_type": str(image.get("mime_type") or "image/png")[:100],
+        })
+    return {
+        "id": thread_id,
+        "title": title,
+        "prompt": prompt,
+        "parameters": copy.deepcopy(thread.get("parameters")) if isinstance(thread.get("parameters"), dict) else None,
+        "images": prepared_images,
+        "created_at": str(thread.get("created_at") or datetime.now(timezone.utc).isoformat()),
+    }
+
+
+def _decode_reference_image(data_url: Any, original_name: Any) -> dict[str, Any]:
+    """Validate entirely in memory and return bytes for the configured SQLite store."""
+
+    if not isinstance(data_url, str) or "," not in data_url:
+        raise ApiError("A valid image data URL is required.", 400, "IMAGE_INVALID")
+    header, encoded = data_url.split(",", 1)
+    if not header.startswith("data:image/") or ";base64" not in header:
+        raise ApiError("A valid image data URL is required.", 400, "IMAGE_INVALID")
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ApiError("The uploaded image is invalid.", 400, "IMAGE_INVALID") from exc
+    if not raw or len(raw) > 30 * 1024 * 1024:
+        raise ApiError("The uploaded image is too large.", 413, "IMAGE_TOO_LARGE")
+    try:
+        with PillowImage.open(BytesIO(raw)) as image:
+            image.verify()
+            image_format = str(image.format or "").lower()
+    except Exception as exc:
+        raise ApiError("The uploaded image is invalid.", 400, "IMAGE_INVALID") from exc
+    extensions = {"png": ".png", "jpeg": ".jpg", "webp": ".webp", "bmp": ".bmp"}
+    extension = extensions.get(image_format)
+    if not extension:
+        raise ApiError("The uploaded image format is not supported.", 400, "IMAGE_FORMAT_UNSUPPORTED")
+    filename = f"{uuid.uuid4().hex}{extension}"
+    return {
+        "id": uuid.uuid4().hex,
+        "filename": filename,
+        "image_url": None,
+        "original_name": str(original_name or filename)[:255],
+        "mime_type": f"image/{'jpeg' if extension == '.jpg' else image_format}",
+        "data": raw,
+    }
+
+
 def _ensure_no_account_recovery() -> None:
     """存在恢复日志时阻断普通登录、图像 mutation 和新账户变更。"""
 
@@ -864,6 +953,10 @@ def create_app(
     app.extensions["local_store"] = LocalJsonStore(
         app.config["DATA_DIR"],
         app.config["LOCAL_STORE_MAX_BYTES"],
+    )
+    app.extensions["reference_store"] = ReferenceStore(
+        app.config["DATA_DIR"],
+        Path(app.config["FRONTEND_OUT_DIR"]).parent / "public",
     )
     app.extensions["local_sessions"] = {}
     app.extensions["session_lock"] = threading.RLock()
@@ -1708,6 +1801,74 @@ def create_app(
         _log_local_json("read", "notes", notes)
         return jsonify({"notes": notes})
 
+    def reference_kind(collection: str) -> str:
+        return "artist" if collection == "artist-threads" else "image"
+
+    def reference_payload_key(collection: str) -> str:
+        return "artist_thread" if collection == "artist-threads" else "image_reference"
+
+    @app.get("/api/local/<collection>")
+    @session_required()
+    def get_references(collection: str) -> Response:
+        if collection not in {"artist-threads", "image-references"}:
+            raise ApiError("The reference collection was not found.", 404, "NOT_FOUND")
+        key = "artist_threads" if collection == "artist-threads" else "image_references"
+        return jsonify({key: app.extensions["reference_store"].list(reference_kind(collection))})
+
+    @app.get("/api/local/reference-images/<image_id>")
+    @session_required()
+    def get_reference_image(image_id: str) -> Response:
+        image = app.extensions["reference_store"].image(image_id)
+        if image is None:
+            raise ApiError("The image was not found.", 404, "IMAGE_NOT_FOUND")
+        return send_file(BytesIO(image["image_data"]), mimetype=image["mime_type"], download_name=image["original_name"])
+
+    @app.post("/api/local/<collection>")
+    @session_required(csrf=True)
+    def create_reference(collection: str) -> tuple[Response, int]:
+        if collection not in {"artist-threads", "image-references"}:
+            raise ApiError("The reference collection was not found.", 404, "NOT_FOUND")
+        payload = _request_json()
+        uploads = payload.get("images", [])
+        if not isinstance(uploads, list) or len(uploads) > 30:
+            raise ApiError("images must contain at most 30 entries.")
+        prepared = _prepare_artist_thread({
+            "title": payload.get("title"), "prompt": payload.get("prompt"),
+            "parameters": payload.get("parameters"), "images": [],
+        })
+        images = [_decode_reference_image(item.get("data_url"), item.get("original_name"))
+                  for item in uploads if isinstance(item, dict)]
+        value = app.extensions["reference_store"].create(reference_kind(collection), prepared, images)
+        return jsonify({reference_payload_key(collection): value}), 201
+
+    @app.put("/api/local/<collection>/<reference_id>")
+    @session_required(csrf=True)
+    def update_reference(collection: str, reference_id: str) -> Response:
+        if collection not in {"artist-threads", "image-references"}:
+            raise ApiError("The reference collection was not found.", 404, "NOT_FOUND")
+        payload = _request_json()
+        current = next((item for item in app.extensions["reference_store"].list(reference_kind(collection)) if item["id"] == reference_id), None)
+        if current is None:
+            raise ApiError("The reference was not found.", 404, "REFERENCE_NOT_FOUND")
+        title = str(payload.get("title", current["title"])).strip()
+        prompt = str(payload.get("prompt", current["prompt"])).strip()
+        if not title or len(title) > 200 or len(prompt) > 100_000:
+            raise ApiError("The reference fields are invalid.")
+        value = app.extensions["reference_store"].update(
+            reference_kind(collection), reference_id, title, prompt,
+            payload.get("parameters"), "parameters" in payload,
+        )
+        return jsonify({reference_payload_key(collection): value})
+
+    @app.delete("/api/local/<collection>/<reference_id>")
+    @session_required(csrf=True)
+    def delete_reference(collection: str, reference_id: str) -> Response:
+        if collection not in {"artist-threads", "image-references"}:
+            raise ApiError("The reference collection was not found.", 404, "NOT_FOUND")
+        if not app.extensions["reference_store"].delete(reference_kind(collection), reference_id):
+            raise ApiError("The reference was not found.", 404, "REFERENCE_NOT_FOUND")
+        return jsonify({"deleted": True, "id": reference_id})
+
     @app.post("/api/local/notes")
     @session_required(csrf=True)
     def create_note() -> tuple[Response, int]:
@@ -1885,7 +2046,7 @@ def create_app(
         return send_file(index_path, conditional=True)
 
     app.logger.info(
-        "event=service_initialized bind=%s:%d threads=4 storage=local_json "
+        "event=service_initialized bind=%s:%d threads=4 storage=local_json+sqlite_references "
         "frontend_built=%s upstream_host=image.novelai.net upstream_timeout_seconds=%.1f",
         app.config["HOST"],
         app.config["PORT"],

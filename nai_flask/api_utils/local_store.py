@@ -28,6 +28,8 @@ class LocalJsonStore:
             "enabled": True,
         },
         "notes": [],
+        "artist-threads": [],
+        "image-references": [],
     }
     DEFAULT_MAX_BYTES = 10 * 1024 * 1024
     SCHEMA_VERSION = 1

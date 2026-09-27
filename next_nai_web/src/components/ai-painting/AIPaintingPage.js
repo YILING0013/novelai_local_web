@@ -1026,6 +1026,12 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
     });
   }, []);
 
+  const refreshSeedAfterSuccessfulImage = useCallback(() => {
+    // NovelAI seeds are unsigned 32-bit values. Refresh only after an image
+    // succeeds so a failed or cancelled request remains reproducible.
+    handleParamChange('seed', Math.floor(Math.random() * 4294967295));
+  }, [handleParamChange]);
+
   const applyMetadataToCurrentParams = useCallback((parsedParams, {
     successMessage = t('painting.workspace.notifications.imageParametersLoaded'),
     warningMessage = t('painting.workspace.errors.partialParameterApply'),
@@ -1269,6 +1275,48 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
     });
   }, [applyMetadataToCurrentParams, t]);
 
+  useEffect(() => {
+    const applyReferenceParameters = (event) => {
+      const parameters = event.detail;
+      if (!parameters) return;
+      handleApplyImageParameters(parameters);
+      window.localStorage.removeItem('novelai:pending-reference-parameters');
+    };
+    const applyArtistPrompt = (event) => {
+      const artistPrompt = String(event.detail || '').trim();
+      if (!artistPrompt) return;
+      setPositivePrompt((current) => current.trim() ? `${current.trim()}, ${artistPrompt}` : artistPrompt);
+      window.localStorage.removeItem('novelai:pending-artist-prompt');
+      showNotification('画师串已添加到正面提示词。', 'success');
+    };
+    const setTemplatePrompt = (event) => {
+      const prompt = String(event.detail || '').trim();
+      if (!prompt) return;
+      setPositivePrompt(prompt);
+      window.localStorage.removeItem('novelai:pending-positive-prompt');
+      showNotification('提示词模板已应用。', 'success');
+    };
+
+    window.addEventListener('novelai:reference-parameters', applyReferenceParameters);
+    window.addEventListener('novelai:artist-prompt', applyArtistPrompt);
+    window.addEventListener('novelai:set-positive-prompt', setTemplatePrompt);
+
+    const pendingParameters = window.localStorage.getItem('novelai:pending-reference-parameters');
+    if (pendingParameters) {
+      try { applyReferenceParameters({ detail: JSON.parse(pendingParameters) }); } catch { window.localStorage.removeItem('novelai:pending-reference-parameters'); }
+    }
+    const pendingArtist = window.localStorage.getItem('novelai:pending-artist-prompt');
+    if (pendingArtist) applyArtistPrompt({ detail: pendingArtist });
+    const pendingPositivePrompt = window.localStorage.getItem('novelai:pending-positive-prompt');
+    if (pendingPositivePrompt) setTemplatePrompt({ detail: pendingPositivePrompt });
+
+    return () => {
+      window.removeEventListener('novelai:reference-parameters', applyReferenceParameters);
+      window.removeEventListener('novelai:artist-prompt', applyArtistPrompt);
+      window.removeEventListener('novelai:set-positive-prompt', setTemplatePrompt);
+    };
+  }, [handleApplyImageParameters, setPositivePrompt, showNotification]);
+
   // 图像/视频生成请求
   const handleGenerate = async () => {
     let requestedModel = generationParams.model;
@@ -1380,6 +1428,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
             }
 
             generatedPreviewCount += 1;
+            refreshSeedAfterSuccessfulImage();
             if (previewIndex < previewCount - 1) {
               await new Promise((resolve) => window.setTimeout(resolve, 15_000));
             }
@@ -1411,6 +1460,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
           const finalBatchStatus = await generateBatchImages(params,
             // 为批量生成添加回调，处理成功生成的图像自动保存
             (newImage) => {
+              refreshSeedAfterSuccessfulImage();
               // 如果启用了自动保存，则保存每张生成的图像
               if (imageSettings.autoSaveEnabled) {
                 setTimeout(() => {
@@ -1501,6 +1551,8 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
             throw createWorkspaceError('GENERATION_FAILED');
           }
         }
+
+        refreshSeedAfterSuccessfulImage();
 
         showNotification(t('painting.workspace.notifications.imageGenerated'), 'success');
 
@@ -2155,6 +2207,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                   onError={reportWorkspaceFailure}
                   disableVibeAction={isV5Model}
                   isUpscaling={isUpscaling}
+                  showReferenceGallery={false}
                 />
               </Paper>
 

@@ -117,6 +117,9 @@ const coreenUS = {
   },
   "pages": {
     "aiPainting": "AI Painting",
+    "artistReference": "Artist References",
+    "imageReference": "Image References",
+    "promptTemplate": "Prompt Templates",
     "settings": "Settings"
   },
   "tools": {

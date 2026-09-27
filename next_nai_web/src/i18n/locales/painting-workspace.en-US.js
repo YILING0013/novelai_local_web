@@ -412,6 +412,8 @@ const paintingWorkspaceenUS = {
         "apply": "Apply"
       },
       "gallery": {
+        "resultEmptyTitle": "Generated images will appear here",
+        "resultEmptyDescription": "Set your prompt and parameters, then generate. The inspiration gallery is now under Image References.",
         "officialUpscale": "Official Upscale",
         "officialUpscaling": "Official Upscale in progress…",
         "needInspiration": "Need inspiration?",
