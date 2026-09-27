@@ -355,7 +355,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
       const defaults = {
         width: 1024,
         height: 1024,
-        steps: 23,
+        steps: 28,
         guidanceScale: 5,
         seed: '',
         batchSize: 1,
@@ -390,7 +390,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
       return {
         width: 1024,
         height: 1024,
-        steps: 23,
+        steps: 28,
         guidanceScale: 5,
         seed: '',
         batchSize: 1,

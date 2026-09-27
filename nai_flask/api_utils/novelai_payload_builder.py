@@ -36,7 +36,7 @@ V5_TEXT_TO_IMAGE_DEFAULTS = {
     "height": 1216,
     "scale": 7,
     "sampler": "k_euler_ancestral",
-    "steps": 23,
+    "steps": 28,
     "n_samples": 1,
     "cfg_rescale": 0,
     "noise_schedule": "karras",
@@ -529,7 +529,7 @@ def build_novelai_payload(
     else:
         max_resolution_product = 1048576
         max_dimension = 2048
-        max_steps = 23 if model_name in V5_MODELS else 28
+        max_steps = 28 if model_name in V5_MODELS else 28
 
     current_resolution = (data.get("width"), data.get("height"))
     if not _is_allowed_resolution(

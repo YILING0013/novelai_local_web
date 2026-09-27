@@ -5,7 +5,7 @@ export const NOVELAI_V5_MODEL_IDS = Object.freeze([
 
 const NOVELAI_V5_MODEL_ID_SET = new Set(NOVELAI_V5_MODEL_IDS);
 export const NOVELAI_V5_CHARACTER_WARNING_THRESHOLD = 25;
-export const NOVELAI_V5_STANDARD_MAX_STEPS = 23;
+export const NOVELAI_V5_STANDARD_MAX_STEPS = 28;
 export const NOVELAI_V5_LARGE_MAX_STEPS = 50;
 
 export const NOVELAI_V5_DEFAULT_PARAMS = Object.freeze({
