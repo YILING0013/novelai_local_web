@@ -17,6 +17,7 @@ import {
   normalizeNovelAISmeaParams,
   removeNovelAIUCPresetParams,
   sanitizeNovelAIV5GenerationParams,
+  sanitizeNovelAIReferenceParams,
 } from './utils/modelUtils';
 import apiClient from '../../utils/ApiClient';
 import {
@@ -32,17 +33,13 @@ import {
   DialogContent,
   DialogContentText,
   DialogActions,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
+  Tooltip,
   useTheme,
   Snackbar,
   Alert,
   Chip
 } from '@mui/material';
 import {
-  ExpandMore as ExpandMoreIcon,
-  Tune as TuneIcon,
   Delete as DeleteIcon,
   Image as ImageIcon,
 } from '@mui/icons-material';
@@ -53,7 +50,7 @@ import {
 } from './utils/parameterMapping';
 import { extractMetadataFromFile } from './utils/metadataUtils';
 import ImageParameterPanel from './ParameterPanelUI/ImageParameterPanel';
-import BasicParameters from './ParameterPanelUI/ImageParameterPanelUI/BasicParameters';
+import BasicParameters, { ExtraConfiguration } from './ParameterPanelUI/ImageParameterPanelUI/BasicParameters';
 import { sha256 } from './utils/cryptoUtils';
 import { createThumbnail } from './utils/imageUtils';
 // [修改] 导入新增的数据库函数
@@ -101,6 +98,7 @@ const extractBase64FromDataUrl = (dataUrl) => {
 // 主组件
 const ParameterPanel = ({
   params: externalParams,
+  isInpaintMode = false,
   onParamChange,
   getAllParametersRef = null,
   expandedPanels = {},
@@ -737,9 +735,10 @@ const ParameterPanel = ({
         setImagePreview(exportData.editedImage);
         setEditedImageData(exportData.editedImage);
       }
-      if (exportData.directorTools && exportData.directorTools.type) {
-        setDirectorToolParams({ type: exportData.directorTools.type, params: exportData.directorTools.params || { enabled: true } });
-      }
+      // 保存时同步当前选择，允许用户取消之前已保存的编辑效果。
+      setDirectorToolParams(exportData.directorTools?.type
+        ? { type: exportData.directorTools.type, params: exportData.directorTools.params || { enabled: true } }
+        : null);
     }
     setEditorOpen(false);
   };
@@ -1303,7 +1302,7 @@ const ParameterPanel = ({
   });
 
   const getVibeTransferData = useCallback(() => {
-    if (!isNovelAIVibeModel(params.model)) {
+    if (!isNovelAIVibeModel(params.model, isInpaintMode)) {
       return null;
     }
 
@@ -1336,7 +1335,7 @@ const ParameterPanel = ({
       informationExtracted: activeVibes.map(item => item.informationExtracted),
       referenceStrength: activeVibes.map(item => item.referenceStrength)
     };
-  }, [vibeImages, params.model, params.director_reference_images_cached]);
+  }, [vibeImages, params.model, params.director_reference_images_cached, isInpaintMode]);
 
   const getCharacterData = useCallback(() => {
     if (isNovelAIV5Model(params.model)) {
@@ -1386,10 +1385,10 @@ const ParameterPanel = ({
         ...(directorToolParams && { directorTools: { active: true, tool: directorToolParams.type, params: directorToolParams.params || { enabled: true } } })
       };
     }
-    return sanitizeNovelAIV5GenerationParams(allParams);
+    return sanitizeNovelAIReferenceParams(sanitizeNovelAIV5GenerationParams(allParams), isInpaintMode);
   }, [params, positivePrompt, negativePrompt, randomPromptEnabled, randomPromptConfig,
     getVibeTransferData, getCharacterData, imagePreview, editedImageData,
-    directorToolParams]);
+    directorToolParams, isInpaintMode]);
 
   useEffect(() => {
     if (getAllParametersRef) getAllParametersRef.current = getAllParameters;
@@ -1543,7 +1542,8 @@ const ParameterPanel = ({
     && params.director_reference_images_cached
     && params.director_reference_images_cached.length > 0
   );
-  const hasActiveVibes = vibeImages.some(item => item.isTemporarilyDisabled !== true);
+  const hasActiveVibes = isNovelAIVibeModel(params.model, isInpaintMode)
+    && vibeImages.some(item => item.isTemporarilyDisabled !== true);
 
   return (
     <Box sx={{ p: 0 }}>
@@ -1551,33 +1551,18 @@ const ParameterPanel = ({
         <Alert onClose={handleCloseToast} severity={toast.severity} sx={{ width: '100%' }}>{toast.message}</Alert>
       </Snackbar>
 
-      {/* 模型选择与基础参数 Accordion */}
-      <Accordion
-        expanded={expandedPanels.basic}
-        onChange={(_, isExpanded) => onExpandedPanelsChange('basic', isExpanded)}
-        disableGutters
-        sx={{ boxShadow: 'none', '&::before': { display: 'none' }, borderRadius: 2, overflow: 'hidden', '&.Mui-expanded': { margin: 0 } }}
-      >
-        <AccordionSummary
-          expandIcon={<ExpandMoreIcon />}
-          sx={{
-            minHeight: 40,
-            backgroundColor: expandedPanels.basic ? 'action.hover' : 'transparent',
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <TuneIcon sx={{ mr: 1, color: 'text.secondary', opacity: 0.7 }} />
-            <Typography variant="subtitle2" fontWeight="medium">{t('painting.workspace.parameters.modelAndBasic')}</Typography>
-          </Box>
-        </AccordionSummary>
-        <AccordionDetails sx={{ px: 1, pb: 1, pt: 1 }}>
-          <FormControl fullWidth variant="outlined" size="small" sx={{ mt: 1 }}>
+      {/* 常用设置直接展开，用留白区分模型和参数，不再套收折标题。 */}
+      <Box component="section" aria-label={t('painting.workspace.parameters.modelAndBasic')} sx={{ pt: 2.5, borderTop: 1, borderColor: 'divider' }}>
+        <Box sx={{ mb: 2.5 }}>
+          <FormControl fullWidth variant="outlined" size="small" sx={{ minWidth: 0 }}>
             <InputLabel id="model-select-label">{t('painting.workspace.parameters.aiModel')}</InputLabel>
             <Select
               labelId="model-select-label"
+              label={t('painting.workspace.parameters.aiModel')}
               value={params.model}
               onChange={(e) => handleParamChange('model', e.target.value)}
-              label={t('painting.workspace.parameters.aiModel')}
+              renderValue={(selected) => modelOptions.find((option) => option.value === selected)?.label || selected}
+              sx={{ height: 44, fontSize: '0.9375rem', borderRadius: 1.5 }}
             >
               {modelOptions.map((option) => (
                 <MenuItem key={option.value} value={option.value}>
@@ -1592,7 +1577,8 @@ const ParameterPanel = ({
               ))}
             </Select>
           </FormControl>
-
+        </Box>
+          <Box sx={{ pb: 2.5 }}>
           {isNovelAIV5Model(params.model) && (
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
               {t('painting.workspace.parameters.modelV5Limitations')}
@@ -1611,17 +1597,14 @@ const ParameterPanel = ({
               handleSizePresetClick={handleSizePresetClick}
               handleClearSeed={handleClearSeed}
               handleRefreshSeed={handleRefreshSeed}
-              handleSmeaChange={handleSmeaChange}
-              handleDynChange={handleDynChange}
-              handleResetParamsConfirm={handleResetParamsConfirm}
               expandedPanels={expandedPanels}
               onExpandedPanelsChange={onExpandedPanelsChange}
               onReferenceImageChange={handleReferenceImageChange}
               isV5Model={isNovelAIV5Model(params.model)}
               imageReferenceDisabled={hasActiveVibes}
           />
-        </AccordionDetails>
-      </Accordion>
+        </Box>
+      </Box>
 
       <ImageParameterPanel
           params={{ ...normalizeNovelAISmeaParams(params), isV4Model: isV4Model(params.model) }}
@@ -1667,9 +1650,20 @@ const ParameterPanel = ({
           directorToolParams={directorToolParams}
           handleVibeToggleDisabled={handleVibeToggleDisabled}
           handleCharacterToggleDisabled={handleCharacterToggleDisabled}
-          vibeDisabled={hasImageReference}
+          vibeDisabled={hasImageReference || !isNovelAIVibeModel(params.model, isInpaintMode)}
+          vibeBlockedMessageKey={isInpaintMode && isV4Model(params.model)
+            ? 'painting.workspace.parameters.vibeBlockedByInpaint'
+            : undefined}
           imageReferenceDisabled={hasActiveVibes}
           isV5Model={isNovelAIV5Model(params.model)}
+      />
+
+      <ExtraConfiguration
+          params={{ ...normalizeNovelAISmeaParams(params), isV4Model: isV4Model(params.model) }}
+          handleParamChange={handleParamChange}
+          handleSmeaChange={handleSmeaChange}
+          handleDynChange={handleDynChange}
+          handleResetParamsConfirm={handleResetParamsConfirm}
       />
 
       <Button variant="outlined" size="small" onClick={debugParams} sx={{ mt: 2, display: process.env.NODE_ENV === 'production' ? 'none' : 'block' }}>

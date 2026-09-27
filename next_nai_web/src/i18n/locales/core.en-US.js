@@ -150,25 +150,40 @@ const coreenUS = {
       "random": "Random string"
     },
     "backgroundPresets": {
-      "classic": "Classic",
-      "warm": "Warm",
-      "cool": "Cool",
-      "minimal": "Minimal",
-      "cream": "Cream",
-      "deep": "Deep",
-      "blue": "Deep blue",
-      "purple": "Deep purple",
-      "green": "Deep green"
+      "light": {
+        "graphite": "Soft white",
+        "sandstone": "Sandstone",
+        "mist": "Morning mist",
+        "sage": "Pale moss",
+        "dusk": "Dusk",
+        "rose": "Rose ash",
+        "coffee": "Oat",
+        "silver": "Silver"
+      },
+      "dark": {
+        "graphite": "Graphite",
+        "sandstone": "Smoked sand",
+        "mist": "Night mist",
+        "sage": "Deep moss",
+        "dusk": "Twilight",
+        "rose": "Smoked rose",
+        "coffee": "Espresso",
+        "silver": "Steel"
+      }
     },
     "colorNames": {
-      "teal": "Deep teal",
-      "blue": "Blue",
-      "cyan": "Cyan",
-      "green": "Green",
-      "amber": "Amber",
-      "orange": "Orange",
-      "red": "Red",
-      "pink": "Pink"
+      "mistBlue": "Mist blue",
+      "graphite": "Graphite",
+      "ocean": "Ocean",
+      "celadon": "Celadon",
+      "sage": "Sage",
+      "olive": "Olive",
+      "wheat": "Wheat",
+      "clay": "Clay",
+      "rose": "Dusty rose",
+      "mauve": "Mauve",
+      "indigo": "Indigo",
+      "cocoa": "Cocoa"
     },
     "savedMessage": "Settings saved. Some changes take effect after a refresh.",
     "saveFailed": "The settings could not be saved. Please try again.",
@@ -184,7 +199,7 @@ const coreenUS = {
     "primaryColor": "Primary color",
     "customColorCode": "Custom color value",
     "invalidColor": "Enter a valid color value.",
-    "colorExample": "For example, #00796B or rgb(0, 121, 107)",
+    "colorExample": "For example, #58779A or rgb(88, 119, 154)",
     "colorPicker": "Use color picker",
     "backgroundSettings": "Background settings",
     "backgroundPreset": "Background presets",

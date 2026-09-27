@@ -70,7 +70,11 @@ const paintingWorkspaceenUS = {
         "uploadFormatNotSupported": "This image format is not supported. Use PNG, JPG, JPEG, WEBP, or BMP.",
         "uploadRateLimited": "Too many images were uploaded. Please try again later.",
         "uploadReadFailed": "The uploaded image could not be read. Choose another file and try again.",
-        "uploadSaveFailed": "The uploaded image could not be saved. Please try again later."
+        "uploadSaveFailed": "The uploaded image could not be saved. Please try again later.",
+        "novelAIInpaintModelNotSupported": "V5 Curated does not currently support inpainting. Switch to V5 Full or V4.5.",
+        "novelAIInpaintVibeNotSupported": "V4/V4.5 inpainting does not support Vibe. Remove Vibe and try again.",
+        "novelAIReferenceModelNotSupported": "Character/Precise Reference is only supported by V4.5 models, including inpainting.",
+        "novelAIReferenceVibeConflict": "Character/Precise Reference and Vibe cannot be used together."
       },
       "notifications": {
         "completed": "Completed.",
@@ -173,7 +177,7 @@ const paintingWorkspaceenUS = {
         "noEditEffects": "No edit effects applied",
         "modelAndBasic": "Model and basic parameters",
         "aiModel": "AI model",
-        "modelV5Limitations": "V5 supports text-to-image, image-to-image, inpainting, and character control. Character Reference and Vibe are unavailable.",
+        "modelV5Limitations": "V5 supports text-to-image, image-to-image, and character control. Full also supports inpainting; Curated does not. Character Reference and Vibe are unavailable.",
         "logParameters": "Log parameters to console",
         "resetConfirmationTitle": "Reset all parameters?",
         "resetConfirmationDescription": "This resets every generation parameter for the current model and cannot be undone.",
@@ -318,7 +322,8 @@ const paintingWorkspaceenUS = {
         "vibeCount": "{count} Vibes",
         "clickOrDropMultipleImages": "Click or drop multiple images",
         "downloadBundle": "Download bundle",
-        "downloadZip": "Download ZIP"
+        "downloadZip": "Download ZIP",
+        "vibeBlockedByInpaint": "Vibe is paused during inpainting and resumes when you exit inpainting."
       },
       "batch": {
         "statusTitle": "Batch generation status"
@@ -475,8 +480,8 @@ const paintingWorkspaceenUS = {
         "importNotesFailed": "Could not import notes.",
         "notesImported": "Notes imported.",
         "title": "Prompt",
-        "positiveTab": "Positive prompt",
-        "negativeTab": "Negative prompt",
+        "positiveTab": "Positive",
+        "negativeTab": "Negative",
         "randomPrompt": "Random prompt",
         "notebook": "Prompt notebook",
         "saveToNotebook": "Save to notebook",

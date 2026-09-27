@@ -7,11 +7,11 @@ export const PAGE_IDS = Object.freeze({
 });
 
 export const PAGE_COLOR_DEFAULTS = Object.freeze({
-  [PAGE_IDS.AI_PAINTING]: '#00796B',
-  [PAGE_IDS.ARTIST_REFERENCE]: '#7B1FA2',
-  [PAGE_IDS.IMAGE_REFERENCE]: '#1976D2',
-  [PAGE_IDS.PROMPT_TEMPLATE]: '#00838F',
-  [PAGE_IDS.SETTINGS]: '#E64A19',
+  [PAGE_IDS.AI_PAINTING]: '#58779A',
+  [PAGE_IDS.ARTIST_REFERENCE]: '#7B668F',
+  [PAGE_IDS.IMAGE_REFERENCE]: '#53678E',
+  [PAGE_IDS.PROMPT_TEMPLATE]: '#527D80',
+  [PAGE_IDS.SETTINGS]: '#66717D',
 });
 
 export const LEGACY_PAGE_COLOR_NAMES = Object.freeze({
@@ -81,7 +81,7 @@ export function migrateLegacyPageColors(storage) {
  * Returns:
  *   string: 页面颜色。
  */
-export function readPageColor(storage, pageId, fallback = '#00796B') {
+export function readPageColor(storage, pageId, fallback = '#58779A') {
   return storage?.getItem(getPageColorStorageKey(pageId))
     || PAGE_COLOR_DEFAULTS[pageId]
     || fallback;

@@ -59,8 +59,7 @@ import {
 } from '@mui/icons-material';
 import AIPaintingPage from '@/components/ai-painting/AIPaintingPage';
 import SettingsPage from '@/components/settings/SettingsPage';
-import ArtistReferencePage from '@/components/references/ArtistReferencePage';
-import ImageReferencePage from '@/components/references/ImageReferencePage';
+import ReferenceLibraryPage from '@/components/references/ReferenceLibraryPage';
 import PromptTemplatePage from '@/components/references/PromptTemplatePage';
 import apiClient from '@/utils/ApiClient';
 import { useI18n } from '@/i18n/I18nProvider';
@@ -552,8 +551,8 @@ export default function MainPage() {
     if (storage) migrateLegacyPageColors(storage);
     return [
       { id: PAGE_IDS.AI_PAINTING, labelKey: 'pages.aiPainting', icon: <BrushIcon />, component: <AIPaintingPage />, color: readPageColor(storage, PAGE_IDS.AI_PAINTING), confirmOnClose: true },
-      { id: PAGE_IDS.ARTIST_REFERENCE, labelKey: 'pages.artistReference', icon: <StyleIcon />, component: <ArtistReferencePage />, color: readPageColor(storage, PAGE_IDS.ARTIST_REFERENCE), confirmOnClose: false },
-      { id: PAGE_IDS.IMAGE_REFERENCE, labelKey: 'pages.imageReference', icon: <CollectionsIcon />, component: <ImageReferencePage />, color: readPageColor(storage, PAGE_IDS.IMAGE_REFERENCE), confirmOnClose: false },
+      { id: PAGE_IDS.ARTIST_REFERENCE, labelKey: 'pages.artistReference', icon: <StyleIcon />, component: <ReferenceLibraryPage kind="artist-threads" />, color: readPageColor(storage, PAGE_IDS.ARTIST_REFERENCE), confirmOnClose: false },
+      { id: PAGE_IDS.IMAGE_REFERENCE, labelKey: 'pages.imageReference', icon: <CollectionsIcon />, component: <ReferenceLibraryPage kind="image-references" />, color: readPageColor(storage, PAGE_IDS.IMAGE_REFERENCE), confirmOnClose: false },
       { id: PAGE_IDS.PROMPT_TEMPLATE, labelKey: 'pages.promptTemplate', icon: <TemplateIcon />, component: <PromptTemplatePage />, color: readPageColor(storage, PAGE_IDS.PROMPT_TEMPLATE), confirmOnClose: false },
       { id: PAGE_IDS.SETTINGS, labelKey: 'pages.settings', icon: <SettingsIcon />, color: readPageColor(storage, PAGE_IDS.SETTINGS), confirmOnClose: false },
     ];

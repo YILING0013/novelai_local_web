@@ -5,6 +5,8 @@ import coreZhCN from './locales/core.zh-CN';
 import coreEnUS from './locales/core.en-US';
 import paintingZhCN from './locales/painting.zh-CN';
 import paintingEnUS from './locales/painting.en-US';
+import referencesZhCN from './locales/references.zh-CN';
+import referencesEnUS from './locales/references.en-US';
 import {
   DEFAULT_LOCALE,
   LOCALE_STORAGE_KEY,
@@ -17,8 +19,8 @@ import {
 } from './utils.mjs';
 
 const dictionaries = Object.freeze({
-  'zh-CN': mergeLocaleDomains(coreZhCN, paintingZhCN),
-  'en-US': mergeLocaleDomains(coreEnUS, paintingEnUS),
+  'zh-CN': mergeLocaleDomains(coreZhCN, paintingZhCN, referencesZhCN),
+  'en-US': mergeLocaleDomains(coreEnUS, paintingEnUS, referencesEnUS),
 });
 
 const I18nContext = createContext(null);

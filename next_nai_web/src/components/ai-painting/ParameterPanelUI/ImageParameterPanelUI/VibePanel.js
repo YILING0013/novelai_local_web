@@ -90,11 +90,11 @@ const VibeImageComponent = ({
   };
 
   return (
-    <Card elevation={0} sx={{ mb: 1, borderRadius: 1.5, overflow: 'hidden', border: '1px solid', borderColor: isDisabled ? 'warning.light' : 'divider' }}>
+    <Card elevation={0} sx={{ mb: 2, borderRadius: 1, bgcolor: 'transparent', boxShadow: 'none', overflow: 'hidden', border: '1px solid', borderColor: isDisabled ? 'warning.light' : 'divider' }}>
       <Box sx={{ 
         display: 'flex', 
-        p: 1,
-        gap: 1,
+        p: 2,
+        gap: 2,
         flexDirection: 'row',
         alignItems: 'center',
         opacity: isDisabled ? 0.76 : 1,
@@ -114,7 +114,7 @@ const VibeImageComponent = ({
             position: 'relative',
             width: '100%',
             aspectRatio: '1 / 1',
-            borderRadius: 1.5,
+            borderRadius: 0.75,
             overflow: 'hidden',
             backgroundColor: 'black',
           }}>
@@ -324,6 +324,7 @@ const VibePanel = ({
   onDownloadZip,
   // 接收禁用状态
   blocked = false,
+  blockedMessageKey = 'painting.workspace.parameters.vibeBlockedByReferences',
   handleVibeToggleDisabled,
 }) => {
   const { t } = useI18n();
@@ -336,37 +337,45 @@ const VibePanel = ({
       onChange={(_, isExpanded) => onExpandedPanelsChange('vibe', isExpanded)}
       disableGutters
       sx={{
+        m: 0,
+        border: 0,
+        borderTop: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 0,
+        bgcolor: 'transparent',
+        backgroundImage: 'none',
         boxShadow: 'none',
         '&::before': { display: 'none' },
-        mt: 1,
-        borderRadius: 2,
-        overflow: 'hidden',
-        '&.Mui-expanded': { margin: '8px 0 0 0' }
+        '&:first-of-type, &:last-of-type': { borderRadius: 0 },
+        '&.Mui-expanded': { margin: 0 },
       }}
     >
       <AccordionSummary
-        expandIcon={<ExpandMoreIcon />}
+        expandIcon={<ExpandMoreIcon sx={{ fontSize: 18 }} />}
         sx={{
-          minHeight: 40,
-          backgroundColor: expandedPanels.vibe ? 'action.hover' : 'transparent',
-          '&.Mui-expanded': { minHeight: 40 },
+          minHeight: 44,
+          px: 0,
+          py: 0,
+          bgcolor: 'transparent',
+          '&.Mui-expanded': { minHeight: 44 },
+          '& .MuiAccordionSummary-content, & .MuiAccordionSummary-content.Mui-expanded': { margin: 0 },
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
-          <StyleIcon sx={{ mr: 1, color: 'text.secondary', opacity: 0.7 }} />
-          <Typography variant="subtitle2" fontWeight="medium">
+          <StyleIcon sx={{ mr: 1, fontSize: 18, color: 'text.secondary' }} />
+          <Typography sx={{ fontSize: 15, fontWeight: 500 }}>
             {t('painting.workspace.parameters.vibeTransfer')}
           </Typography>
         </Box>
       </AccordionSummary>
-      <AccordionDetails sx={{ p: 1.25, pt: 0.75, position: 'relative' }}>
+      <AccordionDetails sx={{ px: 0, py: 2, position: 'relative' }}>
         {blocked && (
           <Alert severity="warning" variant="outlined" sx={{ mb: 1, py: 0 }}>
-            {t('painting.workspace.parameters.vibeBlockedByReferences')}
+            {t(blockedMessageKey)}
           </Alert>
         )}
 
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+        <Typography color="text.secondary" sx={{ display: 'block', mb: 2, fontSize: 14, lineHeight: 1.6 }}>
           {params.isV4Model
             ? t('painting.workspace.parameters.vibeV4Description')
             : t('painting.workspace.parameters.vibeV3Description')}
@@ -387,15 +396,16 @@ const VibePanel = ({
               data-drop-zone="vibe"
               sx={{
                 mt: 1,
-                mb: 1.5,
-                height: 56,
-                border: '2px dashed',
+                mb: 2,
+                minHeight: 80,
+                p: 2,
+                border: '1px dashed',
                 borderColor: isVibeDragging ? 'primary.main' : 'divider',
                 borderRadius: 1,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                backgroundColor: isVibeDragging ? 'rgba(0, 0, 0, 0.04)' : 'transparent',
+                backgroundColor: isVibeDragging ? 'action.hover' : 'transparent',
                 transition: 'all 0.2s',
                 cursor: blocked ? 'not-allowed' : 'pointer',
                 opacity: blocked ? 0.5 : 1,
@@ -412,7 +422,7 @@ const VibePanel = ({
             >
               <Box sx={{ display: 'flex', alignItems: 'center', textAlign: 'center' }}>
                 <UploadIcon sx={{ mr: 1, color: isVibeDragging ? 'primary.main' : 'text.secondary' }} />
-                <Typography variant="body2" color={isVibeDragging ? 'primary.main' : 'text.secondary'}>
+                <Typography sx={{ fontSize: 14 }} color={isVibeDragging ? 'primary.main' : 'text.secondary'}>
                   {isVibeDragging
                     ? t('painting.workspace.parameters.releaseToUploadFile')
                     : t('painting.workspace.parameters.clickOrDropVibeFile')}
@@ -421,12 +431,12 @@ const VibePanel = ({
             </Box>
 
             {vibeImages.length > 0 && (
-              <Alert severity="info" sx={{ mb: 1, py: 0 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
                 {t('painting.workspace.parameters.vibeCount', {
                   count: vibeImages.length,
                   enabled: enabledVibeCount,
                 })}
-              </Alert>
+              </Typography>
             )}
           </>
         ) : (
@@ -444,15 +454,16 @@ const VibePanel = ({
               data-drop-zone="vibe"
               sx={{
                 mt: 0.5,
-                mb: 1,
-                height: 52,
-                border: '2px dashed',
+                mb: 2,
+                minHeight: 80,
+                p: 2,
+                border: '1px dashed',
                 borderColor: isVibeDragging ? 'primary.main' : 'divider',
                 borderRadius: 1,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                backgroundColor: isVibeDragging ? 'rgba(0, 0, 0, 0.04)' : 'transparent',
+                backgroundColor: isVibeDragging ? 'action.hover' : 'transparent',
                 transition: 'all 0.2s',
                 cursor: blocked ? 'not-allowed' : 'pointer',
                 opacity: blocked ? 0.5 : 1,
@@ -469,7 +480,7 @@ const VibePanel = ({
             >
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
                 <UploadIcon sx={{ mr: 1, color: isVibeDragging ? 'primary.main' : 'text.secondary' }} />
-                <Typography variant="body2" color={isVibeDragging ? 'primary.main' : 'text.secondary'}>
+                <Typography sx={{ fontSize: 14 }} color={isVibeDragging ? 'primary.main' : 'text.secondary'}>
                   {isVibeDragging
                     ? t('painting.workspace.parameters.releaseToUploadImage')
                     : t('painting.workspace.parameters.clickOrDropMultipleImages')}
@@ -501,7 +512,7 @@ const VibePanel = ({
           </Box>
         )}
 
-        <Box sx={{ maxHeight: 400, overflowY: 'auto', pr: 1 }}>
+        <Box sx={{ maxHeight: 400, overflowY: 'auto', pr: 0.5 }}>
           {vibeImages.map((item, index) => (
             <VibeImageComponent
               key={item.id}

@@ -13,7 +13,7 @@ export const NOVELAI_V5_DEFAULT_PARAMS = Object.freeze({
   height: 1216,
   guidanceScale: 7,
   sampler: 'k_euler_ancestral',
-  steps: NOVELAI_V5_STANDARD_MAX_STEPS,
+  steps: 23,
   batchSize: 1,
   promptGuidanceRescale: 0,
   noiseSchedule: 'karras',

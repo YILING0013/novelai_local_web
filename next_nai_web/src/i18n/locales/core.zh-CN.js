@@ -150,25 +150,40 @@ const corezhCN = {
       "random": "随机字符串"
     },
     "backgroundPresets": {
-      "classic": "经典",
-      "warm": "少女",
-      "cool": "清爽",
-      "minimal": "简约",
-      "cream": "奶油",
-      "deep": "深邃",
-      "blue": "深蓝",
-      "purple": "深紫",
-      "green": "深绿"
+      "light": {
+        "graphite": "柔白",
+        "sandstone": "砂岩",
+        "mist": "薄雾",
+        "sage": "浅苔",
+        "dusk": "暮紫",
+        "rose": "玫瑰灰",
+        "coffee": "燕麦",
+        "silver": "银灰"
+      },
+      "dark": {
+        "graphite": "石墨",
+        "sandstone": "烟砂",
+        "mist": "夜雾",
+        "sage": "深苔",
+        "dusk": "暮夜",
+        "rose": "烟玫瑰",
+        "coffee": "浓咖啡",
+        "silver": "钢灰"
+      }
     },
     "colorNames": {
-      "teal": "深青色",
-      "blue": "蓝色",
-      "cyan": "青绿色",
-      "green": "绿色",
-      "amber": "琥珀色",
-      "orange": "橙色",
-      "red": "红色",
-      "pink": "粉色"
+      "mistBlue": "雾蓝",
+      "graphite": "石墨灰",
+      "ocean": "深海蓝",
+      "celadon": "青瓷",
+      "sage": "鼠尾草",
+      "olive": "橄榄",
+      "wheat": "麦穗",
+      "clay": "陶土",
+      "rose": "藕粉",
+      "mauve": "灰紫",
+      "indigo": "靛青",
+      "cocoa": "可可"
     },
     "savedMessage": "设置已保存，部分设置在刷新页面后生效",
     "saveFailed": "设置保存失败，请重试。",
@@ -184,7 +199,7 @@ const corezhCN = {
     "primaryColor": "主题颜色",
     "customColorCode": "自定义颜色代码",
     "invalidColor": "请输入有效的颜色代码",
-    "colorExample": "例如 #00796B 或 rgb(0, 121, 107)",
+    "colorExample": "例如 #58779A 或 rgb(88, 119, 154)",
     "colorPicker": "使用颜色选择器",
     "backgroundSettings": "背景设置",
     "backgroundPreset": "背景预设",

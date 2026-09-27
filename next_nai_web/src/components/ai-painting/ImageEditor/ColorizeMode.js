@@ -38,11 +38,11 @@ const colorPresets = [
   { id: 'winter', labelKey: 'painting.tools.imageEditor.colorize.presets.winter' }
 ];
 
-const ColorizeMode = ({ isMobile, theme, inSidePanel = false, onSaveParams }) => {
+const ColorizeMode = ({ isMobile, theme, inSidePanel = false, onSaveParams, initialParams }) => {
   const { t } = useI18n();
-  const [prompt, setPrompt] = useState('');
-  const [intensity, setIntensity] = useState(0);
-  const [presetSelected, setPresetSelected] = useState('');
+  const [prompt, setPrompt] = useState(initialParams?.prompt ?? '');
+  const [intensity, setIntensity] = useState(initialParams?.intensity ?? 0);
+  const [presetSelected, setPresetSelected] = useState(initialParams?.preset?.id ?? '');
 
   // 使用 useMemo 记忆参数对象，避免不必要的重新渲染
   const params = useMemo(() => ({
@@ -76,24 +76,26 @@ const ColorizeMode = ({ isMobile, theme, inSidePanel = false, onSaveParams }) =>
         display: 'flex', 
         alignItems: 'center', 
         justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: 1,
         mb: 2.5
       }}>
-        <Typography variant="h6" component="h2" sx={{ 
+        <Typography variant="subtitle1" component="h2" sx={{
           display: 'flex', 
           alignItems: 'center', 
-          fontWeight: 'bold',
+          fontSize: 15,
+          fontWeight: 600,
           color: theme.palette.text.primary
         }}>
-          <PaletteIcon sx={{ mr: 1, color: theme.palette.primary.main }} />
+          <PaletteIcon sx={{ mr: 1, fontSize: 18, color: 'text.secondary' }} />
           {t('painting.tools.imageEditor.colorize.title')}
         </Typography>
         
         <Chip 
           label={`${intensity} - ${t(`painting.tools.imageEditor.intensity.${intensity}`)}`}
-          color="primary" 
           variant="outlined"
           sx={{ 
-            fontWeight: 'bold',
+            fontWeight: 500,
             fontSize: '0.875rem',
             height: 32
           }}
@@ -114,14 +116,15 @@ const ColorizeMode = ({ isMobile, theme, inSidePanel = false, onSaveParams }) =>
                 key={preset.id}
                 label={t(preset.labelKey)}
                 onClick={() => handlePresetClick(preset.id)}
-                variant={presetSelected === preset.id ? "filled" : "outlined"}
-                color={presetSelected === preset.id ? "secondary" : "default"}
+                variant="outlined"
                 sx={{ 
-                  borderRadius: 1.5,
+                  borderRadius: 1,
+                  height: 36,
+                  fontSize: 14,
+                  bgcolor: presetSelected === preset.id ? 'action.selected' : 'transparent',
                   '&:hover': {
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                  },
-                  transition: 'all 0.2s'
+                    bgcolor: 'action.hover'
+                  }
                 }}
               />
             ))}
@@ -172,10 +175,10 @@ const ColorizeMode = ({ isMobile, theme, inSidePanel = false, onSaveParams }) =>
               { value: 5, label: '5' },
             ]}
             sx={{
-              color: theme.palette.secondary.main,
+              color: theme.palette.primary.main,
               '& .MuiSlider-thumb': {
                 '&:hover, &.Mui-focusVisible': {
-                  boxShadow: `0px 0px 0px 8px ${theme.palette.secondary.main}30`
+                  boxShadow: `0px 0px 0px 8px ${theme.palette.primary.main}30`
                 }
               }
             }}
@@ -205,7 +208,7 @@ const ColorizeMode = ({ isMobile, theme, inSidePanel = false, onSaveParams }) =>
         <Typography variant="caption" color="text.secondary">
           {t('painting.tools.imageEditor.currentParameters')}
         </Typography>
-        <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', rowGap: 0.5, fontSize: '0.75rem' }}>
+        <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', rowGap: 0.5, fontSize: 14 }}>
           {presetSelected && (
             <>
               <Box component="dt" sx={{ fontWeight: 'bold' }}>{t('painting.tools.imageEditor.colorize.preset')}:</Box>
@@ -227,12 +230,6 @@ const ColorizeMode = ({ isMobile, theme, inSidePanel = false, onSaveParams }) =>
         </Box>
       </Box>
       
-      {/* 移除应用按钮，改为参数自动保存 */}
-      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
-        <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center' }}>
-          {t('painting.tools.imageEditor.autoApply')}
-        </Typography>
-      </Box>
     </>
   );
 
@@ -240,14 +237,15 @@ const ColorizeMode = ({ isMobile, theme, inSidePanel = false, onSaveParams }) =>
   if (inSidePanel) {
     return (
       <Paper
-        elevation={3}
+        elevation={0}
         sx={{
-          p: 2,
-          borderRadius: 2,
+          p: 0,
+          bgcolor: 'transparent',
           display: 'flex',
           flexDirection: 'column',
           height: '100%',
-          overflow: 'auto'
+          overflow: 'auto',
+          '& .MuiInputBase-root': { minHeight: 44 }
         }}
       >
         {contentComponent}

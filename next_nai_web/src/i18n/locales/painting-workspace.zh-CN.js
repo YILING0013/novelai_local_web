@@ -70,7 +70,11 @@ const paintingWorkspacezhCN = {
         "uploadFormatNotSupported": "不支持该图像格式，请使用 PNG、JPG、JPEG、WEBP 或 BMP。",
         "uploadRateLimited": "图像上传过于频繁，请稍后重试。",
         "uploadReadFailed": "无法读取上传的图像，请更换文件后重试。",
-        "uploadSaveFailed": "图像上传后未能保存，请稍后重试。"
+        "uploadSaveFailed": "图像上传后未能保存，请稍后重试。",
+        "novelAIInpaintModelNotSupported": "V5 Curated 暂不支持局部重绘，请切换为 V5 Full 或 V4.5。",
+        "novelAIInpaintVibeNotSupported": "V4／V4.5 局部重绘不支持 Vibe，请移除 Vibe 后重试。",
+        "novelAIReferenceModelNotSupported": "角色／精准参考仅支持 V4.5 模型及其局部重绘。",
+        "novelAIReferenceVibeConflict": "角色／精准参考与 Vibe 不能同时使用。"
       },
       "notifications": {
         "completed": "已完成。",
@@ -173,7 +177,7 @@ const paintingWorkspacezhCN = {
         "noEditEffects": "没有应用编辑效果",
         "modelAndBasic": "模型与基础参数",
         "aiModel": "AI 模型",
-        "modelV5Limitations": "V5 支持文生图、图生图、局部重绘和角色控制；角色参考与 Vibe 暂不可用。",
+        "modelV5Limitations": "V5 支持文生图、图生图和角色控制；Full 还支持局部重绘，Curated 暂不支持。角色参考与 Vibe 暂不可用。",
         "logParameters": "在控制台记录参数",
         "resetConfirmationTitle": "重置所有参数？",
         "resetConfirmationDescription": "这会重置当前模型的全部生成参数，且无法撤销。",
@@ -318,7 +322,8 @@ const paintingWorkspacezhCN = {
         "vibeCount": "{count} 个 Vibe",
         "clickOrDropMultipleImages": "点击或拖放多张图像",
         "downloadBundle": "下载文件包",
-        "downloadZip": "下载 ZIP"
+        "downloadZip": "下载 ZIP",
+        "vibeBlockedByInpaint": "局部重绘时暂不使用 Vibe，退出重绘后恢复。"
       },
       "batch": {
         "statusTitle": "批量生成状态"
@@ -475,8 +480,8 @@ const paintingWorkspacezhCN = {
         "importNotesFailed": "导入笔记失败。",
         "notesImported": "笔记已导入。",
         "title": "提示词",
-        "positiveTab": "正向提示词",
-        "negativeTab": "负向提示词",
+        "positiveTab": "正向",
+        "negativeTab": "负向",
         "randomPrompt": "随机提示词",
         "notebook": "提示词笔记",
         "saveToNotebook": "保存到笔记",

@@ -66,6 +66,7 @@ const ImageParameterPanel = ({
     handleCharacterToggleDisabled,
     // 接收禁用状态
     vibeDisabled,
+    vibeBlockedMessageKey,
     imageReferenceDisabled,
     isV5Model = false,
 }) => {
@@ -115,6 +116,7 @@ const ImageParameterPanel = ({
           onDownloadBundle={onDownloadBundle}
           onDownloadZip={onDownloadZip}
           blocked={vibeDisabled}
+          blockedMessageKey={vibeBlockedMessageKey}
           handleVibeToggleDisabled={handleVibeToggleDisabled}
         />
       )}

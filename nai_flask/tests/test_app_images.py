@@ -1,3 +1,5 @@
+import pytest
+
 from conftest import ORIGIN, PNG_BASE64, login, png_base64
 
 
@@ -271,6 +273,110 @@ def test_director_cached_references_are_sent_as_official_string_array(client, fa
     assert parameters["director_reference_images"] == [reference]
     assert "director_reference_images_cached" not in parameters
     assert "local-cache-key-must-not-pass" not in str(call[2])
+
+
+@pytest.mark.parametrize(("model", "fields", "error_code"), [
+    ("nai-diffusion-5-curated", {"mask": PNG_BASE64}, "NOVELAI_INPAINT_MODEL_NOT_SUPPORTED"),
+    ("nai-diffusion-5-curated", {"action": "infill"}, "NOVELAI_INPAINT_MODEL_NOT_SUPPORTED"),
+    ("nai-diffusion-5-full", {"reference_image_multiple": [PNG_BASE64]}, "MODEL_CAPABILITY_NOT_SUPPORTED"),
+    ("nai-diffusion-5-curated", {"director_reference_images_cached": [{"data": PNG_BASE64}]}, "MODEL_CAPABILITY_NOT_SUPPORTED"),
+    *[
+        (model, {"mask": PNG_BASE64, "reference_image_multiple": [PNG_BASE64]}, "NOVELAI_INPAINT_VIBE_NOT_SUPPORTED")
+        for model in ("nai-diffusion-4-full", "nai-diffusion-4-curated-preview", "nai-diffusion-4-5-full", "nai-diffusion-4-5-curated")
+    ],
+    *[
+        (model, {"director_reference_images_cached": [{"data": PNG_BASE64}]}, "NOVELAI_REFERENCE_MODEL_NOT_SUPPORTED")
+        for model in ("nai-diffusion-3", "nai-diffusion-furry-3", "nai-diffusion-4-full")
+    ],
+    *[
+        (model, {"director_reference_images_cached": [{"data": PNG_BASE64}], "reference_image_multiple": [PNG_BASE64]}, "NOVELAI_REFERENCE_VIBE_CONFLICT")
+        for model in ("nai-diffusion-4-5-full", "nai-diffusion-4-5-curated")
+    ],
+])
+def test_unsupported_combinations_are_rejected_before_official_generation(
+    client, fake_client, model, fields, error_code,
+):
+    csrf = login(client)
+    body = generation_body()
+    body.update({"model": model, "action": True, "image": PNG_BASE64, **fields})
+
+    response = post_generate(client, csrf, body)
+
+    assert response.status_code == 400
+    assert response.get_json()["code"] == error_code
+    assert not any(call[0] == "generate" for call in fake_client.calls)
+
+
+@pytest.mark.parametrize("model", ["nai-diffusion-4-5-full", "nai-diffusion-4-5-curated"])
+def test_v45_inpainting_preserves_official_reference_images(client, fake_client, model):
+    csrf = login(client)
+    reference = png_base64(1024, 1536)
+    body = generation_body()
+    body.update({
+        "model": model,
+        "action": True,
+        "image": PNG_BASE64,
+        "mask": PNG_BASE64,
+        "director_reference_images_cached": [{"data": reference}],
+    })
+
+    response = post_generate(client, csrf, body)
+
+    assert response.status_code == 200
+    official = next(call[2] for call in fake_client.calls if call[0] == "generate")
+    assert official["model"] == f"{model}-inpainting"
+    assert official["action"] == "infill"
+    assert official["parameters"]["mask"] == PNG_BASE64
+    assert official["parameters"]["director_reference_images"] == [reference]
+    assert "director_reference_images_cached" not in official["parameters"]
+
+
+@pytest.mark.parametrize("model", ["nai-diffusion-3", "nai-diffusion-furry-3"])
+def test_v3_inpainting_preserves_vibe(client, fake_client, model):
+    csrf = login(client)
+    body = generation_body()
+    body.update({
+        "model": model,
+        "action": True,
+        "image": PNG_BASE64,
+        "mask": PNG_BASE64,
+        "reference_image_multiple": [PNG_BASE64],
+        "reference_strength_multiple": [0.8],
+    })
+
+    response = post_generate(client, csrf, body)
+
+    assert response.status_code == 200
+    official = next(call[2] for call in fake_client.calls if call[0] == "generate")
+    assert official["action"] == "infill"
+    assert official["parameters"]["reference_image_multiple"] == [PNG_BASE64]
+    assert official["parameters"]["reference_strength_multiple"] == [0.8]
+
+
+@pytest.mark.parametrize(("steps", "large_image", "expected_steps"), [
+    (None, False, 23),
+    (28, False, 28),
+    (50, False, 28),
+    (50, True, 50),
+])
+def test_v5_defaults_to_23_and_keeps_28_standard_and_50_large_image_steps(
+    client, fake_client, steps, large_image, expected_steps,
+):
+    csrf = login(client)
+    body = generation_body()
+    body.update({
+        "model": "nai-diffusion-5-full",
+        "steps": steps,
+        "use_upscale_credits": large_image,
+    })
+    if steps is None:
+        body.pop("steps")
+
+    response = post_generate(client, csrf, body)
+
+    assert response.status_code == 200
+    official = next(call[2] for call in fake_client.calls if call[0] == "generate")
+    assert official["parameters"]["steps"] == expected_steps
 
 
 def test_successful_image_is_returned_when_snapshot_refresh_loses_authorization(

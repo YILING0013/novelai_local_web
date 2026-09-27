@@ -57,6 +57,52 @@ def test_reference_upload_rejects_invalid_image_without_saving(client, encoded):
     assert client.get("/api/local/image-references").get_json() == {"image_references": []}
 
 
+def test_reference_upload_does_not_silently_drop_invalid_entries(client):
+    csrf = login(client)
+    response = client.post(
+        "/api/local/image-references",
+        json={"title": "Invalid reference", "images": [None]},
+        headers=headers(csrf),
+    )
+    assert response.status_code == 400
+    assert client.get("/api/local/image-references").get_json() == {"image_references": []}
+
+
+@pytest.mark.parametrize("parameters", [[], "invalid", 42])
+def test_reference_parameters_reject_non_objects_on_create_and_update(client, app, monkeypatch, parameters):
+    csrf = login(client)
+    response = client.post(
+        "/api/local/image-references",
+        json={"title": "Invalid parameters", "parameters": parameters},
+        headers=headers(csrf),
+    )
+    assert response.status_code == 400
+    created = client.post(
+        "/api/local/image-references",
+        json={"title": "Valid", "parameters": {"seed": 42}},
+        headers=headers(csrf),
+    ).get_json()["image_reference"]
+
+    # 更新单条记录不应再把整个参考库读取一遍。
+    def reject_list(*args):
+        raise AssertionError("Updating a reference must not list the whole library")
+
+    monkeypatch.setattr(app.extensions["reference_store"], "list", reject_list)
+    response = client.put(
+        f"/api/local/image-references/{created['id']}",
+        json={"parameters": parameters},
+        headers=headers(csrf),
+    )
+    assert response.status_code == 400
+    response = client.put(
+        f"/api/local/image-references/{created['id']}",
+        json={"title": "Updated"},
+        headers=headers(csrf),
+    )
+    assert response.status_code == 200
+    assert response.get_json()["image_reference"]["parameters"] == {"seed": 42}
+
+
 def test_artist_thread_crud_with_local_image(client):
     csrf = login(client)
     created = client.post(

@@ -61,10 +61,10 @@ const characterColors = [
 ];
 
 const compactTabSx = {
-  minHeight: 30,
-  px: 0.75,
-  py: 0.5,
-  fontSize: '0.75rem',
+  minHeight: 40,
+  px: 1,
+  py: 1,
+  fontSize: '0.875rem',
   minWidth: 0,
   textTransform: 'none',
 };
@@ -99,7 +99,7 @@ const PositionSelector = ({ value, onChange }) => {
       <Box
         sx={{
           display: 'grid',
-          gridTemplateColumns: '16px repeat(5, 28px)',
+          gridTemplateColumns: '20px repeat(5, 36px)',
           columnGap: 0.5,
           rowGap: 0.5,
           justifyContent: 'start',
@@ -129,12 +129,12 @@ const PositionSelector = ({ value, onChange }) => {
                     size="small"
                     onClick={() => handlePositionChange(key)}
                     sx={{
-                      width: 28,
-                      minWidth: 28,
-                      height: 28,
+                      width: 36,
+                      minWidth: 36,
+                      height: 36,
                       p: 0,
                       borderRadius: 0.875,
-                      fontSize: '0.62rem',
+                      fontSize: '0.8125rem',
                       lineHeight: 1,
                     }}
                   >
@@ -274,22 +274,27 @@ const CharacterControlTab = ({
     <Paper
       elevation={0}
       sx={{
-        mb: 0.75,
+        mb: 2,
         overflow: 'hidden',
-        borderRadius: 1.5,
+        borderRadius: 1,
+        bgcolor: 'transparent',
+        boxShadow: 'none',
         border: '1px solid',
         borderColor: isTemporarilyDisabled ? 'warning.light' : 'divider',
       }}
     >
       <Box
         sx={{
-          px: 0.75,
-          py: 0.625,
+          px: 1.5,
+          py: 1,
+          minHeight: 44,
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           gap: 0.75,
-          bgcolor: color.light,
+          bgcolor: 'transparent',
+          borderBottom: expanded ? '1px solid' : 0,
+          borderColor: 'divider',
         }}
       >
         <Box sx={{ minWidth: 0, flexGrow: 1 }}>
@@ -339,6 +344,7 @@ const CharacterControlTab = ({
                   bgcolor: 'transparent',
                   cursor: 'text',
                   color: color.main,
+                  fontSize: 15,
                   lineHeight: 1.25,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -408,14 +414,14 @@ const CharacterControlTab = ({
       </Box>
 
       {expanded && (
-        <Box sx={{ p: 1, pt: 0.75, opacity: isTemporarilyDisabled ? 0.74 : 1, transition: 'opacity 0.2s ease' }}>
+        <Box sx={{ p: 2, opacity: isTemporarilyDisabled ? 0.74 : 1, transition: 'opacity 0.2s ease' }}>
           <Tabs
             value={activeTab}
             onChange={(_, newValue) => setActiveTab(newValue)}
             variant="fullWidth"
             sx={{
-              mb: 0.5,
-              minHeight: 30,
+              mb: 1.5,
+              minHeight: 40,
               '& .MuiTab-root': {
                 ...compactTabSx,
                 color: 'text.secondary',
@@ -480,41 +486,49 @@ const CharacterControlPanel = ({
       onChange={(_, isExpanded) => onExpandedPanelsChange('character', isExpanded)}
       disableGutters
       sx={{
+        m: 0,
+        border: 0,
+        borderTop: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 0,
+        bgcolor: 'transparent',
+        backgroundImage: 'none',
         boxShadow: 'none',
         '&::before': { display: 'none' },
-        mt: 1,
-        borderRadius: 2,
-        overflow: 'hidden',
-        '&.Mui-expanded': { margin: '8px 0 0 0' },
+        '&:first-of-type, &:last-of-type': { borderRadius: 0 },
+        '&.Mui-expanded': { margin: 0 },
       }}
     >
       <AccordionSummary
-        expandIcon={<ExpandMoreIcon />}
+        expandIcon={<ExpandMoreIcon sx={{ fontSize: 18 }} />}
         sx={{
-          minHeight: 40,
-          backgroundColor: expandedPanels.character ? 'action.hover' : 'transparent',
-          '&.Mui-expanded': { minHeight: 40 },
+          minHeight: 44,
+          px: 0,
+          py: 0,
+          bgcolor: 'transparent',
+          '&.Mui-expanded': { minHeight: 44 },
+          '& .MuiAccordionSummary-content, & .MuiAccordionSummary-content.Mui-expanded': { margin: 0 },
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
-          <FaceIcon sx={{ mr: 1, color: 'text.secondary', opacity: 0.7 }} />
-          <Typography variant="subtitle2" fontWeight="medium">{t('painting.workspace.parameters.characterControl')}</Typography>
+          <FaceIcon sx={{ mr: 1, fontSize: 18, color: 'text.secondary' }} />
+          <Typography sx={{ fontSize: 15, fontWeight: 500 }}>{t('painting.workspace.parameters.characterControl')}</Typography>
         </Box>
       </AccordionSummary>
 
-      <AccordionDetails sx={{ p: 1.25, pt: 0.75 }}>
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
+      <AccordionDetails sx={{ px: 0, py: 2 }}>
+        <Typography color="text.secondary" sx={{ display: 'block', mb: 2, fontSize: 14, lineHeight: 1.6 }}>
           {t('painting.workspace.parameters.characterControlDescription')}
         </Typography>
 
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.75} sx={{ mb: 0.75 }}>
+        <Stack spacing={1.5} sx={{ mb: 2 }}>
           <Button
             variant="outlined"
             size="small"
             startIcon={<AddIcon />}
             onClick={handleAddCharacterTab}
             disabled={!isV5Model && enabledCharacterCount >= 6}
-            sx={{ flexGrow: 1, textTransform: 'none', minHeight: 32 }}
+            sx={{ flexGrow: 1, textTransform: 'none', minHeight: 38, fontSize: 14 }}
           >
             {t('painting.workspace.parameters.addCharacter')}
           </Button>
@@ -530,7 +544,7 @@ const CharacterControlPanel = ({
                 if (nextMode === 'custom') setPositionEditorOpen(true);
               }}
               aria-label={t('painting.workspace.parameters.characterPositionMode')}
-              sx={{ alignSelf: { xs: 'stretch', sm: 'stretch' } }}
+              sx={{ alignSelf: 'stretch', '& .MuiToggleButton-root': { minHeight: 40, fontSize: 14 } }}
             >
               <ToggleButton value="ai" sx={{ flex: 1, textTransform: 'none', whiteSpace: 'nowrap' }}>
                 {t('painting.workspace.parameters.aiDecidesPosition')}
@@ -553,10 +567,6 @@ const CharacterControlPanel = ({
                 gap: 0.25,
                 pl: 0.25,
                 pr: 0.75,
-                borderRadius: 999,
-                border: '1px solid',
-                borderColor: 'divider',
-                bgcolor: params.aiDecidePosition ? 'action.hover' : 'transparent',
               }}
             >
               <Checkbox
@@ -565,7 +575,7 @@ const CharacterControlPanel = ({
                 size="small"
                 sx={{ p: 0.5 }}
               />
-              <Typography variant="caption">{t('painting.workspace.parameters.aiDecidesPosition')}</Typography>
+              <Typography sx={{ fontSize: 14 }}>{t('painting.workspace.parameters.aiDecidesPosition')}</Typography>
               <Tooltip title={t('painting.workspace.parameters.aiDecidesPositionHelp')} arrow>
                 <InfoIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
               </Tooltip>
@@ -579,7 +589,7 @@ const CharacterControlPanel = ({
           </Alert>
         )}
 
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
+        <Typography color="text.secondary" sx={{ display: 'block', mb: 1.5, fontSize: 14 }}>
           {t('painting.workspace.parameters.characterCount', {
             configured: characterTabs.length,
             enabled: enabledCharacterCount,
@@ -590,15 +600,12 @@ const CharacterControlPanel = ({
           {characterTabs.length === 0 ? (
             <Box
               sx={{
-                border: '1px dashed',
-                borderColor: 'divider',
-                borderRadius: 1.5,
-                px: 1.25,
-                py: 1.5,
+                px: 2,
+                py: 2,
                 textAlign: 'center',
               }}
             >
-              <Typography variant="caption" color="text.secondary">
+              <Typography sx={{ fontSize: 14 }} color="text.secondary">
                 {t('painting.workspace.parameters.noCharacters')}
               </Typography>
             </Box>

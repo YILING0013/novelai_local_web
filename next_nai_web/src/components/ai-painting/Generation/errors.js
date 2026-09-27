@@ -1,6 +1,10 @@
 import { extractErrorId } from '../../../utils/errorId.mjs';
 
 export const GENERATION_ERROR_CODES = Object.freeze({
+  NOVELAI_INPAINT_MODEL_NOT_SUPPORTED: 'NOVELAI_INPAINT_MODEL_NOT_SUPPORTED',
+  NOVELAI_INPAINT_VIBE_NOT_SUPPORTED: 'NOVELAI_INPAINT_VIBE_NOT_SUPPORTED',
+  NOVELAI_REFERENCE_MODEL_NOT_SUPPORTED: 'NOVELAI_REFERENCE_MODEL_NOT_SUPPORTED',
+  NOVELAI_REFERENCE_VIBE_CONFLICT: 'NOVELAI_REFERENCE_VIBE_CONFLICT',
   INVALID_PARAMETER: 'INVALID_PARAMETER',
   RATE_LIMITED: 'RATE_LIMITED',
   NETWORK_ERROR: 'NETWORK_ERROR',
@@ -17,6 +21,10 @@ export const GENERATION_ERROR_CODES = Object.freeze({
 });
 
 export const GENERATION_ERROR_MESSAGE_KEYS = Object.freeze({
+  [GENERATION_ERROR_CODES.NOVELAI_INPAINT_MODEL_NOT_SUPPORTED]: 'painting.workspace.errors.novelAIInpaintModelNotSupported',
+  [GENERATION_ERROR_CODES.NOVELAI_INPAINT_VIBE_NOT_SUPPORTED]: 'painting.workspace.errors.novelAIInpaintVibeNotSupported',
+  [GENERATION_ERROR_CODES.NOVELAI_REFERENCE_MODEL_NOT_SUPPORTED]: 'painting.workspace.errors.novelAIReferenceModelNotSupported',
+  [GENERATION_ERROR_CODES.NOVELAI_REFERENCE_VIBE_CONFLICT]: 'painting.workspace.errors.novelAIReferenceVibeConflict',
   [GENERATION_ERROR_CODES.INVALID_PARAMETER]: 'painting.workspace.errors.invalidParameters',
   [GENERATION_ERROR_CODES.RATE_LIMITED]: 'painting.workspace.errors.rateLimited',
   [GENERATION_ERROR_CODES.NETWORK_ERROR]: 'painting.workspace.errors.network',
@@ -40,7 +48,13 @@ const KNOWN_CATEGORIES = new Set([
 
 export function getGenerationErrorCategory(code, category = '') {
   if (KNOWN_CATEGORIES.has(category)) return category;
-  if (code === GENERATION_ERROR_CODES.INVALID_PARAMETER) return 'parameter';
+  if ([
+    GENERATION_ERROR_CODES.INVALID_PARAMETER,
+    GENERATION_ERROR_CODES.NOVELAI_INPAINT_MODEL_NOT_SUPPORTED,
+    GENERATION_ERROR_CODES.NOVELAI_INPAINT_VIBE_NOT_SUPPORTED,
+    GENERATION_ERROR_CODES.NOVELAI_REFERENCE_MODEL_NOT_SUPPORTED,
+    GENERATION_ERROR_CODES.NOVELAI_REFERENCE_VIBE_CONFLICT,
+  ].includes(code)) return 'parameter';
   if (code === GENERATION_ERROR_CODES.RATE_LIMITED) return 'rate_limit';
   if (code === GENERATION_ERROR_CODES.NETWORK_ERROR) return 'network';
   if (code === GENERATION_ERROR_CODES.TIMEOUT) return 'timeout';

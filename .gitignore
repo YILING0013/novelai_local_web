@@ -54,6 +54,3 @@ Thumbs.db
 **/public/reference_img/
 **/artist-thread-images/
 **/image-reference-images/
-
-# 仅供本机使用的 Windows 后台启动脚本
-/scripts/start-background.py

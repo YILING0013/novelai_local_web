@@ -3,44 +3,39 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f5f5f3;
+  --foreground: #272b32;
+  --scrollbar-thumb: #b9bdc3;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html[data-theme="dark"] {
+  --background: #17191d;
+  --foreground: #e7e9ee;
+  --scrollbar-thumb: #4d525b;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
   margin: 0;
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), "Microsoft YaHei", sans-serif;
 }
 
-/* 自定义滚动条样式 */
+/* 保持滚动位置可辨认，轨道融入深浅主题背景。 */
 ::-webkit-scrollbar {
-  width: 2px; /* 滚动条宽度 */
-  height: 2px; /* 滚动条高度 */
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: #888888; /* 滚动条滑块颜色 */
-  border-radius: 1px; /* 滚动条滑块圆角 */
+  background-color: var(--scrollbar-thumb);
+  border-radius: 6px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: #555555; /* 滚动条滑块悬停时的颜色 */
+  background-color: #80858e;
 }
 
 ::-webkit-scrollbar-track {
-  background-color: #f1f1f1; /* 滚动条轨道背景色 */
-  border-radius: 1px; /* 滚动条轨道圆角 */
-}
-
-::-webkit-scrollbar-track:hover {
-  background-color: #ddd; /* 滚动条轨道悬停时的颜色 */
+  background-color: transparent;
 }

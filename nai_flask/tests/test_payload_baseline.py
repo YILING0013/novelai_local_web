@@ -29,8 +29,8 @@ def _build(values):
     )["data"]
 
 
-@pytest.mark.parametrize("model", sorted(ALL_MODELS))
-def test_all_eight_models_derive_official_inpaint_model_and_one_sample(model):
+@pytest.mark.parametrize("model", sorted(INPAINTING_MODELS))
+def test_supported_models_derive_official_inpaint_model_and_one_sample(model):
     official = _build({
         "model": model,
         "action": True,

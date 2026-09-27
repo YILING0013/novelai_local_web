@@ -241,25 +241,25 @@ const ImageReferenceControl = ({ onReferenceImageChange, disabled = false }) => 
 
   return (
     <Tooltip title={disabled ? t('painting.workspace.parameters.removeVibesFirst') : ''} arrow>
-      <Box sx={{ mt: 1, p: 1, border: '1px dashed', borderColor: 'divider', borderRadius: 2, opacity: disabled ? 0.5 : 1, pointerEvents: disabled ? 'none' : 'auto', transition: 'opacity 0.2s' }}>
-        <Typography variant="body2" color="text.secondary" gutterBottom>
+      <Box sx={{ mt: 2, opacity: disabled ? 0.5 : 1, pointerEvents: disabled ? 'none' : 'auto', transition: 'opacity 0.2s' }}>
+        <Typography color="text.primary" sx={{ fontSize: 15, fontWeight: 500, mb: 1.5 }}>
           {t('painting.workspace.parameters.characterReferences', { count: images.length, max: 12 })}
           <Tooltip title={t('painting.workspace.parameters.characterReferencesHelp')} arrow placement="top">
             <InfoIcon sx={{ ml: 0.5, fontSize: 16, verticalAlign: 'middle', opacity: 0.7 }} />
           </Tooltip>
         </Typography>
 
-        <Stack spacing={0.5} sx={{ mt: 1 }}>
+        <Stack spacing={2}>
           {images.map((img, index) => (
-            <Paper key={img.id} variant="outlined" sx={{ p: 0.75, opacity: img.disabled ? 0.5 : 1, borderRadius: 0.5 }}>
+            <Paper key={img.id} variant="outlined" sx={{ p: 1.5, bgcolor: 'transparent', opacity: img.disabled ? 0.5 : 1, borderRadius: 1 }}>
               {/* 第一行：删除按钮 | 启用开关 | 类型选择 */}
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
                 <IconButton
                   size="small"
                   onClick={() => deleteImage(img.id)}
-                  sx={{ p: 0.25 }}
+                  sx={{ p: 0.75 }}
                 >
-                  <DeleteIcon sx={{ fontSize: 16 }} />
+                  <DeleteIcon sx={{ fontSize: 18 }} />
                 </IconButton>
                 <Button
                   size="small"
@@ -269,8 +269,9 @@ const ImageReferenceControl = ({ onReferenceImageChange, disabled = false }) => 
                   sx={{
                     minWidth: 'auto',
                     px: 1,
-                    py: 0.25,
-                    fontSize: '0.7rem',
+                    py: 0.5,
+                    minHeight: 34,
+                    fontSize: '0.875rem',
                     textTransform: 'none',
                   }}
                 >
@@ -283,21 +284,21 @@ const ImageReferenceControl = ({ onReferenceImageChange, disabled = false }) => 
                     value={img.type}
                     onChange={(e) => updateImage(img.id, 'type', e.target.value)}
                     disabled={img.disabled || disabled}
-                    sx={{ fontSize: '0.7rem', height: 24, '.MuiSelect-select': { py: 0.25, pl: 1 } }}
+                    sx={{ fontSize: '0.875rem', height: 36, '.MuiSelect-select': { py: 0.5, pl: 1 } }}
                   >
-                    <MenuItem value="character" sx={{ fontSize: '0.75rem' }}>{t('painting.workspace.parameters.referenceTypeCharacter')}</MenuItem>
-                    <MenuItem value="style" sx={{ fontSize: '0.75rem' }}>{t('painting.workspace.parameters.referenceTypeStyle')}</MenuItem>
-                    <MenuItem value="character&style" sx={{ fontSize: '0.75rem' }}>{t('painting.workspace.parameters.referenceTypeCharacterAndStyle')}</MenuItem>
+                    <MenuItem value="character" sx={{ fontSize: '0.875rem' }}>{t('painting.workspace.parameters.referenceTypeCharacter')}</MenuItem>
+                    <MenuItem value="style" sx={{ fontSize: '0.875rem' }}>{t('painting.workspace.parameters.referenceTypeStyle')}</MenuItem>
+                    <MenuItem value="character&style" sx={{ fontSize: '0.875rem' }}>{t('painting.workspace.parameters.referenceTypeCharacterAndStyle')}</MenuItem>
                   </Select>
                 </FormControl>
               </Box>
 
               {/* 第二行：预览图 + 滑块 */}
-              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
                 {/* 预览图 */}
                 <Box sx={{
-                  width: 64,
-                  height: 48,
+                  width: 72,
+                  height: 64,
                   borderRadius: 0.5,
                   overflow: 'hidden',
                   bgcolor: 'black',
@@ -311,11 +312,11 @@ const ImageReferenceControl = ({ onReferenceImageChange, disabled = false }) => 
                 </Box>
 
                 {/* 滑块区域 */}
-                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+                <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
                   {/* Strength 滑块 */}
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Typography variant="caption" sx={{ minWidth: 48, opacity: 0.8, fontSize: '0.7rem' }}>{t('painting.workspace.parameters.strengthShort')}</Typography>
-                    <Typography variant="caption" sx={{ minWidth: 24, fontSize: '0.7rem', mr: 0.5 }}>{img.strength.toFixed(2)}</Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', minHeight: 36 }}>
+                    <Typography sx={{ minWidth: 52, color: 'text.secondary', fontSize: 14 }}>{t('painting.workspace.parameters.strengthShort')}</Typography>
+                    <Typography sx={{ minWidth: 32, fontSize: 13, mr: 1 }}>{img.strength.toFixed(2)}</Typography>
                     <Slider
                       size="small"
                       value={img.strength}
@@ -327,9 +328,9 @@ const ImageReferenceControl = ({ onReferenceImageChange, disabled = false }) => 
                   </Box>
 
                   {/* Fidelity 滑块 */}
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Typography variant="caption" sx={{ minWidth: 48, opacity: 0.8, fontSize: '0.7rem' }}>{t('painting.workspace.parameters.fidelityShort')}</Typography>
-                    <Typography variant="caption" sx={{ minWidth: 24, fontSize: '0.7rem', mr: 0.5 }}>{img.fidelity.toFixed(2)}</Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', minHeight: 36 }}>
+                    <Typography sx={{ minWidth: 52, color: 'text.secondary', fontSize: 14 }}>{t('painting.workspace.parameters.fidelityShort')}</Typography>
+                    <Typography sx={{ minWidth: 32, fontSize: 13, mr: 1 }}>{img.fidelity.toFixed(2)}</Typography>
                     <Slider
                       size="small"
                       value={img.fidelity}
@@ -360,7 +361,7 @@ const ImageReferenceControl = ({ onReferenceImageChange, disabled = false }) => 
             startIcon={images.length === 0 ? <PhotoCameraIcon /> : <AddIcon />}
             onClick={() => refImageInputRef.current?.click()}
             fullWidth
-            sx={{ mt: 1, borderStyle: 'dashed' }}
+            sx={{ mt: images.length > 0 ? 2 : 0, minHeight: 64, fontSize: 14, borderStyle: 'dashed', borderColor: 'divider' }}
             disabled={disabled}
           >
             {images.length === 0

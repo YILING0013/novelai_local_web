@@ -13,7 +13,6 @@ import {
   AccordionSummary,
   AccordionDetails,
   Divider,
-  Card,
   CardActions,
 } from '@mui/material';
 import {
@@ -53,29 +52,37 @@ const Img2ImgPanel = ({
       onChange={(_, isExpanded) => onExpandedPanelsChange('img2img', isExpanded)}
       disableGutters
       sx={{
+        m: 0,
+        border: 0,
+        borderTop: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 0,
+        bgcolor: 'transparent',
+        backgroundImage: 'none',
         boxShadow: 'none',
         '&::before': { display: 'none' },
-        mt: 1,
-        borderRadius: 2,
-        overflow: 'hidden',
-        '&.Mui-expanded': { margin: '8px 0 0 0' }
+        '&:first-of-type, &:last-of-type': { borderRadius: 0 },
+        '&.Mui-expanded': { margin: 0 },
       }}
     >
       <AccordionSummary
-        expandIcon={<ExpandMoreIcon />}
+        expandIcon={<ExpandMoreIcon sx={{ fontSize: 18 }} />}
         sx={{
-          minHeight: 40,
-          backgroundColor: expandedPanels.img2img ? 'action.hover' : 'transparent',
-          '&.Mui-expanded': { minHeight: 40 },
+          minHeight: 44,
+          px: 0,
+          py: 0,
+          bgcolor: 'transparent',
+          '&.Mui-expanded': { minHeight: 44 },
+          '& .MuiAccordionSummary-content, & .MuiAccordionSummary-content.Mui-expanded': { margin: 0 },
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
-          <ImageIcon sx={{ mr: 1, color: 'text.secondary', opacity: 0.7 }} />
-          <Typography variant="subtitle2" fontWeight="medium">{t('painting.workspace.parameters.img2img')}</Typography>
+          <ImageIcon sx={{ mr: 1, fontSize: 18, color: 'text.secondary' }} />
+          <Typography sx={{ fontSize: 15, fontWeight: 500 }}>{t('painting.workspace.parameters.img2img')}</Typography>
         </Box>
       </AccordionSummary>
-      <AccordionDetails sx={{ px: 1.5, pb: 2, pt: 1 }}>
-        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+      <AccordionDetails sx={{ px: 0, py: 2 }}>
+        <Typography color="text.secondary" display="block" sx={{ mb: 2, fontSize: 14, lineHeight: 1.6 }}>
           {t('painting.workspace.parameters.img2imgDescription')}
         </Typography>
         
@@ -93,13 +100,13 @@ const Img2ImgPanel = ({
             sx={{
               mt: 1,
               height: 100,
-              border: '2px dashed',
+              border: '1px dashed',
               borderColor: isDragging ? 'primary.main' : 'divider',
               borderRadius: 1,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              backgroundColor: isDragging ? 'rgba(0, 0, 0, 0.04)' : 'transparent',
+              backgroundColor: isDragging ? 'action.hover' : 'transparent',
               transition: 'all 0.2s',
               cursor: 'pointer'
             }}
@@ -111,7 +118,7 @@ const Img2ImgPanel = ({
           >
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <UploadIcon sx={{ mb: 1, color: isDragging ? 'primary.main' : 'text.secondary' }} />
-              <Typography variant="body2" color={isDragging ? 'primary.main' : 'text.secondary'}>
+              <Typography sx={{ fontSize: 14 }} color={isDragging ? 'primary.main' : 'text.secondary'}>
                 {isDragging
                   ? t('painting.workspace.parameters.releaseToUploadImage')
                   : t('painting.workspace.parameters.clickOrDropImageHere')}
@@ -119,13 +126,13 @@ const Img2ImgPanel = ({
             </Box>
           </Box>
         ) : (
-          <Card sx={{ mt: 2, borderRadius: 2, overflow: 'visible' }}>
+          <Box sx={{ mt: 1 }}>
             <Box sx={{ 
               position: 'relative', 
               display: 'flex', 
               justifyContent: 'center', 
               alignItems: 'center', 
-              p: 2,
+              p: 0.75,
               minHeight: { xs: 200, sm: 250 }
             }}>
               <NextImage
@@ -157,24 +164,24 @@ const Img2ImgPanel = ({
                 <DeleteIcon fontSize="small" />
               </IconButton>
             </Box>
-            <CardActions>
+            <CardActions sx={{ px: 0, py: 0.5 }}>
               <Button 
                 startIcon={<EditIcon />} 
                 onClick={handleOpenEditor}
                 fullWidth
-                sx={{ py: 1 }}
+                sx={{ py: 0.5 }}
               >
                 {t('painting.workspace.parameters.editImage')}
               </Button>
             </CardActions>
             
             {renderEditSummary()}
-          </Card>
+          </Box>
         )}
 
         {imagePreview && (
-          <Box sx={{ mt: 3 }}>
-            <Divider sx={{ mb: 2 }} />
+          <Box sx={{ mt: 1.5 }}>
+            <Divider sx={{ mb: 1 }} />
             <Typography variant="body2" fontWeight="medium" color="text.primary" gutterBottom>
               {t('painting.workspace.parameters.img2imgAdjustments')}
             </Typography>
@@ -205,13 +212,13 @@ const Img2ImgPanel = ({
           </Box>
         )}
         
-        <ImageEditor 
+        {editorOpen && <ImageEditor
           key={editorKey}
           open={editorOpen} 
           onClose={handleCloseEditor} 
           imageUrl={imagePreview}
           currentDirectorToolParams={directorToolParams}
-        />
+        />}
       </AccordionDetails>
     </Accordion>
   );

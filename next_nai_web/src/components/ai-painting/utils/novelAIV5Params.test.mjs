@@ -43,7 +43,7 @@ test('NovelAI V5 exposes both supported model IDs and the verified text-to-image
     characterPositionMode: 'ai',
   });
   assert.equal(NOVELAI_V5_CHARACTER_WARNING_THRESHOLD, 25);
-  assert.equal(NOVELAI_V5_STANDARD_MAX_STEPS, 23);
+  assert.equal(NOVELAI_V5_STANDARD_MAX_STEPS, 28);
   assert.equal(NOVELAI_V5_LARGE_MAX_STEPS, 50);
 });
 
@@ -52,7 +52,7 @@ test('NovelAI V5 normalizes old cached steps according to standard and large-ima
     model: 'nai-diffusion-5-full',
     steps: 28,
     use_upscale_credits: false,
-  }).steps, 23);
+  }).steps, 28);
   assert.equal(sanitizeNovelAIV5GenerationParams({
     model: 'nai-diffusion-5-full',
     steps: 50,

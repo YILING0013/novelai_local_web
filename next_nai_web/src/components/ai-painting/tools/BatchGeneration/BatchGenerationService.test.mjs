@@ -14,12 +14,14 @@ const createFakeClock = () => {
   return {
     now: () => currentTime,
     setTimeout(callback, delay) {
+      assert.equal(typeof this.advanceBy, 'function', '计时器必须绑定原时钟对象');
       const timerId = nextTimerId;
       nextTimerId += 1;
       timers.set(timerId, { callback, runAt: currentTime + delay });
       return timerId;
     },
     clearTimeout(timerId) {
+      assert.equal(typeof this.advanceBy, 'function', '取消计时器必须绑定原时钟对象');
       timers.delete(timerId);
     },
     advanceBy(milliseconds) {

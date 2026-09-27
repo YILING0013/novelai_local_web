@@ -17,7 +17,6 @@ import {
   Redo as RedoIcon,
   Delete as DeleteIcon,
   Palette as PaletteIcon,
-  Save as SaveIcon,
   FormatColorFill as ColorFillIcon,
   Contrast as ContrastIcon,
   Colorize as ColorizeIcon
@@ -57,16 +56,19 @@ const ColorPicker = ({ selectedColor, onColorChange, onEyedropperChange, eyedrop
           <Tooltip key={color} title={color} arrow>
             <Box
               sx={{
-                width: 24,
-                height: 24,
+                width: 28,
+                height: 28,
                 backgroundColor: color,
-                border: selectedColor === color ? '2px solid #ff4081' : '1px solid rgba(0,0,0,0.2)',
+                border: selectedColor === color ? '2px solid' : '1px solid',
+                borderColor: selectedColor === color ? 'primary.main' : 'divider',
+                outline: selectedColor === color ? '2px solid' : 'none',
+                outlineColor: 'divider',
+                outlineOffset: 2,
                 borderRadius: '4px',
                 cursor: 'pointer',
-                transition: 'transform 0.2s',
                 '&:hover': {
-                  transform: 'scale(1.1)',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+                  outline: '2px solid',
+                  outlineColor: 'divider'
                 }
               }}
               onClick={() => onColorChange(color)}
@@ -75,8 +77,8 @@ const ColorPicker = ({ selectedColor, onColorChange, onEyedropperChange, eyedrop
         ))}
       </Box>
       
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-        <Box sx={{ display: 'flex', gap: 1 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, mb: 2 }}>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
           <Button 
             variant="outlined" 
             size="small"
@@ -93,13 +95,13 @@ const ColorPicker = ({ selectedColor, onColorChange, onEyedropperChange, eyedrop
           </Button>
           <Tooltip title={t('painting.tools.imageEditor.draw.eyedropperTooltip')} arrow>
             <Button
-              variant={eyedropperActive ? "contained" : "outlined"}
+              variant="outlined"
               size="small"
-              color={eyedropperActive ? "secondary" : "primary"}
               onClick={toggleEyedropper}
               startIcon={<ColorizeIcon />}
               sx={{ 
                 textTransform: 'none',
+                bgcolor: eyedropperActive ? 'action.selected' : 'transparent',
                 borderRadius: 1.5
               }}
             >
@@ -115,7 +117,7 @@ const ColorPicker = ({ selectedColor, onColorChange, onEyedropperChange, eyedrop
             backgroundColor: selectedColor,
             borderRadius: '4px',
             border: '1px solid rgba(0,0,0,0.2)',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+            flexShrink: 0
           }} 
         />
       </Box>
@@ -129,7 +131,8 @@ const ColorPicker = ({ selectedColor, onColorChange, onEyedropperChange, eyedrop
           p: 1,
           borderRadius: 1,
           bgcolor: 'background.paper',
-          boxShadow: '0 3px 10px rgba(0,0,0,0.2)'
+          border: '1px solid',
+          borderColor: 'divider'
         }}>
           <HexColorPicker color={selectedColor} onChange={onColorChange} style={{ width: '100%' }} />
         </Box>
@@ -138,7 +141,7 @@ const ColorPicker = ({ selectedColor, onColorChange, onEyedropperChange, eyedrop
   );
 };
 
-const DrawMode = ({ displayDimensions, imageDimensions, onSave, isMobile, theme, inSidePanel = false, canvasRef, sourceImageRef = null }) => {
+const DrawMode = ({ displayDimensions, imageDimensions, isMobile, theme, inSidePanel = false, canvasRef, drawingChangedRef, sourceImageRef = null }) => {
   const { t } = useI18n();
   const internalCanvasRef = useRef(null);
   // 使用传入的 canvasRef 或内部创建的 ref
@@ -153,6 +156,11 @@ const DrawMode = ({ displayDimensions, imageDimensions, onSave, isMobile, theme,
   const [drawHistory, setDrawHistory] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [currentPath, setCurrentPath] = useState([]);
+
+  useEffect(() => {
+    // 撤销到最初状态或清空时，最终保存可以直接沿用原图。
+    drawingChangedRef.current = historyIndex >= 0 || currentPath.length > 1;
+  }, [historyIndex, currentPath, drawingChangedRef]);
   
   // 是否使用橡皮擦模式
   const [eraserMode, setEraserMode] = useState(false);
@@ -573,25 +581,21 @@ const DrawMode = ({ displayDimensions, imageDimensions, onSave, isMobile, theme,
     }
   };
 
-  const handleSaveDrawing = () => {
-    if (effectiveCanvasRef.current) {
-      onSave(effectiveCanvasRef.current);
-    }
-  };
-
   // 如果在侧边面板中，则使用不同的布局
   if (inSidePanel) {
     return (
       <Paper
-        elevation={3}
+        elevation={0}
         sx={{
-          p: 2,
-          borderRadius: 2,
+          p: 0,
+          bgcolor: 'transparent',
           display: 'flex',
           flexDirection: 'column',
           gap: 2,
           height: '100%',
-          overflow: 'auto'
+          overflow: 'auto',
+          '& .MuiButton-root': { minHeight: 40, fontSize: 14, color: 'text.primary', borderColor: 'divider' },
+          '& .MuiIconButton-root': { minWidth: 36, minHeight: 36 }
         }}
       >
         {/* 颜色选择器 */}
@@ -629,6 +633,8 @@ const DrawMode = ({ displayDimensions, imageDimensions, onSave, isMobile, theme,
                 { value: 50, label: '50' },
               ]}
               sx={{
+                width: 'calc(100% - 40px)',
+                mx: '20px',
                 color: theme.palette.primary.main,
                 '& .MuiSlider-thumb': {
                   '&:hover, &.Mui-focusVisible': {
@@ -658,6 +664,8 @@ const DrawMode = ({ displayDimensions, imageDimensions, onSave, isMobile, theme,
                 { value: 1, label: '100%' },
               ]}
               sx={{
+                width: 'calc(100% - 40px)',
+                mx: '20px',
                 color: theme.palette.primary.main,
                 '& .MuiSlider-thumb': {
                   '&:hover, &.Mui-focusVisible': {
@@ -697,14 +705,14 @@ const DrawMode = ({ displayDimensions, imageDimensions, onSave, isMobile, theme,
             ? t('painting.tools.imageEditor.draw.switchToBrush')
             : t('painting.tools.imageEditor.draw.switchToEraser')} arrow>
             <Button 
-              variant={eraserMode ? "contained" : "outlined"}
+              variant="outlined"
               onClick={toggleEraserMode}
               startIcon={<ClearIcon />}
               size="small"
-              color={eraserMode ? "secondary" : "primary"}
               disabled={eyedropperMode} // 吸管模式时禁用橡皮擦
               sx={{ 
                 borderRadius: 1.5,
+                bgcolor: eraserMode ? 'action.selected' : 'transparent',
                 textTransform: 'none'
               }}
             >
@@ -720,8 +728,7 @@ const DrawMode = ({ displayDimensions, imageDimensions, onSave, isMobile, theme,
                 onClick={handleUndo} 
                 disabled={historyIndex < 0}
                 sx={{ 
-                  color: theme.palette.primary.main,
-                  bgcolor: theme.palette.action.hover,
+                  color: theme.palette.text.secondary,
                   '&:hover': {
                     bgcolor: theme.palette.action.selected,
                   }
@@ -740,8 +747,7 @@ const DrawMode = ({ displayDimensions, imageDimensions, onSave, isMobile, theme,
                 onClick={handleRedo}
                 disabled={historyIndex >= drawHistory.length - 1}
                 sx={{ 
-                  color: theme.palette.primary.main,
-                  bgcolor: theme.palette.action.hover,
+                  color: theme.palette.text.secondary,
                   '&:hover': {
                     bgcolor: theme.palette.action.selected,
                   }
@@ -760,11 +766,10 @@ const DrawMode = ({ displayDimensions, imageDimensions, onSave, isMobile, theme,
                 onClick={handleClear}
                 disabled={historyIndex < 0}
                 sx={{ 
-                  color: theme.palette.error.main,
-                  bgcolor: theme.palette.action.hover,
+                  color: theme.palette.text.secondary,
                   '&:hover': {
-                    bgcolor: theme.palette.error.light,
-                    color: theme.palette.error.contrastText
+                    bgcolor: theme.palette.action.hover,
+                    color: theme.palette.error.main
                   }
                 }}
                 size="small"
@@ -787,26 +792,6 @@ const DrawMode = ({ displayDimensions, imageDimensions, onSave, isMobile, theme,
           </Alert>
         )}
         
-        {/* 保存按钮 */}
-        <Box sx={{ mt: 'auto', pt: 2 }}>
-          <Button
-            variant="contained"
-            onClick={handleSaveDrawing}
-            startIcon={<SaveIcon />}
-            fullWidth
-            disabled={eyedropperMode} // 吸管模式时禁用保存
-            sx={{
-              borderRadius: 8,
-              py: 1,
-              bgcolor: theme.palette.success.main,
-              '&:hover': {
-                bgcolor: theme.palette.success.dark,
-              }
-            }}
-          >
-            {t('painting.tools.common.save')}
-          </Button>
-        </Box>
       </Paper>
     );
   }

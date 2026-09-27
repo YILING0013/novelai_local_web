@@ -223,48 +223,22 @@ class ApiClient {
     return { ...response, texts: response.notes || [] };
   }
 
-  async getArtistThreads() {
-    const response = await this.request('/local/artist-threads');
-    return response.artist_threads || [];
+  /** 读取画师串或图片参考集合，kind 为本地 API 的集合名称。 */
+  async getReferences(kind) {
+    const response = await this.request(`/local/${kind}`);
+    return response[kind.replaceAll('-', '_')];
   }
 
-  async createArtistThread(thread) {
-    const response = await this.request('/local/artist-threads', {
-      method: 'POST',
-      body: thread,
-    });
-    return response.artist_thread;
+  /** 创建或更新参考条目；id 为空时创建，返回保存后的条目。 */
+  async saveReference(kind, body, id = null) {
+    const path = `/local/${kind}${id ? `/${encodeURIComponent(id)}` : ''}`;
+    const response = await this.request(path, { method: id ? 'PUT' : 'POST', body });
+    return response[kind.replaceAll('-', '_').slice(0, -1)];
   }
 
-  async updateArtistThread(id, changes) {
-    const response = await this.request(`/local/artist-threads/${encodeURIComponent(id)}`, {
-      method: 'PUT',
-      body: changes,
-    });
-    return response.artist_thread;
-  }
-
-  async deleteArtistThread(id) {
-    return this.request(`/local/artist-threads/${encodeURIComponent(id)}`, { method: 'DELETE' });
-  }
-
-  async getImageReferences() {
-    const response = await this.request('/local/image-references');
-    return response.image_references || [];
-  }
-
-  async createImageReference(reference) {
-    const response = await this.request('/local/image-references', { method: 'POST', body: reference });
-    return response.image_reference;
-  }
-
-  async updateImageReference(id, changes) {
-    const response = await this.request(`/local/image-references/${encodeURIComponent(id)}`, { method: 'PUT', body: changes });
-    return response.image_reference;
-  }
-
-  async deleteImageReference(id) {
-    return this.request(`/local/image-references/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  /** 删除指定参考条目及其图片。 */
+  async deleteReference(kind, id) {
+    return this.request(`/local/${kind}/${encodeURIComponent(id)}`, { method: 'DELETE' });
   }
 
   async saveTexts(title, positivePrompt, negativePrompt, imageUrl, characterTabs) {

@@ -3,7 +3,6 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Typography,
-  Button,
   IconButton,
   TextField,
   Select,
@@ -18,7 +17,6 @@ import {
 import {
   Add as AddIcon,
   Remove as RemoveIcon,
-  Save as SaveIcon,
   Mood as MoodIcon
 } from '@mui/icons-material';
 import { useI18n } from '@/i18n/I18nProvider';
@@ -40,11 +38,11 @@ const emotionOptions = [
   'nervous', 'laughing', 'irritated', 'aroused', 'worried', 'love', 'hurt', 'playful'
 ].map((value) => ({ value, labelKey: `painting.tools.imageEditor.emotion.options.${value}` }));
 
-const EmotionMode = ({ isMobile, theme, inSidePanel = false, onSaveParams }) => {
+const EmotionMode = ({ isMobile, theme, inSidePanel = false, onSaveParams, initialParams }) => {
   const { t } = useI18n();
-  const [selectedEmotion, setSelectedEmotion] = useState('neutral');
-  const [prompt, setPrompt] = useState('');
-  const [defry, setDefry] = useState(0);
+  const [selectedEmotion, setSelectedEmotion] = useState(initialParams?.emotion ?? 'neutral');
+  const [prompt, setPrompt] = useState(initialParams?.prompt ?? '');
+  const [defry, setDefry] = useState(initialParams?.defry ?? 0);
 
   // 使用 useMemo 记忆参数对象，避免不必要的重新渲染
   const params = useMemo(() => ({
@@ -75,24 +73,26 @@ const EmotionMode = ({ isMobile, theme, inSidePanel = false, onSaveParams }) => 
         display: 'flex', 
         alignItems: 'center', 
         justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: 1,
         mb: 2.5
       }}>
-        <Typography variant="h6" component="h2" sx={{ 
+        <Typography variant="subtitle1" component="h2" sx={{
           display: 'flex', 
           alignItems: 'center', 
-          fontWeight: 'bold',
+          fontSize: 15,
+          fontWeight: 600,
           color: theme.palette.text.primary
         }}>
-          <MoodIcon sx={{ mr: 1, color: theme.palette.primary.main }} />
+          <MoodIcon sx={{ mr: 1, fontSize: 18, color: 'text.secondary' }} />
           {t('painting.tools.imageEditor.emotion.title')}
         </Typography>
         
         <Chip 
           label={`${defry} - ${t(`painting.tools.imageEditor.intensity.${defry}`)}`}
-          color="primary" 
           variant="outlined"
           sx={{ 
-            fontWeight: 'bold',
+            fontWeight: 500,
             fontSize: '0.875rem',
             height: 32
           }}
@@ -173,11 +173,11 @@ const EmotionMode = ({ isMobile, theme, inSidePanel = false, onSaveParams }) => 
                 { value: 5, label: '5' },
               ]}
               sx={{
-                color: theme.palette.secondary.main,
+                color: theme.palette.primary.main,
                 flexGrow: 1,
                 '& .MuiSlider-thumb': {
                   '&:hover, &.Mui-focusVisible': {
-                    boxShadow: `0px 0px 0px 8px ${theme.palette.secondary.main}30`
+                    boxShadow: `0px 0px 0px 8px ${theme.palette.primary.main}30`
                   }
                 }
               }}
@@ -232,7 +232,7 @@ const EmotionMode = ({ isMobile, theme, inSidePanel = false, onSaveParams }) => 
         <Typography variant="caption" color="text.secondary">
           {t('painting.tools.imageEditor.currentParameters')}
         </Typography>
-        <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', rowGap: 0.5, fontSize: '0.75rem' }}>
+        <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', rowGap: 0.5, fontSize: 14 }}>
           <Box component="dt" sx={{ fontWeight: 'bold' }}>{t('painting.tools.imageEditor.emotion.type')}:</Box>
           <Box component="dd" sx={{ m: 0 }}>
             {t(emotionOptions.find(opt => opt.value === selectedEmotion)?.labelKey) || selectedEmotion}
@@ -250,12 +250,6 @@ const EmotionMode = ({ isMobile, theme, inSidePanel = false, onSaveParams }) => 
         </Box>
       </Box>
       
-      {/* 移除应用按钮，改为参数自动保存 */}
-      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
-        <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center' }}>
-          {t('painting.tools.imageEditor.autoApply')}
-        </Typography>
-      </Box>
     </>
   );
 
@@ -263,14 +257,16 @@ const EmotionMode = ({ isMobile, theme, inSidePanel = false, onSaveParams }) => 
   if (inSidePanel) {
     return (
       <Paper
-        elevation={3}
+        elevation={0}
         sx={{
-          p: 2,
-          borderRadius: 2,
+          p: 0,
+          bgcolor: 'transparent',
           display: 'flex',
           flexDirection: 'column',
           height: '100%',
-          overflow: 'auto'
+          overflow: 'auto',
+          '& .MuiInputBase-root': { minHeight: 44 },
+          '& .MuiIconButton-root': { minWidth: 36, minHeight: 36 }
         }}
       >
         {contentComponent}

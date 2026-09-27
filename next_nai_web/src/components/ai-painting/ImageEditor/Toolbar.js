@@ -22,7 +22,6 @@ const Toolbar = ({
   onMainToolClick, 
   activeRadioTool, 
   onRadioToolClick, 
-  isMobile,
   theme,
 }) => {
   const { t } = useI18n();
@@ -36,17 +35,18 @@ const Toolbar = ({
 
   return (
     <Paper
-      elevation={3}
-      sx={{ 
-        display: 'flex', 
-        flexDirection: isMobile ? 'column' : 'row', 
+      elevation={0}
+      sx={{
+        display: 'flex',
         p: 1.5,
-        m: 1,
-        borderRadius: 2,
+        px: { xs: 2, sm: 3 },
+        borderRadius: 0,
+        borderBottom: `1px solid ${theme.palette.divider}`,
         bgcolor: theme.palette.background.paper,
-        flexWrap: 'wrap',
+        overflowX: 'auto',
+        flexShrink: 0,
         alignItems: 'center',
-        justifyContent: 'center',
+        gap: 1.5,
         position: 'relative',
         zIndex: 5,
       }}
@@ -54,27 +54,26 @@ const Toolbar = ({
       {/* 第一组：主模式按钮 */}
       <Box sx={{ 
         display: 'flex', 
-        justifyContent: 'center', 
-        gap: 1.5,
-        width: isMobile ? '100%' : 'auto',
-        mb: isMobile ? 1.5 : 0,
-        mr: isMobile ? 0 : 3,
-        borderRight: isMobile ? 'none' : `1px solid ${theme.palette.divider}`,
-        pr: isMobile ? 0 : 3
+        flexShrink: 0,
+        borderRight: `1px solid ${theme.palette.divider}`,
+        pr: 1.5
       }}>
         <Tooltip title={t('painting.tools.imageEditor.toolbar.drawTooltip')} arrow placement="bottom">
           <Button
-            variant={activeMainTool === 'draw' ? 'contained' : 'outlined'}
+            variant="text"
+            aria-pressed={activeMainTool === 'draw'}
             onClick={() => onMainToolClick('draw')}
             startIcon={<BrushIcon />}
-            size={isMobile ? "small" : "medium"}
-            color="primary"
             sx={{
-              borderRadius: 1.5,
+              borderRadius: 1,
               textTransform: 'none',
-              px: 2,
-              py: 1,
-              fontWeight: 'bold'
+              px: 1.5,
+              minHeight: 40,
+              fontSize: 14,
+              fontWeight: 500,
+              whiteSpace: 'nowrap',
+              color: 'text.primary',
+              bgcolor: activeMainTool === 'draw' ? 'action.selected' : 'transparent'
             }}
           >
             {t('painting.tools.imageEditor.toolbar.draw')}
@@ -85,12 +84,8 @@ const Toolbar = ({
       {/* 第二组：Radio按钮组（互斥，可取消选中） */}
       <Box sx={{
           display: 'flex',
-          flexWrap: 'wrap',
-          justifyContent: 'center',
+          flexShrink: 0,
           gap: 0.75,
-          width: isMobile ? '100%' : 'auto',
-          borderTop: isMobile ? `1px solid ${theme.palette.divider}` : 'none',
-          pt: isMobile ? 1.5 : 0
         }}>
           {radioTools.map((tool) => {
             return (
@@ -101,24 +96,26 @@ const Toolbar = ({
                   onChange={() => onRadioToolClick(tool.value)}
                   size="small"
                   sx={{ 
-                    borderRadius: 1.5,
+                    borderRadius: 1,
                     px: 1.5,
-                    py: 0.75,
+                    minHeight: 40,
                     display: 'flex',
-                    flexDirection: 'column',
-                    gap: 0.5,
-                    borderColor: theme.palette.divider,
+                    gap: 0.75,
+                    whiteSpace: 'nowrap',
+                    border: 0,
+                    textTransform: 'none',
+                    color: 'text.secondary',
                     '&.Mui-selected': {
-                      backgroundColor: theme.palette.primary.main,
-                      color: theme.palette.primary.contrastText,
+                      backgroundColor: 'action.selected',
+                      color: 'text.primary',
                       '&:hover': {
-                        backgroundColor: theme.palette.primary.dark,
+                        backgroundColor: 'action.hover',
                       }
                     }
                   }}
                 >
                   {tool.icon}
-                  <Typography variant="caption" sx={{ fontSize: isMobile ? '0.65rem' : '0.7rem' }}>
+                  <Typography component="span" sx={{ fontSize: 14, fontWeight: 500 }}>
                     {t(`painting.tools.imageEditor.toolbar.${tool.labelKey}`)}
                   </Typography>
                 </ToggleButton>

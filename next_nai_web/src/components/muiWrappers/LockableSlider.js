@@ -128,9 +128,9 @@ const LockableSlider = ({
   };
   
   return (
-    <Box sx={{ mt: 0.75 }}>
+    <Box sx={{ mt: 1 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center' }}>
+        <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', fontSize: '0.9375rem', lineHeight: 1.5 }}>
           {label}
           {tooltip && (
             <Tooltip title={tooltip} arrow placement="top">
@@ -140,7 +140,7 @@ const LockableSlider = ({
         </Typography>
         
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
-          <Typography variant="body2" fontWeight="medium" sx={{ mr: 1 }}>
+          <Typography variant="body2" fontWeight="medium" sx={{ ml: 1, minWidth: 36, textAlign: 'right', fontSize: '0.9375rem', fontVariantNumeric: 'tabular-nums' }}>
             {valueLabelFormat ? valueLabelFormat(value) : value}
           </Typography>
           
@@ -150,6 +150,7 @@ const LockableSlider = ({
               aria-label={isLocked
                 ? t('painting.tools.lockableSlider.unlock')
                 : t('painting.tools.lockableSlider.lock')}
+              title={t(isLocked ? 'painting.tools.lockableSlider.tapToUnlock' : 'painting.tools.lockableSlider.lock')}
               size="small" 
               onClick={toggleLock}
               color={isLocked ? "default" : "primary"}
@@ -171,6 +172,8 @@ const LockableSlider = ({
         onTouchEnd={handleSliderTouchEnd}
         sx={{ 
           position: 'relative',
+          // 为滑块圆点和两端刻度留出空间。
+          mx: 1,
           opacity: isLocked && isMobile ? 0.6 : 1,
           transition: 'opacity 0.2s',
           cursor: isLocked && isMobile ? 'pointer' : 'auto',
@@ -186,12 +189,14 @@ const LockableSlider = ({
           valueLabelDisplay={isLocked && isMobile ? "off" : "auto"}
           sx={{ 
             color: isLocked && isMobile ? 'grey.400' : 'primary.main',
-            height: 6,
+            height: 3,
+            py: isMobile ? 1.5 : 1,
+            '& .MuiSlider-markLabel': { fontSize: '0.875rem' },
             '& .MuiSlider-thumb': {
               width: isMobile ? 18 : 14,
               height: isMobile ? 18 : 14,
               backgroundColor: isLocked && isMobile ? 'grey.400' : 'primary.main',
-              boxShadow: isLocked && isMobile ? 'none' : '0 2px 4px rgba(0,0,0,0.2)',
+              boxShadow: 'none',
               '&:hover, &.Mui-focusVisible': {
                 boxShadow: `0px 0px 0px 8px ${alpha(
                   theme.palette.primary.main,
@@ -201,7 +206,7 @@ const LockableSlider = ({
             },
             // 在锁定状态下改变轨道颜色
             '& .MuiSlider-rail': {
-              opacity: 0.5,
+              opacity: 0.25,
               backgroundColor: isLocked && isMobile ? 'grey.300' : undefined,
             },
             '& .MuiSlider-track': {
@@ -214,45 +219,8 @@ const LockableSlider = ({
             },
           }}
           marks={marks}
-          aria-labelledby={`${label}-slider`}
+          aria-label={label}
         />
-        
-        {/* 在锁定状态下显示提示层 */}
-        {isLocked && isMobile && (
-          <Box 
-            sx={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: 'rgba(255, 255, 255, 0.1)',
-              borderRadius: 2,
-              zIndex: 1,
-              pointerEvents: 'none', // 允许点击穿透到下层
-            }}
-          >
-            <Typography 
-              variant="caption" 
-              sx={{ 
-                color: 'text.secondary',
-                backgroundColor: 'rgba(10, 10, 10, 0.3)',
-                px: 1,
-                py: 0.5,
-                borderRadius: 1,
-                display: 'flex',
-                alignItems: 'center',
-                opacity: 0.9,
-              }}
-            >
-              <LockIcon sx={{ fontSize: 14, mr: 0.5 }} />
-              {t('painting.tools.lockableSlider.tapToUnlock')}
-            </Typography>
-          </Box>
-        )}
       </Box>
     </Box>
   );

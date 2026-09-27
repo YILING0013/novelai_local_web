@@ -27,7 +27,6 @@ V5_MODELS = {
 }
 V5_INPAINTING_MODELS = {
     "nai-diffusion-5-full-inpainting",
-    "nai-diffusion-5-curated-inpainting",
 }
 V5_MODEL_FAMILY = V5_MODELS | V5_INPAINTING_MODELS
 NOVELAI_MAX_COST_PER_IMAGE = 140
@@ -36,7 +35,7 @@ V5_TEXT_TO_IMAGE_DEFAULTS = {
     "height": 1216,
     "scale": 7,
     "sampler": "k_euler_ancestral",
-    "steps": 28,
+    "steps": 23,
     "n_samples": 1,
     "cfg_rescale": 0,
     "noise_schedule": "karras",
@@ -84,6 +83,8 @@ ALL_MODELS = V4_PROMPT_MODELS | {
 DIRECTOR_REFERENCE_MODELS = {
     "nai-diffusion-4-5-full",
     "nai-diffusion-4-5-curated",
+    "nai-diffusion-4-5-full-inpainting",
+    "nai-diffusion-4-5-curated-inpainting",
 }
 DIRECTOR_REFERENCE_ALLOWED_RESOLUTIONS = frozenset({
     (1024, 1536),
@@ -98,7 +99,7 @@ DIRECTOR_REFERENCE_PARAM_KEYS = (
     "director_reference_secondary_strength_values",
     "director_reference_information_extracted",
 )
-V5_VIBE_PARAM_KEYS = (
+VIBE_PARAM_KEYS = (
     "reference_image_multiple",
     "reference_strength_multiple",
     "reference_information_extracted_multiple",
@@ -119,14 +120,13 @@ INPAINTING_MODELS = {
     "nai-diffusion-4-full": "nai-diffusion-4-full-inpainting",
     "nai-diffusion-4-5-curated": "nai-diffusion-4-5-curated-inpainting",
     "nai-diffusion-4-5-full": "nai-diffusion-4-5-full-inpainting",
-    "nai-diffusion-5-curated": "nai-diffusion-5-curated-inpainting",
     "nai-diffusion-5-full": "nai-diffusion-5-full-inpainting",
 }
 
 
-def validate_v5_request_capabilities(model_name, values, official_format=False):
+def validate_novelai_request_capabilities(model_name, values, official_format=False):
     """
-    校验 V5 请求仅使用当前模型已开放的能力。
+    在调用官方接口前拒绝未开放的重绘模型及互斥的参考图组合。
 
     Args:
         model_name: 请求选择的完整 NovelAI 模型 ID。
@@ -134,39 +134,65 @@ def validate_v5_request_capabilities(model_name, values, official_format=False):
         official_format: values 是否采用官方 generate-image 请求结构。
 
     Returns:
-        None: 请求未携带角色参考或 Vibe 参数时返回。
+        None: 模型与功能组合受支持时返回。
 
     Raises:
-        ExposableError: V5 模型 ID 无效，或请求启用了角色参考、Vibe。
+        ExposableError: 模型未开放所选功能，或参考图组合互斥。
     """
-    if not str(model_name or "").startswith("nai-diffusion-5-"):
+    if not str(model_name or "").startswith("nai-diffusion-"):
         return
-    if model_name not in V5_MODEL_FAMILY:
+
+    parameters = values.get("parameters", {}) if official_format else values
+    is_inpaint = (
+        bool(parameters.get("mask"))
+        or values.get("action") == "infill"
+        or model_name.endswith("-inpainting")
+    )
+    if is_inpaint and model_name in {
+        "nai-diffusion-5-curated", "nai-diffusion-5-curated-inpainting",
+    }:
+        # 不自动换成其它模型，避免实际生成模型与用户所选模型、费用不一致。
+        raise ExposableError(
+            "V5 Curated inpainting is not available. Select V5 Full or V4.5 for inpainting.",
+            code="NOVELAI_INPAINT_MODEL_NOT_SUPPORTED",
+        )
+
+    is_v5 = model_name.startswith("nai-diffusion-5-")
+    if is_v5 and model_name not in V5_MODEL_FAMILY:
         raise ExposableError(
             f"Model '{model_name}' is not supported. Use nai-diffusion-5-curated, "
-            "nai-diffusion-5-full, or their inpainting variants.",
+            "nai-diffusion-5-full, or nai-diffusion-5-full-inpainting.",
             code="MODEL_NOT_SUPPORTED",
         )
 
-    request_values = values or {}
-    parameters = (
-        request_values.get("parameters", {})
-        if official_format
-        else request_values
-    )
     has_director_reference = any(
         parameters.get(field_name)
         for field_name in DIRECTOR_REFERENCE_PARAM_KEYS
     )
     has_vibe = any(
         parameters.get(field_name)
-        for field_name in V5_VIBE_PARAM_KEYS
+        for field_name in VIBE_PARAM_KEYS
     )
 
-    if has_director_reference or has_vibe:
+    if is_v5 and (has_director_reference or has_vibe):
         raise ExposableError(
             "V5 models do not currently support Director reference or Vibe.",
             code="MODEL_CAPABILITY_NOT_SUPPORTED",
+        )
+    if has_director_reference and not is_director_reference_model(model_name):
+        raise ExposableError(
+            "Precise reference is only supported by V4.5 models, including inpainting.",
+            code="NOVELAI_REFERENCE_MODEL_NOT_SUPPORTED",
+        )
+    if has_director_reference and has_vibe:
+        raise ExposableError(
+            "Precise reference and Vibe cannot be used together.",
+            code="NOVELAI_REFERENCE_VIBE_CONFLICT",
+        )
+    if is_inpaint and model_name.startswith("nai-diffusion-4") and has_vibe:
+        raise ExposableError(
+            "V4 and V4.5 inpainting do not support Vibe. Remove Vibe before submitting.",
+            code="NOVELAI_INPAINT_VIBE_NOT_SUPPORTED",
         )
 
 
@@ -236,7 +262,7 @@ def normalize_v5_request(request_data):
         existing_v4_prompt.get("use_coords", False),
     ))
 
-    # V5 不发送 V3 旧字段；共享试用位于顶层，验证码只保留调用方真实提供的值。
+    # V5 不发送 V3 旧字段；共享试用位于顶层，本地请求不携带站点验证码。
     for field_name in (
         "sm",
         "sm_dyn",
@@ -246,7 +272,7 @@ def normalize_v5_request(request_data):
         "ucPreset",
         "use_new_shared_trial",
         *DIRECTOR_REFERENCE_PARAM_KEYS,
-        *V5_VIBE_PARAM_KEYS,
+        *VIBE_PARAM_KEYS,
     ):
         parameters.pop(field_name, None)
 
@@ -312,7 +338,7 @@ def is_director_reference_model(model_name):
         model_name: 待判断的完整模型 ID。
 
     Returns:
-        bool: 仅 NAI Diffusion 4.5 Full 与 Curated 返回 True。
+        bool: 仅 NAI Diffusion 4.5 Full、Curated 及对应重绘模型返回 True。
     """
     return str(model_name or "") in DIRECTOR_REFERENCE_MODELS
 
@@ -504,7 +530,7 @@ def build_novelai_payload(
             f"Model '{model_name}' is invalid. Use one of the allowed models.",
             code="MODEL_NOT_SUPPORTED",
         )
-    validate_v5_request_capabilities(model_name, data)
+    validate_novelai_request_capabilities(model_name, data)
     data = filter_director_reference_fields(model_name, data)
     if model_name in V5_MODELS:
         for field_name, default_value in V5_TEXT_TO_IMAGE_DEFAULTS.items():
@@ -529,7 +555,7 @@ def build_novelai_payload(
     else:
         max_resolution_product = 1048576
         max_dimension = 2048
-        max_steps = 28 if model_name in V5_MODELS else 28
+        max_steps = 28
 
     current_resolution = (data.get("width"), data.get("height"))
     if not _is_allowed_resolution(

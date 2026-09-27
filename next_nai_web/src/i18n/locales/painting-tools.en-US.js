@@ -116,7 +116,8 @@ const paintingToolsenUS = {
         },
         "title": "Image editor",
         "chooseTool": "Choose an editing tool from the toolbar above",
-        "editingImageAlt": "Image being edited"
+        "editingImageAlt": "Image being edited",
+        "saveFailed": "The image could not be saved. Please try again."
       },
       "common": {
         "save": "Save",

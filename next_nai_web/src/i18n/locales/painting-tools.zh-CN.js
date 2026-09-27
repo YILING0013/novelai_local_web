@@ -116,7 +116,8 @@ const paintingToolszhCN = {
         },
         "title": "图像编辑器",
         "chooseTool": "请从上方的工具栏选择一个编辑工具",
-        "editingImageAlt": "正在编辑的图像"
+        "editingImageAlt": "正在编辑的图像",
+        "saveFailed": "保存图像失败，请稍后重试。"
       },
       "common": {
         "save": "保存",

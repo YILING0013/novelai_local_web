@@ -303,8 +303,8 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
     ItemPreviewBg: theme.palette.background.default,
 
     // 移动端底部栏颜色
-    mobileBottomBg: alpha(theme.palette.background.paper, 0.9),
-    mobileBottomBorder: alpha(theme.palette.divider, 0.2),
+    mobileBottomBg: theme.palette.background.paper,
+    mobileBottomBorder: theme.palette.divider,
 
     // 抽屉背景色
     drawerBg: theme.palette.background.paper,
@@ -760,7 +760,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
 
     if (
       isV4
-      && isNovelAIVibeModel(generationParams.model)
+      && isNovelAIVibeModel(generationParams.model, isInpaintMode)
       && !hasImageReference
       && vibeImages.some((vibe) => (
         vibe.isV4Vibe
@@ -1025,12 +1025,6 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
       return nextParams;
     });
   }, []);
-
-  const refreshSeedAfterSuccessfulImage = useCallback(() => {
-    // NovelAI seeds are unsigned 32-bit values. Refresh only after an image
-    // succeeds so a failed or cancelled request remains reproducible.
-    handleParamChange('seed', Math.floor(Math.random() * 4294967295));
-  }, [handleParamChange]);
 
   const applyMetadataToCurrentParams = useCallback((parsedParams, {
     successMessage = t('painting.workspace.notifications.imageParametersLoaded'),
@@ -1357,6 +1351,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
       };
 
       if (leftPanelMode === 'inpaint') {
+        if (params.model === 'nai-diffusion-5-curated') {
+          throw createWorkspaceError('NOVELAI_INPAINT_MODEL_NOT_SUPPORTED');
+        }
+
         if (!inpaintWorkspaceRef.current?.hasSourceImage()) {
           throw createWorkspaceError('INPAINT_SOURCE_REQUIRED');
         }
@@ -1428,7 +1426,6 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
             }
 
             generatedPreviewCount += 1;
-            refreshSeedAfterSuccessfulImage();
             if (previewIndex < previewCount - 1) {
               await new Promise((resolve) => window.setTimeout(resolve, 15_000));
             }
@@ -1460,7 +1457,6 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
           const finalBatchStatus = await generateBatchImages(params,
             // 为批量生成添加回调，处理成功生成的图像自动保存
             (newImage) => {
-              refreshSeedAfterSuccessfulImage();
               // 如果启用了自动保存，则保存每张生成的图像
               if (imageSettings.autoSaveEnabled) {
                 setTimeout(() => {
@@ -1551,8 +1547,6 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
             throw createWorkspaceError('GENERATION_FAILED');
           }
         }
-
-        refreshSeedAfterSuccessfulImage();
 
         showNotification(t('painting.workspace.notifications.imageGenerated'), 'success');
 
@@ -2108,57 +2102,71 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
             overflow: 'hidden',
           }}
         >
-          <Paper
-            elevation={0}
+          <Box
             sx={{
               flex: '0 0 auto',
-              width: isMobile ? '100%' : 72,
-              height: isMobile ? 'auto' : '100%',
-              mr: isMobile ? 0 : 0.5,
-              mb: isMobile ? 0.5 : 0,
-              p: 0.5,
-              borderRadius: 2,
+              width: isMobile ? '100%' : 56,
+              mr: isMobile ? 0 : 1,
+              mb: isMobile ? 1 : 0,
+              pt: isMobile ? 0 : 0.5,
               display: 'flex',
               flexDirection: isMobile ? 'row' : 'column',
+              alignItems: 'stretch',
               justifyContent: 'flex-start',
-              gap: 0.5,
-              backgroundColor: theme.palette.background.paper,
-              border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
+              gap: isMobile ? 0 : 0.5,
             }}
           >
             <Button
-              variant={leftPanelMode === 'generation' ? 'contained' : 'outlined'}
+              variant="text"
               color="primary"
+              aria-label={t('painting.workspace.tabs.generation')}
+              aria-pressed={leftPanelMode === 'generation'}
               onClick={() => setLeftPanelMode('generation')}
               sx={{
-                minWidth: isMobile ? 'auto' : 0,
-                flex: isMobile ? 1 : '0 0 auto',
+                minWidth: 0,
+                flex: isMobile ? 1 : undefined,
                 flexDirection: isMobile ? 'row' : 'column',
-                gap: 0.5,
-                py: 1,
+                gap: isMobile ? 0.75 : 0.25,
+                py: 0.5,
+                px: isMobile ? 1.25 : 0.5,
+                minHeight: isMobile ? 36 : 48,
+                fontSize: isMobile ? '0.8125rem' : '0.75rem',
+                lineHeight: 1.4,
+                borderRadius: 1.5,
+                color: leftPanelMode === 'generation' ? 'primary.main' : 'text.secondary',
+                bgcolor: leftPanelMode === 'generation' ? 'action.selected' : 'transparent',
               }}
             >
-              <ImageIcon fontSize="small" />
+              <ImageIcon sx={{ fontSize: 18 }} />
               {t('painting.workspace.tabs.generation')}
             </Button>
             {(
               <Button
-                variant={leftPanelMode === 'inpaint' ? 'contained' : 'outlined'}
+                variant="text"
                 color="primary"
+                aria-label={t('painting.workspace.tabs.inpaint')}
+                aria-pressed={leftPanelMode === 'inpaint'}
                 onClick={() => setLeftPanelMode('inpaint')}
                 sx={{
-                  minWidth: isMobile ? 'auto' : 0,
-                  flex: isMobile ? 1 : '0 0 auto',
+                  minWidth: 0,
+                  flex: isMobile ? 1 : undefined,
                   flexDirection: isMobile ? 'row' : 'column',
-                  gap: 0.5,
-                  py: 1,
+                  gap: isMobile ? 0.75 : 0.25,
+                  py: 0.5,
+                  px: isMobile ? 1.25 : 0.5,
+                  minHeight: isMobile ? 36 : 48,
+                  fontSize: isMobile ? '0.8125rem' : '0.75rem',
+                  lineHeight: 1.4,
+                  borderRadius: 1.5,
+                  color: leftPanelMode === 'inpaint' ? 'primary.main' : 'text.secondary',
+                  bgcolor: leftPanelMode === 'inpaint' ? 'action.selected' : 'transparent',
                 }}
               >
-                <BrushIcon fontSize="small" />
+                <BrushIcon sx={{ fontSize: 18 }} />
                 {t('painting.workspace.tabs.inpaint')}
               </Button>
             )}
-          </Paper>
+          </Box>
 
           <Box
             sx={{
@@ -2207,7 +2215,6 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                   onError={reportWorkspaceFailure}
                   disableVibeAction={isV5Model}
                   isUpscaling={isUpscaling}
-                  showReferenceGallery={false}
                 />
               </Paper>
 
@@ -2271,10 +2278,14 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
         {!isMobile && (
           <Box
             sx={{
-              flex: 4,
-              width: 'auto',
+              flex: '0 0 clamp(380px, 30vw, 460px)',
               minWidth: 0,
-              p: 1,
+              px: 2.5,
+              pt: 1.5,
+              bgcolor: 'background.paper',
+              border: 1,
+              borderColor: 'divider',
+              borderRadius: 2,
               display: 'flex',
               flexDirection: 'column',
               height: '100%',
@@ -2286,11 +2297,13 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
               sx={{
                 flex: 1,
                 overflowY: 'auto',
+                overflowX: 'hidden',
+                minWidth: 0,
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 2,
+                gap: 2.5,
                 height: '100%',
-                pr: 0.1,
+                pr: 0.75,
                 // 滚动条样式使用主题色
                 '&::-webkit-scrollbar': {
                   width: '4px',
@@ -2309,16 +2322,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
               }}
             >
               {/* 上方：正负面词条输入区 */}
-              <Paper
-                elevation={0}
-                sx={{
-                  borderRadius: 2,
-                  overflow: 'hidden',
-                  flexShrink: 0,
-                  backgroundColor: theme.palette.background.paper,
-                  border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
-                }}
-              >
+              <Box sx={{ flexShrink: 0, minWidth: 0 }}>
                 <PromptPanel
                   positivePrompt={positivePrompt}
                   negativePrompt={negativePrompt}
@@ -2330,21 +2334,13 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                   onApplyNoteContent={handleApplyMetadataFromNote}
                   onError={reportWorkspaceFailure}
                 />
-              </Paper>
+              </Box>
 
               {/* 参数面板 - 传递expandedPanels和onExpandedPanelsChange */}
-              <Paper
-                elevation={0}
-                sx={{
-                  borderRadius: 2,
-                  overflow: 'visible',
-                  mb: 2,
-                  backgroundColor: theme.palette.background.paper,
-                  border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
-                }}
-              >
+              <Box sx={{ flexShrink: 0, minWidth: 0, pb: 1 }}>
                 <ParameterPanel
                   params={generationParams}
+                  isInpaintMode={leftPanelMode === 'inpaint'}
                   onParamChange={handleParamChange}
                   getAllParametersRef={getAllParametersRef}
                   externalCharacterTabs={characterTabsFromNote} // 传递给 ParameterPanel
@@ -2362,19 +2358,17 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                   negativePrompt={negativePrompt}
                   onError={reportWorkspaceFailure}
                 />
-              </Paper>
+              </Box>
             </Box>
 
             {/* 桌面模式下的生成按钮和验证组件区域 */}
-            <Paper
-              elevation={0}
+            <Box
               sx={{
-                borderRadius: 2,
-                p: 1.5,
+                py: 1,
                 flexShrink: 0,
                 bgcolor: theme.palette.background.paper,
-                border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
-                minHeight: '64px',
+                borderTop: 1,
+                borderColor: 'divider',
                 mt: 'auto',
                 overflow: 'hidden',
               }}
@@ -2440,7 +2434,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                 {/* 生成按钮至少保留 220px；不足时自动换到完整的第二行。 */}
                 <Box sx={{ flex: '1 1 220px', minWidth: 0, maxWidth: '100%', display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
                   <Box ref={setDesktopGenerateButtonContainer} sx={{ flex: 1, minWidth: 0, maxWidth: '100%' }}>
-                    {/* 生成按钮 - 机械按键质感 */}
+                    {/* 主操作保持稳定尺寸，窄宽度时继续沿用现有文字与点数显示规则。 */}
                     {(() => {
                       const buttonState = getGenerateButtonState();
                       const buttonContent = getResponsiveGenerateButtonContent({
@@ -2450,7 +2444,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                       });
                       const isError = buttonState.color === 'error';
                       const mainColor = isError ? theme.palette.error.main : theme.palette.primary.main;
-                      const lightColor = isError ? theme.palette.error.light : theme.palette.primary.light;
+                      const contrastText = isError ? theme.palette.error.contrastText : theme.palette.primary.contrastText;
                       const darkColor = isError ? theme.palette.error.dark : theme.palette.primary.dark;
                       // 如果原先没有指定具体图标，对于这种动态情况增加一个后备生图图标以防极小尺寸看不见
                       const currentIcon = buttonState.icon || <ImageIcon />;
@@ -2465,7 +2459,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                           title={buttonState.text}
                           aria-label={buttonState.text}
                           sx={{
-                            height: { xs: '44px', sm: '48px', md: '52px' },
+                            height: 44,
                             minWidth: 0,
                             width: '100%',
                             maxWidth: '100%',
@@ -2474,7 +2468,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                             border: 'none',
                             boxShadow: 'none',
                             background: mainColor,
-                            color: 'white',
+                            color: contrastText,
                             textTransform: 'none',
                             fontSize: { xs: '0.85rem', md: '0.95rem' },
                             fontWeight: 600,
@@ -2525,7 +2519,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                                   whiteSpace: 'nowrap',
                                   overflow: 'hidden',
                                   textOverflow: 'ellipsis',
-                                  fontWeight: 'bold',
+                                  fontWeight: 600,
                                   minWidth: 0,
                                 }}
                               >
@@ -2561,7 +2555,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                   )}
                 </Box>
               </Box>
-            </Paper>
+            </Box>
           </Box>
         )}
 
@@ -2619,10 +2613,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
             {/* 抽屉内容区域 */}
             <Box
               sx={{
-                p: 1,
+                p: 2,
                 overflowY: 'auto',
                 height: '100vh',
-                backgroundColor: theme.palette.background.default, // 使用主题色
+                backgroundColor: theme.palette.background.paper,
                 // 滚动条样式使用主题色
                 '&::-webkit-scrollbar': {
                   width: '6px',
@@ -2641,16 +2635,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
               }}
             >
               {/* 提示词设置面板 */}
-              <Paper
-                elevation={0}
-                sx={{
-                  mb: 2,
-                  borderRadius: 2,
-                  overflow: 'hidden',
-                  backgroundColor: theme.palette.background.paper,
-                  border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
-                }}
-              >
+              <Box sx={{ mb: 2.5, minWidth: 0 }}>
                 <PromptPanel
                   positivePrompt={positivePrompt}
                   negativePrompt={negativePrompt}
@@ -2662,21 +2647,13 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                   onApplyNoteContent={handleApplyMetadataFromNote}
                   onError={reportWorkspaceFailure}
                 />
-              </Paper>
+              </Box>
 
               {/* 参数控制面板 */}
-              <Paper
-                elevation={0}
-                sx={{
-                  borderRadius: 2,
-                  overflow: 'visible',
-                  mb: 2,
-                  backgroundColor: theme.palette.background.paper,
-                  border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
-                }}
-              >
+              <Box sx={{ mb: 1, minWidth: 0 }}>
                 <ParameterPanel
                   params={generationParams}
+                  isInpaintMode={leftPanelMode === 'inpaint'}
                   onParamChange={handleParamChange}
                   getAllParametersRef={getAllParametersRef}
                   expandedPanels={expandedPanels}
@@ -2693,17 +2670,16 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                   negativePrompt={negativePrompt}
                   onError={reportWorkspaceFailure}
                 />
-              </Paper>
+              </Box>
 
               {/* 移动端抽屉与桌面、底栏复用同一个紧凑余额状态块。 */}
               <Paper
                 elevation={0}
                 sx={{
-                  p: 1,
-                  borderRadius: 2,
-                  mb: 6,
-                  bgcolor: theme.palette.background.paper,
-                  border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
+                  py: 1,
+                  mb: 2,
+                  borderTop: 1,
+                  borderColor: 'divider',
                   display: 'flex',
                   justifyContent: 'center',
                   alignItems: 'center'
@@ -2726,7 +2702,6 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
               py: 1.5,
               px: 2,
               backgroundColor: themeColors.mobileBottomBg,
-              backdropFilter: 'blur(10px)',
               borderTop: `1px solid ${themeColors.mobileBottomBorder}`,
               zIndex: 1200,
               display: 'flex',
@@ -2797,7 +2772,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
               
               const isError = buttonState.color === 'error';
               const mainColor = isError ? theme.palette.error.main : theme.palette.primary.main;
-              const lightColor = isError ? theme.palette.error.light : theme.palette.primary.light;
+              const contrastText = isError ? theme.palette.error.contrastText : theme.palette.primary.contrastText;
               const darkColor = isError ? theme.palette.error.dark : theme.palette.primary.dark;
 
               return (
@@ -2820,7 +2795,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                       border: 'none',
                       boxShadow: 'none',
                       background: mainColor,
-                      color: 'white',
+                      color: contrastText,
                       transition: 'background 0.15s ease, opacity 0.15s ease',
                       '&:hover': {
                         boxShadow: 'none',
@@ -2864,7 +2839,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                         <Typography
                           variant="body2"
                           sx={{
-                            fontWeight: 'bold',
+                            fontWeight: 600,
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap',

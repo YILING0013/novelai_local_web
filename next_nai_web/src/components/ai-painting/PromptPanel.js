@@ -8,9 +8,6 @@ import {
   Tab,
   TextField,
   Typography,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
   IconButton,
   Tooltip,
   Chip,
@@ -20,7 +17,6 @@ import {
   Alert,
 } from '@mui/material';
 import {
-  ExpandMore as ExpandMoreIcon,
   ContentCopy as CopyIcon,
   Delete as ClearIcon,
   Lightbulb as LightbulbIcon,
@@ -66,7 +62,6 @@ const PromptPanel = ({
   const { t } = useI18n();
   const [tabValue, setTabValue] = useState(0);
   const effectiveTabValue = tabValue;
-  const [expanded, setExpanded] = useState(true);
   const [suggestedTags, setSuggestedTags] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [currentInput, setCurrentInput] = useState('');
@@ -549,41 +544,22 @@ const PromptPanel = ({
     setSnackbar({ ...snackbar, open: false });
   };
 
-  // The rest of the component's JSX remains the same, ensure that
-  // <RandomPromptConfig open={randomPromptDialogOpen} onClose={handleCloseRandomPromptDialog} ... />
-  // correctly uses the updated handleCloseRandomPromptDialog.
-
   return (
-    <Accordion
-      expanded={expanded}
-      onChange={() => setExpanded(!expanded)}
-      disableGutters
-      sx={{
-        boxShadow: 'none',
-        borderRadius: 2,
-        '&::before': {
-          display: 'none',
-        },
-      }}
+    <Box
+      component="section"
+      aria-label={t('painting.workspace.prompt.title')}
+      sx={{ minWidth: 0 }}
     >
-      <AccordionSummary
-        expandIcon={<ExpandMoreIcon />}
-        sx={{
-          minHeight: 42,
-          backgroundColor: theme => expanded ? theme.palette.primary.main : 'background.paper',
-          color: expanded ? 'white' : 'text.primary',
-          borderRadius: expanded ? '8px 8px 0 0' : 2,
-          transition: 'all 0.2s ease',
-        }}
-      >
-        <Typography variant="subtitle1" fontWeight="medium">
-          {t('painting.workspace.prompt.title')}
-        </Typography>
-      </AccordionSummary>
-
-      <AccordionDetails sx={{ p: 0 }}>
-        <Box sx={{ width: '100%' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+          <Box sx={{
+            display: 'flex',
+            alignItems: 'center',
+            minHeight: 44,
+            gap: 0.5,
+            borderBottom: 1,
+            borderColor: 'divider',
+            '& .MuiIconButton-root': { width: 32, height: 36, p: 0.75, flexShrink: 0 },
+            '& .MuiIconButton-root .MuiSvgIcon-root': { fontSize: 20 },
+          }}>
             <Tabs
                 value={effectiveTabValue}
                 onChange={handleTabChange}
@@ -591,13 +567,18 @@ const PromptPanel = ({
                 scrollButtons="auto"
                 allowScrollButtonsMobile
                 sx={{
-                  minHeight: 48,
+                  minHeight: 44,
+                  minWidth: 0,
                   flex: 1,
                   '& .MuiTabs-indicator': {
-                    height: 3,
+                    height: 2,
                   },
                   '& .MuiTab-root': {
-                    minHeight: 48,
+                    minHeight: 44,
+                    minWidth: 48,
+                    px: 1,
+                    py: 0.5,
+                    fontSize: '0.9375rem',
                     fontWeight: 500,
                   },
                 }}
@@ -610,8 +591,7 @@ const PromptPanel = ({
                 <IconButton
                   aria-label={t('painting.workspace.prompt.randomPrompt')}
                   onClick={handleOpenRandomPromptDialog}
-                  sx={{ mr: 1 }}
-                  color={randomPromptEnabled ? "secondary" : "default"}
+                  color={randomPromptEnabled ? "primary" : "default"}
                 >
                   <CasinoIcon />
                 </IconButton>
@@ -623,7 +603,6 @@ const PromptPanel = ({
                   <IconButton
                     aria-label={t('painting.workspace.prompt.notebook')}
                     onClick={handleOpenNotesDialog}
-                    sx={{ mr: 1 }}
                   >
                     <BookIcon />
                   </IconButton>
@@ -632,7 +611,6 @@ const PromptPanel = ({
                   <IconButton
                     aria-label={t('painting.workspace.prompt.saveToNotebook')}
                     onClick={handleSaveNote}
-                    sx={{ mr: 1 }}
                     disabled={!positivePrompt && !negativePrompt}
                   >
                     <SaveIcon />
@@ -642,7 +620,7 @@ const PromptPanel = ({
             )}
           </Box>
 
-          <Box sx={{ p: 0.5 }}>
+          <Box sx={{ pt: 1.5 }}>
             {effectiveTabValue === 0 ? (
               <>
                 {
@@ -651,7 +629,7 @@ const PromptPanel = ({
                       <TextField
                         multiline
                         fullWidth
-                        minRows={6}
+                        minRows={5}
                         maxRows={8}
                         placeholder={t('painting.workspace.prompt.positivePlaceholder')}
                         value={positivePrompt}
@@ -660,21 +638,23 @@ const PromptPanel = ({
                         onSelect={(e) => handleTextFieldChange(e, onPositivePromptChange)} // Corrected to ensure cursor updates
                         sx={{
                           '& .MuiOutlinedInput-root': {
-                            borderRadius: 2,
+                            borderRadius: 1.5,
+                            p: 1.5,
                           },
                           '& .MuiInputBase-input': {
                             fontFamily: '"Roboto Mono", monospace',
-                            fontSize: '0.95rem',
+                            fontSize: '1rem',
+                            lineHeight: 1.65,
                           }
                         }}
                       />
                       <Box
                         sx={{
-                          position: 'absolute',
-                          right: 1,
-                          top: 1,
                           display: 'flex',
-                          gap: 1,
+                          justifyContent: 'flex-end',
+                          gap: 0.5,
+                          pt: 0.5,
+                          '& .MuiIconButton-root': { width: 34, height: 34, p: 0.75 },
                         }}
                       >
                         <Tooltip title={t('painting.workspace.prompt.expandEditor')} arrow>
@@ -743,7 +723,7 @@ const PromptPanel = ({
                               sx={{
                                 cursor: 'pointer',
                                 '&:hover': {
-                                  bgcolor: 'rgba(124, 77, 255, 0.1)',
+                                  bgcolor: 'action.hover',
                                   borderColor: 'primary.main',
                                 },
                               }}
@@ -763,7 +743,7 @@ const PromptPanel = ({
                       <TextField
                         multiline
                         fullWidth
-                        minRows={6}
+                        minRows={5}
                         maxRows={8}
                         placeholder={t('painting.workspace.prompt.negativePlaceholder')}
                         value={negativePrompt}
@@ -772,21 +752,23 @@ const PromptPanel = ({
                         onSelect={(e) => handleTextFieldChange(e, onNegativePromptChange)} // Added for consistency
                         sx={{
                           '& .MuiOutlinedInput-root': {
-                            borderRadius: 2,
+                            borderRadius: 1.5,
+                            p: 1.5,
                           },
                           '& .MuiInputBase-input': {
                             fontFamily: '"Roboto Mono", monospace',
-                            fontSize: '0.95rem',
+                            fontSize: '1rem',
+                            lineHeight: 1.65,
                           }
                         }}
                       />
                       <Box
                         sx={{
-                          position: 'absolute',
-                          right: 1,
-                          top: 1,
                           display: 'flex',
-                          gap: 1,
+                          justifyContent: 'flex-end',
+                          gap: 0.5,
+                          pt: 0.5,
+                          '& .MuiIconButton-root': { width: 34, height: 34, p: 0.75 },
                         }}
                       >
                         <Tooltip title={t('painting.workspace.prompt.expandEditor')} arrow>
@@ -870,8 +852,6 @@ const PromptPanel = ({
               </>
             ) : null}
           </Box>
-        </Box>
-      </AccordionDetails>
 
       <ExpandedPromptDialog
         open={expandedPromptDialogOpen}
@@ -942,7 +922,7 @@ const PromptPanel = ({
           {snackbar.message}
         </Alert>
       </Snackbar>
-    </Accordion>
+    </Box>
   );
 };
 

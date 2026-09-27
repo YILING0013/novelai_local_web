@@ -45,62 +45,9 @@ import {
 } from '@mui/icons-material';
 import { generateFileName, DOWNLOAD_NAMING_METHODS } from '@/components/ai-painting/tools/ImageTools/ImageSaveUtils';
 import { useI18n } from '@/i18n/I18nProvider';
-import { PAGE_IDS, getPageColorStorageKey, migrateLegacyPageColors } from '@/i18n/pageConfig.mjs';
+import { PAGE_IDS, PAGE_COLOR_DEFAULTS, getPageColorStorageKey, migrateLegacyPageColors } from '@/i18n/pageConfig.mjs';
+import { BACKGROUND_PRESETS, DEFAULT_THEME_SETTINGS, THEME_COLOR_PRESETS } from '@/providers/themePresets.mjs';
 import apiClient from '@/utils/ApiClient';
-
-// 预设主题颜色 (将紫色改为青色)
-const themePresets = {
-  teal: '#00796B', // 新的默认色
-  blue: '#448AFF',
-  cyan: '#00BFA5',
-  green: '#4CAF50',
-  amber: '#FFC107',
-  orange: '#FF5722',
-  red: '#F44336',
-  pink: '#E91E63',
-};
-
-// 背景色预设 (保持不变)
-const backgroundPresets = {
-  light: {
-    classic: { default: '#BDDDE4', paper: '#FFF1D5', drawer: '#9EC6F3' },
-    warm: { default: '#FFD1D1', paper: '#FFF5E4', drawer: '#FFE3E1' },
-    cool: { default: '#f0f4f8', paper: '#ffffff', drawer: '#eef2f6' }, // 新的亮色默认
-    minimal: { default: '#fdfdfd', paper: '#ffffff', drawer: '#fafafa' },
-    cream: { default: '#fefcf8', paper: '#fffef9', drawer: '#fdf9f4' },
-  },
-  dark: {
-    classic: { default: '#121212', paper: '#1e1e1e', drawer: '#1a1a1a' },
-    deep: { default: '#0a0a0a', paper: '#1a1a1a', drawer: '#141414' },
-    blue: { default: '#0d1117', paper: '#161b22', drawer: '#11161d' }, // 新的暗色默认
-    purple: { default: '#130f1a', paper: '#1f1b26', drawer: '#181420' },
-    green: { default: '#0f1b0f', paper: '#1a261a', drawer: '#152015' },
-  }
-};
-
-const backgroundPresetNameKeys = {
-  classic: 'settings.backgroundPresets.classic',
-  warm: 'settings.backgroundPresets.warm',
-  cool: 'settings.backgroundPresets.cool',
-  minimal: 'settings.backgroundPresets.minimal',
-  cream: 'settings.backgroundPresets.cream',
-  deep: 'settings.backgroundPresets.deep',
-  blue: 'settings.backgroundPresets.blue',
-  purple: 'settings.backgroundPresets.purple',
-  green: 'settings.backgroundPresets.green',
-};
-
-// 颜色名称映射 (更新)
-const colorNameKeys = {
-  '#00796B': 'settings.colorNames.teal',
-  '#448AFF': 'settings.colorNames.blue',
-  '#00BFA5': 'settings.colorNames.cyan',
-  '#4CAF50': 'settings.colorNames.green',
-  '#FFC107': 'settings.colorNames.amber',
-  '#FF5722': 'settings.colorNames.orange',
-  '#F44336': 'settings.colorNames.red',
-  '#E91E63': 'settings.colorNames.pink',
-};
 
 // 页面图标映射 (保持在此处，因为 SettingsPage 需要它)
 const pageIcons = {
@@ -117,8 +64,7 @@ const getInitialPageColors = (pages) => {
       // 如果没有图标，给一个默认图标
       pageIcons[page.id] = <LabelIcon />;
     }
-    // 从 localStorage 或 page.js 的 props 中获取颜色，默认为新的青色
-    initialColors[page.id] = localStorage.getItem(getPageColorStorageKey(page.id)) || page.color || '#00796B';
+    initialColors[page.id] = localStorage.getItem(getPageColorStorageKey(page.id)) || page.color || DEFAULT_THEME_SETTINGS.primaryColors.light;
   });
   return initialColors;
 };
@@ -127,8 +73,8 @@ const getInitialPageColors = (pages) => {
 const getDefaultPageColors = (pages) => {
   const defaultColors = {};
   pages.forEach(page => {
-     // 从 page.js 的 props 中获取原始颜色，默认为新的青色
-    defaultColors[page.id] = page.color || '#00796B';
+    // 页面传入的颜色可能已经是用户保存值，重置应使用页面的原始默认色。
+    defaultColors[page.id] = PAGE_COLOR_DEFAULTS[page.id] || page.color || DEFAULT_THEME_SETTINGS.primaryColors.light;
   });
   return defaultColors;
 };
@@ -142,32 +88,26 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
   
   // 获取当前应用的主题模式
   const [mode, setMode] = useState(() => {
-    return localStorage.getItem('themeMode') || 'dark';
+    return localStorage.getItem('themeMode') || DEFAULT_THEME_SETTINGS.mode;
   });
   
-  // 状态变量
-  const [primaryColors, setPrimaryColors] = useState({
-    light: localStorage.getItem('themePrimaryLight') || '#00796B', // 更新默认色
-    dark: localStorage.getItem('themePrimaryDark') || '#4DB6AC', // 更新默认色
-  });
-  
-  // 使用新的默认背景
+  // 未保存自定义颜色时使用全站默认配色。
   const [customBackgroundColors, setCustomBackgroundColors] = useState({
     light: {
-      default: localStorage.getItem('themeBackgroundDefaultLight') || backgroundPresets.light.cool.default,
-      paper: localStorage.getItem('themeBackgroundPaperLight') || backgroundPresets.light.cool.paper,
-      drawer: localStorage.getItem('themeBackgroundDrawerLight') || backgroundPresets.light.cool.drawer, 
+      default: localStorage.getItem('themeBackgroundDefaultLight') || DEFAULT_THEME_SETTINGS.backgroundColors.light.default,
+      paper: localStorage.getItem('themeBackgroundPaperLight') || DEFAULT_THEME_SETTINGS.backgroundColors.light.paper,
+      drawer: localStorage.getItem('themeBackgroundDrawerLight') || DEFAULT_THEME_SETTINGS.backgroundColors.light.drawer,
     },
     dark: {
-      default: localStorage.getItem('themeBackgroundDefaultDark') || backgroundPresets.dark.blue.default,
-      paper: localStorage.getItem('themeBackgroundPaperDark') || backgroundPresets.dark.blue.paper,
-      drawer: localStorage.getItem('themeBackgroundDrawerDark') || backgroundPresets.dark.blue.drawer, 
+      default: localStorage.getItem('themeBackgroundDefaultDark') || DEFAULT_THEME_SETTINGS.backgroundColors.dark.default,
+      paper: localStorage.getItem('themeBackgroundPaperDark') || DEFAULT_THEME_SETTINGS.backgroundColors.dark.paper,
+      drawer: localStorage.getItem('themeBackgroundDrawerDark') || DEFAULT_THEME_SETTINGS.backgroundColors.dark.drawer,
     },
   });
   
   const [customColors, setCustomColors] = useState({
-    light: localStorage.getItem('themePrimaryLight') || '#00796B', // 更新默认色
-    dark: localStorage.getItem('themePrimaryDark') || '#4DB6AC', // 更新默认色
+    light: localStorage.getItem('themePrimaryLight') || DEFAULT_THEME_SETTINGS.primaryColors.light,
+    dark: localStorage.getItem('themePrimaryDark') || DEFAULT_THEME_SETTINGS.primaryColors.dark,
   });
   
   // 动态初始化 pageColors
@@ -257,11 +197,6 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
         namingMethod,
       });
       
-      setPrimaryColors({
-        light: customColors.light,
-        dark: customColors.dark,
-      });
-      
       setSnackbar({
         open: true,
         message: t('settings.savedMessage'),
@@ -314,27 +249,15 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
   
   // 重置所有设置
   const resetSettings = () => {
-    // 更新默认色
-    const defaultSettings = {
-      light: '#00796B',
-      dark: '#4DB6AC',
-    };
-    
-    // 更新默认背景
-    const defaultBackgroundColors = {
-      light: backgroundPresets.light.cool,
-      dark: backgroundPresets.dark.blue,
-    };
-    
     // 动态重置页面颜色
     const defaultPageColors = getDefaultPageColors(pages);
     
-    setCustomColors(defaultSettings);
-    setCustomBackgroundColors(defaultBackgroundColors);
+    setCustomColors(DEFAULT_THEME_SETTINGS.primaryColors);
+    setCustomBackgroundColors(DEFAULT_THEME_SETTINGS.backgroundColors);
     setPageColors(defaultPageColors);
-    setMode('dark');
-    setAnimationEnabled(true);
-    setAnimationSpeed(300);
+    setMode(DEFAULT_THEME_SETTINGS.mode);
+    setAnimationEnabled(DEFAULT_THEME_SETTINGS.animationEnabled);
+    setAnimationSpeed(DEFAULT_THEME_SETTINGS.animationSpeed);
     
     // 重置图像设置
     setAutoSaveEnabled(false);
@@ -372,10 +295,9 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
     const themePrimaryDark = localStorage.getItem('themePrimaryDark');
     
     const colors = {
-      light: themePrimaryLight || '#00796B', // 更新
-      dark: themePrimaryDark || '#4DB6AC', // 更新
+      light: themePrimaryLight || DEFAULT_THEME_SETTINGS.primaryColors.light,
+      dark: themePrimaryDark || DEFAULT_THEME_SETTINGS.primaryColors.dark,
     };
-    setPrimaryColors(colors);
     setCustomColors(colors);
     
     // 加载背景色设置
@@ -388,14 +310,14 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
     
     setCustomBackgroundColors({
       light: {
-        default: backgroundDefaultLight || backgroundPresets.light.cool.default, // 更新
-        paper: backgroundPaperLight || backgroundPresets.light.cool.paper, // 更新
-        drawer: backgroundDrawerLight || backgroundPresets.light.cool.drawer, // 更新
+        default: backgroundDefaultLight || DEFAULT_THEME_SETTINGS.backgroundColors.light.default,
+        paper: backgroundPaperLight || DEFAULT_THEME_SETTINGS.backgroundColors.light.paper,
+        drawer: backgroundDrawerLight || DEFAULT_THEME_SETTINGS.backgroundColors.light.drawer,
       },
       dark: {
-        default: backgroundDefaultDark || backgroundPresets.dark.blue.default, // 更新
-        paper: backgroundPaperDark || backgroundPresets.dark.blue.paper, // 更新
-        drawer: backgroundDrawerDark || backgroundPresets.dark.blue.drawer, // 更新
+        default: backgroundDefaultDark || DEFAULT_THEME_SETTINGS.backgroundColors.dark.default,
+        paper: backgroundPaperDark || DEFAULT_THEME_SETTINGS.backgroundColors.dark.paper,
+        drawer: backgroundDrawerDark || DEFAULT_THEME_SETTINGS.backgroundColors.dark.drawer,
       },
     });
     
@@ -427,14 +349,14 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
       };
       const remoteBackgroundColors = {
         light: {
-          default: settings.themeBackgroundDefaultLight || backgroundDefaultLight || backgroundPresets.light.cool.default,
-          paper: settings.themeBackgroundPaperLight || backgroundPaperLight || backgroundPresets.light.cool.paper,
-          drawer: settings.themeBackgroundDrawerLight || backgroundDrawerLight || backgroundPresets.light.cool.drawer,
+          default: settings.themeBackgroundDefaultLight || backgroundDefaultLight || DEFAULT_THEME_SETTINGS.backgroundColors.light.default,
+          paper: settings.themeBackgroundPaperLight || backgroundPaperLight || DEFAULT_THEME_SETTINGS.backgroundColors.light.paper,
+          drawer: settings.themeBackgroundDrawerLight || backgroundDrawerLight || DEFAULT_THEME_SETTINGS.backgroundColors.light.drawer,
         },
         dark: {
-          default: settings.themeBackgroundDefaultDark || backgroundDefaultDark || backgroundPresets.dark.blue.default,
-          paper: settings.themeBackgroundPaperDark || backgroundPaperDark || backgroundPresets.dark.blue.paper,
-          drawer: settings.themeBackgroundDrawerDark || backgroundDrawerDark || backgroundPresets.dark.blue.drawer,
+          default: settings.themeBackgroundDefaultDark || backgroundDefaultDark || DEFAULT_THEME_SETTINGS.backgroundColors.dark.default,
+          paper: settings.themeBackgroundPaperDark || backgroundPaperDark || DEFAULT_THEME_SETTINGS.backgroundColors.dark.paper,
+          drawer: settings.themeBackgroundDrawerDark || backgroundDrawerDark || DEFAULT_THEME_SETTINGS.backgroundColors.dark.drawer,
         },
       };
       const remotePageColors = { ...storedPageColors, ...(settings.pageColors || {}) };
@@ -465,7 +387,6 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
       localStorage.setItem('namingMethod', remoteNamingMethod);
 
       setMode(remoteMode);
-      setPrimaryColors(remotePrimaryColors);
       setCustomColors(remotePrimaryColors);
       setCustomBackgroundColors(remoteBackgroundColors);
       setPageColors(remotePageColors);
@@ -503,13 +424,10 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
   
   // 获取颜色名称函数
   const getColorName = (color) => {
-    // 检查是否为预设颜色
-    for (const key in themePresets) {
-      if (themePresets[key].toLowerCase() === color.toLowerCase()) {
-        return t(colorNameKeys[themePresets[key]]);
-      }
-    }
-    return t('common.custom');
+    const preset = THEME_COLOR_PRESETS.find(({ light, dark }) => (
+      light.toLowerCase() === color.toLowerCase() || dark.toLowerCase() === color.toLowerCase()
+    ));
+    return preset ? t(`settings.colorNames.${preset.id}`) : t('common.custom');
   };
   
   // 查找设置页面的颜色，如果 pages prop 还没加载，则使用 theme
@@ -530,12 +448,12 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
     <Paper elevation={0} sx={{ p: {xs: 1, sm: 2}, borderRadius: 2, height: '100%', overflow: 'auto', position: 'relative', pb: 9 }}>
       <Typography variant="h5" sx={{ 
         mb: 2, // 减小间距
-        fontWeight: 'bold', 
-        color: settingsPageColor, 
+        fontWeight: 600,
+        color: 'text.primary',
         display: 'flex', 
         alignItems: 'center',
       }}>
-        <SettingsIcon sx={{ mr: 1 }} />
+        <SettingsIcon sx={{ mr: 1, color: 'text.secondary' }} />
         {t('settings.title')}
       </Typography>
       
@@ -550,9 +468,9 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
         <Grid item xs={12}>
           <Accordion defaultExpanded sx={{
             mb: 1.5, // 减小间距
-            backgroundColor: alpha(theme.palette.background.paper, 0.6),
-            boxShadow: theme.shadows[1],
-            border: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+            backgroundColor: theme.palette.background.paper,
+            boxShadow: 'none',
+            border: `1px solid ${theme.palette.divider}`,
           }}>
             <AccordionSummary 
               expandIcon={<ExpandMoreIcon />}
@@ -586,7 +504,7 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
                     {mode === 'dark' ? 
                       <Box sx={{ 
                         p: 1.25, // 减小间距
-                        bgcolor: '#121212', 
+                        bgcolor: DEFAULT_THEME_SETTINGS.backgroundColors.dark.paper,
                         borderRadius: 1, 
                         color: '#fff',
                         display: 'flex',
@@ -598,10 +516,10 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
                       </Box> :
                       <Box sx={{ 
                         p: 1.25, // 减小间距
-                        bgcolor: '#f9fafc', 
+                        bgcolor: DEFAULT_THEME_SETTINGS.backgroundColors.light.default,
                         borderRadius: 1, 
-                        color: '#121212',
-                        border: '1px solid #e0e0e0',
+                        color: DEFAULT_THEME_SETTINGS.backgroundColors.dark.default,
+                        border: `1px solid ${theme.palette.divider}`,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -642,45 +560,57 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
                 
                 <Box sx={{ mb: 1.5 }}>
                   <Grid container spacing={1} sx={{ mb: 1.5 }}>
-                    {Object.entries(themePresets).map(([name, color]) => (
-                      <Grid item key={name}>
-                        <Tooltip title={colorNameKeys[color] ? t(colorNameKeys[color]) : name} arrow>
-                          <Box
-                            onClick={() => setCustomColors({
-                              ...customColors,
-                              [mode]: color
-                            })}
-                            sx={{
-                              width: 34, // 减小
-                              height: 34, // 减小
-                              borderRadius: '50%',
-                              backgroundColor: color,
-                              cursor: 'pointer',
-                              transition: 'all 0.2s',
-                              border: customColors[mode] === color 
-                                ? `3px solid ${theme.palette.background.paper}` 
-                                : `1px solid ${theme.palette.divider}`,
-                              boxShadow: customColors[mode] === color 
-                                ? `0 0 0 2px ${color}` 
-                                : 'none',
-                              '&:hover': {
-                                transform: 'scale(1.15)',
-                                boxShadow: `0 0 0 2px ${color}`,
-                              },
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                            }}
-                          >
-                            {customColors[mode] === color && <CheckIcon sx={{ color: 'white', fontSize: '1rem' }} />}
-                          </Box>
-                        </Tooltip>
-                      </Grid>
-                    ))}
+                    {THEME_COLOR_PRESETS.map((preset) => {
+                      const color = preset[mode];
+                      const isSelected = customColors[mode].toLowerCase() === color.toLowerCase();
+                      return (
+                        <Grid item key={preset.id}>
+                          <Tooltip title={t(`settings.colorNames.${preset.id}`)} arrow>
+                            <Box
+                              component="button"
+                              type="button"
+                              aria-label={t(`settings.colorNames.${preset.id}`)}
+                              aria-pressed={isSelected}
+                              onClick={() => setCustomColors({
+                                ...customColors,
+                                [mode]: color
+                              })}
+                              sx={{
+                                width: 36,
+                                height: 36,
+                                p: 0,
+                                borderRadius: '10px',
+                                backgroundColor: color,
+                                cursor: 'pointer',
+                                transition: 'box-shadow 0.15s ease, border-color 0.15s ease',
+                                border: isSelected
+                                  ? `3px solid ${theme.palette.background.paper}`
+                                  : `1px solid ${theme.palette.divider}`,
+                                boxShadow: isSelected
+                                  ? `0 0 0 2px ${color}`
+                                  : 'none',
+                                '&:hover': {
+                                  boxShadow: `0 0 0 2px ${color}`,
+                                },
+                                '&:focus-visible': {
+                                  outline: `2px solid ${theme.palette.text.primary}`,
+                                  outlineOffset: 3,
+                                },
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              {isSelected && <CheckIcon sx={{ color: theme.palette.getContrastText(color), fontSize: '1rem' }} />}
+                            </Box>
+                          </Tooltip>
+                        </Grid>
+                      );
+                    })}
                   </Grid>
                   
                   {/* 自定义颜色输入 (包含新色盘) */}
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
                     <TextField
                       label={t('settings.customColorCode')}
                       fullWidth
@@ -708,15 +638,22 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
                         ),
                       }}
                       size="small"
-                      sx={{ flexGrow: 1 }}
+                      sx={{
+                        flex: 1,
+                        minWidth: 0,
+                        '& .MuiOutlinedInput-root': { height: 40 },
+                      }}
                     />
                     
                     {/* HTML5 颜色选择器 */}
                     <Tooltip title={t('settings.colorPicker')} arrow>
                       <Box
                         sx={{
-                          width: 38,
-                          height: 38,
+                          width: 40,
+                          height: 40,
+                          flexShrink: 0,
+                          // 与 dense 输入框的上边距一致，帮助文案换行时仍对齐输入框主体。
+                          mt: 1,
                           borderRadius: '50%',
                           overflow: 'hidden',
                           border: `1px solid ${theme.palette.divider}`,
@@ -729,7 +666,8 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
                       >
                         <input
                           type="color"
-                          value={isValidColor(customColors[mode]) ? customColors[mode] : '#00796B'}
+                          aria-label={t('settings.colorPicker')}
+                          value={isValidColor(customColors[mode]) ? customColors[mode] : DEFAULT_THEME_SETTINGS.primaryColors[mode]}
                           onChange={(e) => setCustomColors({
                             ...customColors,
                             [mode]: e.target.value
@@ -761,33 +699,41 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
                 <Box sx={{ mb: 1.5 }}>
                   <Typography variant="body2" sx={{ mb: 1, opacity: 0.8 }}>{t('settings.backgroundPreset')}</Typography>
                   <Grid container spacing={1} sx={{ mb: 1.5 }}>
-                    {Object.entries(backgroundPresets[mode]).map(([presetName, colors]) => {
+                    {Object.entries(BACKGROUND_PRESETS[mode]).map(([presetName, colors]) => {
                       const isSelected = customBackgroundColors[mode].default === colors.default && 
                                       customBackgroundColors[mode].paper === colors.paper &&
                                       customBackgroundColors[mode].drawer === colors.drawer;
                       
                       return (
                         <Grid item key={presetName}>
-                          <Tooltip title={t(backgroundPresetNameKeys[presetName])} arrow>
+                          <Tooltip title={t(`settings.backgroundPresets.${mode}.${presetName}`)} arrow>
                             <Box
+                              component="button"
+                              type="button"
+                              aria-label={t(`settings.backgroundPresets.${mode}.${presetName}`)}
+                              aria-pressed={isSelected}
                               onClick={() => setCustomBackgroundColors({
                                 ...customBackgroundColors,
                                 [mode]: colors
                               })}
                               sx={{
-                                width: 70, // 减小
-                                height: 32, // 减小
-                                borderRadius: 1,
+                                width: 76,
+                                height: 36,
+                                p: 0,
+                                borderRadius: '8px',
                                 cursor: 'pointer',
-                                transition: 'all 0.2s',
+                                transition: 'box-shadow 0.15s ease, border-color 0.15s ease',
                                 border: isSelected 
                                   ? `2px solid ${theme.palette.primary.main}` 
                                   : `1px solid ${theme.palette.divider}`,
                                 overflow: 'hidden',
                                 position: 'relative',
                                 '&:hover': {
-                                  transform: 'scale(1.05)',
-                                  boxShadow: theme.shadows[2],
+                                  borderColor: theme.palette.primary.main,
+                                },
+                                '&:focus-visible': {
+                                  outline: `2px solid ${theme.palette.text.primary}`,
+                                  outlineOffset: 3,
                                 },
                                 display: 'flex',
                               }}
@@ -810,7 +756,7 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
                                   alignItems: 'center',
                                   justifyContent: 'center',
                                 }}>
-                                  <CheckIcon sx={{ color: 'white', fontSize: '0.75rem' }} />
+                                  <CheckIcon sx={{ color: theme.palette.primary.contrastText, fontSize: '0.75rem' }} />
                                 </Box>
                               )}
                             </Box>
@@ -991,7 +937,7 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
                               }}
                               onClick={() => {
                                 // 在预设颜色中循环
-                                const colorValues = Object.values(themePresets);
+                                const colorValues = THEME_COLOR_PRESETS.map((preset) => preset.light);
                                 const currentIndex = colorValues.indexOf(pageColors[page]);
                                 const nextIndex = (currentIndex + 1) % colorValues.length;
                                 const nextColor = colorValues[nextIndex];
@@ -1023,7 +969,7 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
                     mb: 1.5, // 减小
                     backgroundColor: customBackgroundColors[mode].default,
                     color: mode === 'dark' ? '#ffffff' : '#000000',
-                    boxShadow: theme.shadows[1],
+                    boxShadow: 'none',
                     border: `1px solid ${theme.palette.divider}`,
                     position: 'relative',
                     overflow: 'hidden',
@@ -1049,7 +995,8 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
                         variant="contained"
                         size="small"
                         sx={{ 
-                          backgroundColor: customColors[mode], 
+                          backgroundColor: customColors[mode],
+                          color: isValidColor(customColors[mode]) ? theme.palette.getContrastText(customColors[mode]) : undefined,
                           '&:hover': { backgroundColor: alpha(customColors[mode], 0.8) } 
                         }}
                       >
@@ -1093,9 +1040,9 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
           {/* 界面设置部分 */}
           <Accordion sx={{
             mb: 1.5, // 减小
-            backgroundColor: alpha(theme.palette.background.paper, 0.6),
-            boxShadow: theme.shadows[1],
-            border: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+            backgroundColor: theme.palette.background.paper,
+            boxShadow: 'none',
+            border: `1px solid ${theme.palette.divider}`,
           }}>
             <AccordionSummary 
               expandIcon={<ExpandMoreIcon />}
@@ -1156,9 +1103,9 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
           {/* 图像设置部分 */}
           <Accordion defaultExpanded sx={{
             mb: 1.5, // 减小
-            backgroundColor: alpha(theme.palette.background.paper, 0.6),
-            boxShadow: theme.shadows[1],
-            border: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+            backgroundColor: theme.palette.background.paper,
+            boxShadow: 'none',
+            border: `1px solid ${theme.palette.divider}`,
           }}>
             <AccordionSummary 
               expandIcon={<ExpandMoreIcon />}
@@ -1264,7 +1211,7 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
       
       {/* 固定在底部的操作栏 */}
       <Paper
-        elevation={3}
+        elevation={0}
         sx={{
           position: 'fixed',
           bottom: 0,
@@ -1275,9 +1222,9 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
           justifyContent: 'flex-end',
           gap: 1.5, // 减小
           zIndex: 100,
-          borderTop: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
-          backgroundColor: alpha(theme.palette.background.paper, 0.9),
-          backdropFilter: 'blur(8px)',
+          borderTop: `1px solid ${theme.palette.divider}`,
+          borderRadius: 0,
+          backgroundColor: theme.palette.background.paper,
         }}
       >
         <Button
@@ -1302,6 +1249,7 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
           disabled={isSaving}
           sx={{ 
             backgroundColor: settingsPageColor,
+            color: theme.palette.getContrastText(settingsPageColor),
             '&:hover': {
               backgroundColor: alpha(settingsPageColor, 0.9),
             },

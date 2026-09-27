@@ -14,7 +14,8 @@ import {
   useMediaQuery,
   useTheme,
   Paper,
-  Divider
+  Divider,
+  Alert
 } from '@mui/material';
 import { Close as CloseIcon } from '@mui/icons-material';
 
@@ -32,7 +33,7 @@ const ImageEditor = ({
 }) => {
   const theme = useTheme();
   const { t } = useI18n();
-  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
   const getToolLabel = (tool) => t(`painting.tools.imageEditor.toolbar.${tool}`);
   
@@ -46,8 +47,11 @@ const ImageEditor = ({
   });
   
   const [activeMainTool, setActiveMainTool] = useState(null);
-  const [activeRadioTool, setActiveRadioTool] = useState(null);
+  const [activeRadioTool, setActiveRadioTool] = useState(
+    currentDirectorToolParams?.type || null
+  );
   const [editedImageUrl, setEditedImageUrl] = useState(null);
+  const [saveError, setSaveError] = useState(false);
 
   const [emotionParams, setEmotionParams] = useState(
     currentDirectorToolParams?.type === 'emotion' ? currentDirectorToolParams.params : null
@@ -65,6 +69,7 @@ const ImageEditor = ({
   const imageContainerRef = useRef(null);
   // 画布引用
   const canvasRef = useRef(null);
+  const drawingChangedRef = useRef(false);
   // 图像引用 - 增加图像引用以便于吸管工具使用
   const imageRef = useRef(null);
 
@@ -81,6 +86,7 @@ const ImageEditor = ({
   };
 
   const handleMainToolClick = (tool) => {
+    if (saveDrawingDraft() === undefined) return;
     if (tool !== activeMainTool) {
       setActiveRadioTool(null);
       setRadioToolParams({
@@ -88,18 +94,16 @@ const ImageEditor = ({
         sketch: false,
         declutter: false
       });
-      setEmotionParams(null);
-      setColorizeParams(null);
     }
     setActiveMainTool(prev => (prev === tool ? null : tool));
   };
 
   const handleRadioToolClick = (tool) => {
+    if (saveDrawingDraft() === undefined) return;
+
     const newActiveRadioTool = activeRadioTool === tool ? null : tool;
     setActiveMainTool(null);
     if (newActiveRadioTool !== activeRadioTool) {
-      setEmotionParams(null);
-      setColorizeParams(null);
       setRadioToolParams({
         lineart: false,
         sketch: false,
@@ -152,45 +156,35 @@ const ImageEditor = ({
     };
   }, [imageDimensions]);
 
-  // 初始化 Canvas 大小
-  useEffect(() => {
-    if (
-      canvasRef.current && 
-      displayDimensions.width > 0 && 
-      displayDimensions.height > 0 && 
-      activeMainTool === 'draw'
-    ) {
-      canvasRef.current.width = displayDimensions.width;
-      canvasRef.current.height = displayDimensions.height;
-      const ctx = canvasRef.current.getContext('2d');
-      ctx.imageSmoothingEnabled = false;
-      ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+  /**
+   * 将当前笔迹按原图尺寸合入编辑草稿，供切换工具和最终保存共用。
+   *
+   * Returns:
+   *   string|null: 当前草稿；导出失败时返回 undefined，保留当前工具与笔迹。
+   */
+  const saveDrawingDraft = () => {
+    if (activeMainTool !== 'draw' || !drawingChangedRef.current) return editedImageUrl;
+
+    try {
+      const sourceImage = imageRef.current;
+      if (!sourceImage?.complete || !sourceImage.naturalWidth) {
+        throw new Error('图像尚未加载完成');
+      }
+      const drawingCanvas = canvasRef.current;
+      const outputCanvas = document.createElement('canvas');
+      outputCanvas.width = sourceImage.naturalWidth;
+      outputCanvas.height = sourceImage.naturalHeight;
+      const context = outputCanvas.getContext('2d');
+      context.drawImage(sourceImage, 0, 0);
+      context.drawImage(drawingCanvas, 0, 0, outputCanvas.width, outputCanvas.height);
+      const draftImage = outputCanvas.toDataURL('image/png');
+      setEditedImageUrl(draftImage);
+      setSaveError(false);
+      return draftImage;
+    } catch {
+      setSaveError(true);
+      return undefined;
     }
-  }, [displayDimensions, activeMainTool]);
-
-  const handleSaveDrawing = (canvasWithDrawing) => {
-    if (!canvasWithDrawing) return;
-
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = imageDimensions.width;
-    tempCanvas.height = imageDimensions.height;
-    const ctx = tempCanvas.getContext('2d');
-
-    const img = new Image();
-    img.crossOrigin = 'Anonymous';
-    img.onload = () => {
-      ctx.drawImage(img, 0, 0, imageDimensions.width, imageDimensions.height);
-      const scale = imageDimensions.width / displayDimensions.width;
-      ctx.drawImage(
-        canvasWithDrawing, 
-        0, 0, displayDimensions.width, displayDimensions.height,
-        0, 0, imageDimensions.width, imageDimensions.height
-      );
-      const newImageUrl = tempCanvas.toDataURL('image/png');
-      setEditedImageUrl(newImageUrl);
-      setActiveMainTool(null);
-    };
-    img.src = editedImageUrl || imageUrl;
   };
 
   const handleSaveEmotionParams = useCallback((params) => {
@@ -202,8 +196,11 @@ const ImageEditor = ({
   }, []);
 
   const handleFinalSave = () => {
+    // 使用本次合成的结果，不能等待 React 状态更新后再读取旧的 editedImageUrl。
+    const draftImage = saveDrawingDraft();
+    if (draftImage === undefined) return;
     const exportData = {
-      editedImage: editedImageUrl,
+      editedImage: draftImage,
       emotionParams,
       colorizeParams,
       radioToolParams,
@@ -220,7 +217,6 @@ const ImageEditor = ({
             : null
       }
     };
-    console.log('最终保存:', exportData);
     onClose(exportData);
   };
 
@@ -234,11 +230,11 @@ const ImageEditor = ({
         <DrawMode 
           displayDimensions={displayDimensions} 
           imageDimensions={imageDimensions}
-          onSave={handleSaveDrawing}
           isMobile={isMobile}
           theme={theme}
           inSidePanel={true}
           canvasRef={canvasRef}
+          drawingChangedRef={drawingChangedRef}
           sourceImageRef={imageRef}
         />
       );
@@ -270,11 +266,10 @@ const ImageEditor = ({
     } else if (['lineart', 'sketch', 'declutter'].includes(activeRadioTool)) {
       return (
         <Paper
-          elevation={3}
+          elevation={0}
           sx={{
-            padding: 2,
-            borderRadius: 1,
-            backgroundColor: theme.palette.background.paper,
+            padding: 0,
+            backgroundColor: 'transparent',
             color: theme.palette.text.primary,
             mb: 2
           }}
@@ -287,23 +282,6 @@ const ImageEditor = ({
             {t('painting.tools.imageEditor.noMoreSettings')}
           </Typography>
           
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
-            <Button 
-              variant="contained" 
-              color="primary"
-              onClick={() => {
-                alert(t('painting.tools.imageEditor.effectSelected', {
-                  effect: getToolLabel(activeRadioTool),
-                }));
-              }}
-              sx={{ 
-                borderRadius: 2,
-                px: 3
-              }}
-            >
-              {t('painting.tools.imageEditor.confirmSelection')}
-            </Button>
-          </Box>
         </Paper>
       );
     }
@@ -313,15 +291,16 @@ const ImageEditor = ({
   const renderResultPanel = () => {
     return (
       <Paper 
-        elevation={3}
+        elevation={0}
         sx={{
-          p: 2,
+          p: 0,
+          bgcolor: 'transparent',
           height: '100%',
           display: 'flex',
           flexDirection: 'column',
         }}
       >
-        <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>
+        <Typography variant="subtitle1" sx={{ mb: 2, fontSize: 15, fontWeight: 600 }}>
           {t('painting.tools.imageEditor.preview.title')}
         </Typography>
         
@@ -332,9 +311,7 @@ const ImageEditor = ({
           alignItems: 'center', 
           justifyContent: 'center',
           mb: 2,
-          border: `1px dashed ${theme.palette.divider}`,
-          borderRadius: 1,
-          p: 2
+          p: 0
         }}>
           {!editedImageUrl && !activeRadioTool && (
             <Typography variant="body2" color="text.secondary" align="center">
@@ -368,34 +345,29 @@ const ImageEditor = ({
           {activeRadioTool === 'emotion' && emotionParams && (
             <Box sx={{ width: '100%', mt: 2 }}>
               <Typography variant="subtitle2" gutterBottom>{t('painting.tools.imageEditor.preview.emotionParameters')}:</Typography>
-              <Box 
-                component="pre"
-                sx={{ 
-                  p: 1.5, 
-                  borderRadius: 1,
-                  fontSize: '0.75rem',
-                  overflowX: 'auto'
-                }}
-              >
-                {JSON.stringify(emotionParams, null, 2)}
-              </Box>
+              <Typography variant="body2" color="text.secondary">
+                {t(`painting.tools.imageEditor.emotion.options.${emotionParams.emotion}`)}
+                {' · '}{t('painting.tools.imageEditor.strength')} {emotionParams.defry}
+              </Typography>
+              {emotionParams.prompt && (
+                <Typography variant="body2" sx={{ mt: 1, overflowWrap: 'anywhere' }}>
+                  {emotionParams.prompt}
+                </Typography>
+              )}
             </Box>
           )}
           
           {activeRadioTool === 'colorize' && colorizeParams && (
             <Box sx={{ width: '100%', mt: 2 }}>
               <Typography variant="subtitle2" gutterBottom>{t('painting.tools.imageEditor.preview.colorizeParameters')}:</Typography>
-              <Box 
-                component="pre"
-                sx={{ 
-                  p: 1.5, 
-                  borderRadius: 1,
-                  fontSize: '0.75rem',
-                  overflowX: 'auto'
-                }}
-              >
-                {JSON.stringify(colorizeParams, null, 2)}
-              </Box>
+              <Typography variant="body2" color="text.secondary">
+                {t('painting.tools.imageEditor.strength')} {colorizeParams.intensity}
+              </Typography>
+              {colorizeParams.prompt && (
+                <Typography variant="body2" sx={{ mt: 1, overflowWrap: 'anywhere' }}>
+                  {colorizeParams.prompt}
+                </Typography>
+              )}
             </Box>
           )}
           
@@ -408,10 +380,10 @@ const ImageEditor = ({
                   <Box 
                     sx={{ 
                       p: 1, 
-                      bgcolor: theme.palette.primary.light,
-                      color: theme.palette.primary.contrastText,
+                      bgcolor: 'action.selected',
+                      color: 'text.primary',
                       borderRadius: 1,
-                      fontSize: '0.75rem'
+                      fontSize: 14
                     }}
                   >
                     {getToolLabel('lineart')}
@@ -421,10 +393,10 @@ const ImageEditor = ({
                   <Box 
                     sx={{ 
                       p: 1, 
-                      bgcolor: theme.palette.secondary.light,
-                      color: theme.palette.secondary.contrastText,
+                      bgcolor: 'action.selected',
+                      color: 'text.primary',
                       borderRadius: 1,
-                      fontSize: '0.75rem'
+                      fontSize: 14
                     }}
                   >
                     {getToolLabel('sketch')}
@@ -434,10 +406,10 @@ const ImageEditor = ({
                   <Box 
                     sx={{ 
                       p: 1, 
-                      bgcolor: theme.palette.success.light,
-                      color: theme.palette.success.contrastText,
+                      bgcolor: 'action.selected',
+                      color: 'text.primary',
                       borderRadius: 1,
-                      fontSize: '0.75rem'
+                      fontSize: 14
                     }}
                   >
                     {getToolLabel('declutter')}
@@ -454,20 +426,24 @@ const ImageEditor = ({
   return (
     <Dialog 
       open={open} 
-      onClose={onClose} 
+      onClose={() => onClose()}
       fullScreen
       PaperProps={{
         sx: {
-          bgcolor: theme.palette.mode === 'dark' ? 'background.paper' : '#f5f5f5',
+          bgcolor: 'background.paper',
+          borderRadius: 0,
+          border: 0,
+          boxShadow: 'none',
         }
       }}
     >
       <DialogTitle 
         sx={{ 
-          p: 1, 
+          px: { xs: 2, sm: 3 },
+          py: 1,
           borderBottom: `1px solid ${theme.palette.divider}`,
-          bgcolor: theme.palette.primary.main,
-          color: theme.palette.primary.contrastText,
+          bgcolor: 'background.paper',
+          color: 'text.primary',
           position: 'sticky',
           top: 0,
           zIndex: 1100,
@@ -475,7 +451,7 @@ const ImageEditor = ({
       >
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <Typography variant="h6">{t('painting.tools.imageEditor.title')}</Typography>
+            <Typography component="span" sx={{ fontSize: 18, fontWeight: 600 }}>{t('painting.tools.imageEditor.title')}</Typography>
           </Box>
           <IconButton onClick={() => onClose()} aria-label={t('painting.tools.common.close')} sx={{ color: 'inherit' }}>
             <CloseIcon />
@@ -486,12 +462,12 @@ const ImageEditor = ({
       <DialogContent 
         sx={{ 
           p: 0,
-          height: { xs: 'auto', sm: 'calc(100vh - 64px - 64px)' },
-          maxHeight: { xs: 'none', sm: 'calc(100vh - 64px - 64px)' },
-          overflowY: { xs: 'visible', sm: 'hidden' },
+          height: { xs: 'auto', md: 'calc(100vh - 64px - 64px)' },
+          maxHeight: { xs: 'none', md: 'calc(100vh - 64px - 64px)' },
+          overflowY: { xs: 'auto', md: 'hidden' },
           display: 'flex', 
           flexDirection: 'column',
-          bgcolor: theme.palette.mode === 'dark' ? 'background.paper' : '#f5f5f5',
+          bgcolor: 'background.paper',
         }}
       >
       
@@ -506,10 +482,10 @@ const ImageEditor = ({
         
         <Box 
           sx={{ 
-            flex: { xs: 'none', sm: 1 }, 
+            flex: { xs: 'none', md: 1 },
             display: 'flex',
             flexDirection: isMobile ? 'column' : 'row',
-            overflow: { xs: 'visible', sm: 'hidden' },
+            overflow: { xs: 'visible', md: 'hidden' },
           }}
         >
           {/* Tool Control Panel */}
@@ -517,8 +493,10 @@ const ImageEditor = ({
             sx={{ 
               width: isMobile ? '100%' : getSidePanelWidth(),
               height: isMobile ? 'auto' : '100%',
-              minHeight: isMobile ? '300px' : 'auto',
-              p: 1,
+              minHeight: 0,
+              flexShrink: 0,
+              p: 2,
+              borderRight: { md: `1px solid ${theme.palette.divider}` },
               overflow: 'auto',
               display: 'flex',
               flexDirection: 'column'
@@ -527,12 +505,12 @@ const ImageEditor = ({
             
             {renderActiveToolControls() || renderRadioToolControls() || (
               <Paper
-                elevation={3}
+                elevation={0}
                 sx={{
-                  p: 2,
+                  p: 0,
                   mb: 2,
                   height: isMobile ? 'auto' : '100%',
-                  minHeight: isMobile ? '200px' : 'auto',
+                  minHeight: isMobile ? '80px' : 'auto',
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'center',
@@ -557,8 +535,8 @@ const ImageEditor = ({
               justifyContent: 'center',
               alignItems: 'center',
               overflow: 'hidden',
-              minHeight: {xs: '350px', sm: '400px'}, 
-              my: { xs: 2, sm: 0 },
+              minHeight: { xs: '350px', md: 0 },
+              flexShrink: 0,
               bgcolor: theme.palette.mode === 'dark' 
                 ? 'rgba(0,0,0,0.3)' 
                 : 'rgba(0,0,0,0.03)',
@@ -566,11 +544,12 @@ const ImageEditor = ({
           >
             {(imageUrl || editedImageUrl) && (
               <Paper 
-                elevation={3} 
+                elevation={0}
                 sx={{
                   position: 'relative',
                   width: `${displayDimensions.width}px`,
                   height: `${displayDimensions.height}px`,
+                  borderRadius: 0,
                   overflow: 'hidden'
                 }}
               >
@@ -618,8 +597,10 @@ const ImageEditor = ({
             sx={{ 
               width: isMobile ? '100%' : getSidePanelWidth(),
               height: isMobile ? 'auto' : '100%',
-              minHeight: isMobile ? '300px' : 'auto',
-              p: 1,
+              minHeight: isMobile ? '160px' : 0,
+              flexShrink: 0,
+              p: 2,
+              borderLeft: { md: `1px solid ${theme.palette.divider}` },
               overflow: 'auto'
             }}
           >
@@ -631,21 +612,26 @@ const ImageEditor = ({
       <DialogActions 
         sx={{ 
           borderTop: `1px solid ${theme.palette.divider}`, 
-          p: 1,
-          bgcolor: theme.palette.primary.main,
-          color: theme.palette.primary.contrastText,
+          px: { xs: 2, sm: 3 },
+          py: 1.5,
+          bgcolor: 'background.paper',
+          flexWrap: 'wrap',
+          gap: 1,
           position: 'sticky',
           bottom: 0,
           zIndex: 1100,
         }}
       >
-        <Button 
+        {saveError && (
+          <Alert severity="error" sx={{ mr: 'auto', py: 0 }}>
+            {t('painting.tools.imageEditor.saveFailed')}
+          </Alert>
+        )}
+        <Button
           onClick={() => onClose()}
-          sx={{ 
-            color: theme.palette.primary.contrastText,
-            '&:hover': {
-              backgroundColor: 'rgba(255, 255, 255, 0.08)',
-            }
+          sx={{
+            minHeight: 40,
+            color: 'text.secondary'
           }}
         >
           {t('painting.tools.common.cancel')}
@@ -653,12 +639,9 @@ const ImageEditor = ({
         <Button 
           variant="contained" 
           onClick={handleFinalSave}
-          sx={{ 
-            bgcolor: theme.palette.secondary.main,
-            color: theme.palette.secondary.contrastText,
-            '&:hover': {
-              bgcolor: theme.palette.secondary.dark,
-            }
+          sx={{
+            minHeight: 40,
+            minWidth: 88
           }}
         >
           {t('painting.tools.common.save')}

@@ -8,6 +8,7 @@ import {
   isNovelAIV4OrAboveModel as isV4Model,
   normalizePaintingModelId,
   sanitizeNovelAIV5GenerationParams,
+  sanitizeNovelAIReferenceParams,
 } from '../utils/modelUtils';
 import { buildNovelAIImageRequestParams } from '../utils/novelAIRequestParams.mjs';
 import {
@@ -110,10 +111,13 @@ function buildGenerationRequest(params) {
  * @returns {Promise<object>} 原生成上下文可直接消费的结果。
  */
 const generateImage = async (requestParams, onProgress = () => {}) => {
-  const params = sanitizeNovelAIV5GenerationParams({
+  if (requestParams.model === 'nai-diffusion-5-curated' && requestParams.imageToImage?.mask) {
+    return createGenerationFailure(GENERATION_ERROR_CODES.NOVELAI_INPAINT_MODEL_NOT_SUPPORTED);
+  }
+  const params = sanitizeNovelAIReferenceParams(sanitizeNovelAIV5GenerationParams({
     ...requestParams,
     model: normalizePaintingModelId(requestParams?.model),
-  });
+  }));
   onProgress({ status: 'processing', queuePosition: 0, model: params.model });
 
   try {
