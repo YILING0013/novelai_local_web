@@ -17,8 +17,7 @@
 | --- | --- |
 | `nai_flask/data/`、其他 `data/`、`runtime_data/` | 不提交，包括 JSON、上传图片、日志、备份及迁移输入 |
 | SQLite 数据库 | 不提交 `*.db`、`*.sqlite`、`*.sqlite3` 及其 WAL、SHM、journal 文件；不要通过改后缀或 SQL dump 提交数据 |
-| 提示词模板 | 可以提交编辑器代码；不要提交个人模板、浏览器 localStorage 导出或硬编码的个人默认模板 |
-| 画师串、图片参考 | 可以提交空表初始化、API、界面和迁移代码；不要提交个人画师串记录、参考图、图片 Base64 或数据库 BLOB |
+| 本地图片与浏览器数据 | 不提交个人画风、参考图、生成结果、缩略图、回收站内容或浏览器 localStorage 导出 |
 | 配置与凭据 | 不提交 `config.local*`、`.env*` 中的真实配置、Token、Cookie、浏览器登录状态；明确的无密钥示例除外 |
 | 构建与运行产物 | 不提交 `.next/`、`out/`、`node_modules/`、虚拟环境、截图、临时诊断输出或生成图片 |
 

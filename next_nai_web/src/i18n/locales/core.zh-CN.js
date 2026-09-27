@@ -1,4 +1,17 @@
 const corezhCN = {
+  "librarySettings": {
+    "outputDirectory": "生成图像保存目录",
+    "outputHint": "填写本机绝对路径；留空使用后端 data/generated-images。保存设置后生效，生成成功即写入本机，无需浏览器自动下载。",
+    "inspirationSource": "灵感图库来源",
+    "default": "默认示例图库",
+    "references": "参考图库",
+    "outputs": "本地生成图库",
+    "localOnly": "原图、缩略图、分组与画风均保存于本机；切换目录不会移动已有文件。手动下载功能仍可使用。",
+    "saveFailed": "图像已生成，但写入本机目录失败。请先手动下载保留本次结果，再检查目录权限和可用空间。",
+    "sourceFailed": "无法切换灵感图库，请检查本地服务。",
+    "styleApplied": "画风已添加到正面提示词。",
+    "loadMore": "加载更多"
+},
   "login": {
     "invalidCredentials": "登录失败，请检查账号或密码",
     "logoAlt": "NovelAI Local 标志",
@@ -189,7 +202,7 @@ const corezhCN = {
     "saveFailed": "设置保存失败，请重试。",
     "resetMessage": "设置已重置为默认值",
     "title": "系统设置",
-    "intro": "在此页面调整应用外观和功能偏好，所有设置将保存在本地浏览器中。",
+    "intro": "在此页面调整应用外观和功能偏好。设置保存于本机，浏览器只缓存界面偏好以加快显示。",
     "themeSettings": "主题设置",
     "themeMode": "主题模式",
     "currentDark": "当前使用暗色模式",
@@ -224,8 +237,8 @@ const corezhCN = {
     "animationDescription": "控制界面过渡和动画效果",
     "transitionSpeed": "界面过渡速度 {speed}ms",
     "imageSettings": "图像设置",
-    "downloadImage": "下载图像",
-    "downloadSharedRule": "手动下载和自动保存共用同一套文件名规则",
+    "downloadImage": "图像保存与图库",
+    "downloadSharedRule": "浏览器手动下载和后端自动保存共用同一套文件名规则",
     "autoDownload": "生成完成后自动下载",
     "autoDownloadHint": "关闭后，手动点击下载仍会使用下面的命名规则",
     "filenameRules": "文件名规则",

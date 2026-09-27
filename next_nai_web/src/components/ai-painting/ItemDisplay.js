@@ -11,6 +11,7 @@ import {
   Typography,
   Fade,
   ButtonGroup,
+  Button,
   LinearProgress,
   CircularProgress,
   Snackbar,
@@ -37,6 +38,8 @@ import { useGeneration } from './Generation/GenerationContext';
 import { getImageSettings, generateFileName } from './tools/ImageTools/ImageSaveUtils';
 import { downloadBlobToFile, downloadUrlToFile } from '@/utils/mediaAssets';
 import { useI18n } from '@/i18n/I18nProvider';
+import GallerySourceSelect from '@/components/gallery/GallerySourceSelect';
+import apiClient from '@/utils/ApiClient';
 import { forwardPaintingPanelError } from './Generation/errorRecords.mjs';
 
 const REFERENCE_METADATA_URL = '/metadata.json';
@@ -105,7 +108,7 @@ function buildReferenceImageList(metadataMap) {
  * Renders the introductory card in the gallery.
  * Memoized to prevent re-renders unless its props change.
  */
-const GalleryHeader = React.memo(({ imageCount, onRefresh, isLoading }) => {
+const GalleryHeader = React.memo(({ imageCount, onRefresh, isLoading, source, onSourceChange }) => {
   const { t } = useI18n();
   const theme = useTheme(); // 添加主题hook
 
@@ -152,6 +155,7 @@ const GalleryHeader = React.memo(({ imageCount, onRefresh, isLoading }) => {
       }}>
         {t('painting.workspace.gallery.clickForInspiration')}
       </Typography>
+      <Box sx={{ mb: 1.5, position: 'relative', zIndex: 1 }}><GallerySourceSelect value={source} onChange={onSourceChange} disabled={isLoading} /></Box>
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 1, zIndex: 1, position: 'relative' }}>
         <Typography variant="caption" color={theme.palette.text.secondary}>
           {t('painting.workspace.gallery.referenceImageCount', { count: imageCount })}
@@ -294,7 +298,7 @@ const ReferenceImageGallery = React.memo(({
   loadingImageParams,
   selectedReferenceImage,
   onImageClick,
-  onRefresh
+  onRefresh, source, onSourceChange, hasMore, onLoadMore
 }) => {
   const { t } = useI18n();
   const theme = useTheme(); // 添加主题hook
@@ -308,7 +312,6 @@ const ReferenceImageGallery = React.memo(({
   }, []);
 
   const columns = useMemo(() => {
-    if (!referenceImages || referenceImages.length === 0) return [];
 
     const colCount = isMobile ? 2 : 4;
     const newColumns = Array.from({ length: colCount }, () => []);
@@ -351,26 +354,6 @@ const ReferenceImageGallery = React.memo(({
     );
   }
 
-  if (columns.length === 0) {
-    return (
-      <Box sx={{
-        position: 'absolute',
-        top: 0, left: 0, right: 0, bottom: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: theme.palette.text.secondary,
-        p: 4,
-        textAlign: 'center'
-      }}>
-        <AddPhotoIcon sx={{ fontSize: 60, mb: 2, opacity: 0.5 }} />
-        <Typography variant="h6" sx={{ mb: 1 }}>{t('painting.workspace.gallery.noReferences')}</Typography>
-        <Typography variant="body2" color={theme.palette.text.disabled}>{t('painting.workspace.gallery.tryAgainLater')}</Typography>
-      </Box>
-    );
-  }
-
   return (
     <Box sx={{
       width: '100%',
@@ -397,17 +380,18 @@ const ReferenceImageGallery = React.memo(({
           {column.map((item) => (
             <Box key={item.id || item.filename}>
               {item.type === 'header' ? (
-                <GalleryHeader imageCount={referenceImages.length} onRefresh={onRefresh} isLoading={loadingReferenceImages} />
+                <GalleryHeader imageCount={referenceImages.length} onRefresh={onRefresh} isLoading={loadingReferenceImages} source={source} onSourceChange={onSourceChange} />
               ) : (
                 <GalleryItem
                   item={item}
                   onImageClick={onImageClick}
-                  isSelected={selectedReferenceImage?.filename === item.filename}
+                  isSelected={selectedReferenceImage?.id === item.id}
                   isLoadingParams={loadingImageParams}
                 />
               )}
             </Box>
           ))}
+          {columnIndex === 0 && hasMore && <Button size="small" onClick={onLoadMore}>{t('librarySettings.loadMore')}</Button>}
         </Box>
       ))}
     </Box>
@@ -443,6 +427,10 @@ const ItemDisplay = ({
   const [loadingImageParams, setLoadingImageParams] = useState(false);
   const [selectedReferenceImage, setSelectedReferenceImage] = useState(null);
   const [referenceMetadata, setReferenceMetadata] = useState(null);
+  const [inspirationSource, setInspirationSource] = useState('default');
+  const [sourceReady, setSourceReady] = useState(false);
+  const [hasMoreReferences, setHasMoreReferences] = useState(false);
+  const referenceRequest = useRef(0);
 
   const toolbarButtons = useMemo(() => [
     { icon: <AddPhotoIcon />, tooltip: t('painting.workspace.gallery.useForImg2Img'), action: 'use-as-input' },
@@ -461,40 +449,61 @@ const ItemDisplay = ({
     setNotification({ open: true, message, severity });
   }, []);
 
-  const fetchReferenceImages = useCallback(async () => {
+  const fetchReferenceImages = useCallback(async (offset = 0) => {
+    const requestId = ++referenceRequest.current;
     setLoadingReferenceImages(true);
     try {
-      const response = await fetch(REFERENCE_METADATA_URL, {
-        cache: 'no-store',
-      });
-
-      if (!response.ok) {
-        // 静态参考图库没有 API 错误体，仍以稳定 code/statusCode 标记真实请求失败。
-        throw Object.assign(new Error('REFERENCE_IMAGE_LIST_LOAD_FAILED'), {
-          code: 'REFERENCE_IMAGE_LIST_LOAD_FAILED',
-          statusCode: response.status,
-        });
+      if (inspirationSource === 'default') {
+        const response = await fetch(REFERENCE_METADATA_URL, { cache: 'no-store' });
+        if (!response.ok) throw new Error('REFERENCE_IMAGE_LIST_LOAD_FAILED');
+        const metadata = await response.json();
+        if (requestId !== referenceRequest.current) return;
+        setReferenceMetadata(metadata);
+        setReferenceImages(buildReferenceImageList(metadata));
+        setHasMoreReferences(false);
+      } else {
+        const result = await apiClient.getGallery({ source: inspirationSource, offset, limit: 60 });
+        if (requestId !== referenceRequest.current) return;
+        const images = result.items.map((entry) => ({ ...entry, url: entry.thumbnail_url }));
+        setReferenceImages((current) => offset ? [...current, ...images] : images);
+        setHasMoreReferences(result.has_more);
       }
-
-      const metadata = await response.json();
-      setReferenceMetadata(metadata);
-      setReferenceImages(buildReferenceImageList(metadata));
     } catch (error) {
-      console.error('获取参考图像失败:', error);
-      forwardPaintingPanelError(onError, error, {
-        source: 'reference-gallery',
-        messageKey: 'painting.workspace.errors.fetchReferenceImagesFailed',
-      });
-      showNotification(t('painting.workspace.errors.fetchReferenceImagesFailed'), 'error');
+      if (requestId === referenceRequest.current) showNotification(t('painting.workspace.errors.fetchReferenceImagesFailed'), 'error');
     } finally {
-      setLoadingReferenceImages(false);
+      if (requestId === referenceRequest.current) setLoadingReferenceImages(false);
     }
-  }, [onError, showNotification, t]);
+  }, [inspirationSource, showNotification, t]);
 
-  const fetchImageParameters = useCallback(async (filename) => {
+  useEffect(() => {
+    let active = true;
+    apiClient.getLocalSettings().then((settings) => {
+      if (active) setInspirationSource(settings.inspirationSource || 'default');
+    }).catch(() => {
+      if (active) showNotification(t('librarySettings.sourceFailed'), 'error');
+    }).finally(() => { if (active) setSourceReady(true); });
+    const onSource = (event) => setInspirationSource(event.detail);
+    window.addEventListener('novelai:gallery-source', onSource);
+    return () => { active = false; window.removeEventListener('novelai:gallery-source', onSource); };
+  }, [showNotification, t]);
+
+  const changeInspirationSource = async (source) => {
+    try {
+      await apiClient.saveLocalSettings({ inspirationSource: source });
+      setInspirationSource(source);
+      window.dispatchEvent(new CustomEvent('novelai:gallery-source', { detail: source }));
+    } catch { showNotification(t('librarySettings.sourceFailed'), 'error'); }
+  };
+
+  const fetchImageParameters = useCallback(async (imageItem) => {
     setLoadingImageParams(true);
     try {
-      const metadataEntry = referenceMetadata?.[filename];
+      if (inspirationSource !== 'default') {
+        const entry = await apiClient.getGalleryEntry(imageItem.id);
+        onApplyImageParameters?.({ ...entry.parameters, characterTabs: entry.parameters.characterTabs || [], positivePrompt: entry.prompt, negativePrompt: entry.negative_prompt });
+        return;
+      }
+      const metadataEntry = referenceMetadata?.[imageItem.filename];
 
       if (!metadataEntry) {
         // 目录与本地元数据未匹配属于可恢复校验状态，不写入服务错误记录。
@@ -535,18 +544,18 @@ const ItemDisplay = ({
     } finally {
       setLoadingImageParams(false);
     }
-  }, [onApplyImageParameters, onError, referenceMetadata, showNotification, t]);
+  }, [inspirationSource, onApplyImageParameters, onError, referenceMetadata, showNotification, t]);
 
   const handleReferenceImageClick = useCallback((imageItem) => {
     setSelectedReferenceImage(imageItem);
-    fetchImageParameters(imageItem.filename);
+    fetchImageParameters(imageItem);
   }, [fetchImageParameters]);
 
   useEffect(() => {
-    if (!item && referenceImages.length === 0 && !loadingReferenceImages) {
+    if (!item && sourceReady) {
       fetchReferenceImages();
     }
-  }, [item, fetchReferenceImages, loadingReferenceImages, referenceImages.length]);
+  }, [item, sourceReady, fetchReferenceImages]);
 
   const handleCloseNotification = () => {
     setNotification({ ...notification, open: false });
@@ -807,7 +816,11 @@ const ItemDisplay = ({
           loadingImageParams={loadingImageParams}
           selectedReferenceImage={selectedReferenceImage}
           onImageClick={handleReferenceImageClick}
-          onRefresh={fetchReferenceImages}
+          onRefresh={() => fetchReferenceImages()}
+          source={inspirationSource}
+          onSourceChange={changeInspirationSource}
+          hasMore={hasMoreReferences}
+          onLoadMore={() => fetchReferenceImages(referenceImages.length)}
         />
       )}
     </Box>

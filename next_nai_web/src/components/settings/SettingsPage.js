@@ -48,6 +48,7 @@ import { useI18n } from '@/i18n/I18nProvider';
 import { PAGE_IDS, PAGE_COLOR_DEFAULTS, getPageColorStorageKey, migrateLegacyPageColors } from '@/i18n/pageConfig.mjs';
 import { BACKGROUND_PRESETS, DEFAULT_THEME_SETTINGS, THEME_COLOR_PRESETS } from '@/providers/themePresets.mjs';
 import apiClient from '@/utils/ApiClient';
+import GallerySourceSelect from '@/components/gallery/GallerySourceSelect';
 
 // 页面图标映射 (保持在此处，因为 SettingsPage 需要它)
 const pageIcons = {
@@ -121,9 +122,13 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
   );
   
   // 图像下载设置状态，自动保存和手动下载共用同一套命名规则。
-  const [autoSaveEnabled, setAutoSaveEnabled] = useState(
-    localStorage.getItem('autoSaveEnabled') === 'true'
-  );
+  const [outputDirectory, setOutputDirectory] = useState('');
+  const [inspirationSource, setInspirationSource] = useState('default');
+  useEffect(() => {
+    const updateSource = (event) => setInspirationSource(event.detail);
+    window.addEventListener('novelai:gallery-source', updateSource);
+    return () => window.removeEventListener('novelai:gallery-source', updateSource);
+  }, []);
   const [fileNamePrefix, setFileNamePrefix] = useState(
     localStorage.getItem('fileNamePrefix') || 'AI_Image'
   );
@@ -170,7 +175,6 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
       localStorage.setItem('animationSpeed', animationSpeed.toString());
       
       // 保存图像下载设置，并清理旧版命名字段，避免隐藏设置继续影响文件名。
-      localStorage.setItem('autoSaveEnabled', autoSaveEnabled.toString());
       localStorage.setItem('fileNamePrefix', fileNamePrefix);
       localStorage.setItem('namingMethod', namingMethod);
       localStorage.setItem('fileNameSuffix', '');
@@ -192,11 +196,13 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
         locale,
         animationEnabled,
         animationSpeed,
-        autoSaveEnabled,
+        outputDirectory,
+        inspirationSource,
         fileNamePrefix,
         namingMethod,
       });
       
+      window.dispatchEvent(new CustomEvent('novelai:gallery-source', { detail: inspirationSource }));
       setSnackbar({
         open: true,
         message: t('settings.savedMessage'),
@@ -221,7 +227,8 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
       // 派发图像设置更新事件
       window.dispatchEvent(new CustomEvent('imageSettingsUpdate', {
         detail: {
-          autoSaveEnabled,
+          outputDirectory,
+          inspirationSource,
           fileNamePrefix,
           namingMethod,
           fileNameSuffix: '',
@@ -260,7 +267,8 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
     setAnimationSpeed(DEFAULT_THEME_SETTINGS.animationSpeed);
     
     // 重置图像设置
-    setAutoSaveEnabled(false);
+    setOutputDirectory('');
+    setInspirationSource('default');
     setFileNamePrefix('AI_Image');
     setNamingMethod('seed');
     
@@ -329,7 +337,7 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
     setAnimationSpeed(parseInt(localStorage.getItem('animationSpeed') || '300'));
     
     // 读取图像设置
-    setAutoSaveEnabled(localStorage.getItem('autoSaveEnabled') === 'true');
+
     setFileNamePrefix(localStorage.getItem('fileNamePrefix') || 'AI_Image');
     setNamingMethod(localStorage.getItem('namingMethod') || 'seed');
 
@@ -364,7 +372,7 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
       const remoteAnimationSpeed = Number.isFinite(settings.animationSpeed)
         ? settings.animationSpeed
         : parseInt(localStorage.getItem('animationSpeed') || '300');
-      const remoteAutoSaveEnabled = settings.autoSaveEnabled ?? (localStorage.getItem('autoSaveEnabled') === 'true');
+
       const remoteFileNamePrefix = settings.fileNamePrefix || localStorage.getItem('fileNamePrefix') || 'AI_Image';
       const remoteNamingMethod = settings.namingMethod || localStorage.getItem('namingMethod') || 'seed';
 
@@ -382,7 +390,7 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
       });
       localStorage.setItem('animationEnabled', String(remoteAnimationEnabled));
       localStorage.setItem('animationSpeed', String(remoteAnimationSpeed));
-      localStorage.setItem('autoSaveEnabled', String(remoteAutoSaveEnabled));
+
       localStorage.setItem('fileNamePrefix', remoteFileNamePrefix);
       localStorage.setItem('namingMethod', remoteNamingMethod);
 
@@ -392,7 +400,8 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
       setPageColors(remotePageColors);
       setAnimationEnabled(remoteAnimationEnabled);
       setAnimationSpeed(remoteAnimationSpeed);
-      setAutoSaveEnabled(remoteAutoSaveEnabled);
+      setOutputDirectory(settings.outputDirectory || '');
+      setInspirationSource(settings.inspirationSource || 'default');
       setFileNamePrefix(remoteFileNamePrefix);
       setNamingMethod(remoteNamingMethod);
       if (settings.locale) setLocale(settings.locale);
@@ -409,7 +418,8 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
       }));
       window.dispatchEvent(new CustomEvent('imageSettingsUpdate', {
         detail: {
-          autoSaveEnabled: remoteAutoSaveEnabled,
+          outputDirectory: settings.outputDirectory || '',
+          inspirationSource: settings.inspirationSource || 'default',
           fileNamePrefix: remoteFileNamePrefix,
           namingMethod: remoteNamingMethod,
         },
@@ -1131,32 +1141,11 @@ const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数
                   </Box>
                 </Box>
 
-                <Box
-                  sx={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    mb: 2,
-                    p: 1.25,
-                    borderRadius: 1,
-                    bgcolor: alpha(theme.palette.background.default, 0.45),
-                    border: `1px solid ${alpha(theme.palette.divider, 0.35)}`,
-                  }}
-                >
-                  <Box>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      {t('settings.autoDownload')}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {t('settings.autoDownloadHint')}
-                    </Typography>
-                  </Box>
-                  <Switch
-                    checked={autoSaveEnabled}
-                    onChange={(e) => setAutoSaveEnabled(e.target.checked)}
-                    color="primary"
-                  />
-                </Box>
+                <TextField fullWidth size="small" label={t('librarySettings.outputDirectory')}
+                  value={outputDirectory} onChange={(event) => setOutputDirectory(event.target.value)}
+                  placeholder={'E:\\NovelAI\\images'} helperText={t('librarySettings.outputHint')} sx={{ mb: 2 }} />
+                <GallerySourceSelect value={inspirationSource} onChange={setInspirationSource} />
+                <Alert severity="info" sx={{ mt: 1.5, mb: 2 }}>{t('librarySettings.localOnly')}</Alert>
 
                 <Box sx={{ mt: 1.5, mb: 1 }}>
                   <Typography variant="subtitle2" sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>

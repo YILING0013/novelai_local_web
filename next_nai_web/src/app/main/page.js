@@ -51,16 +51,13 @@ import {
   Refresh as RefreshIcon,
   Settings as SettingsIcon,
   Star as StarIcon,
-  Style as StyleIcon,
-  ViewList as TemplateIcon,
   VerifiedUser as VerifiedUserIcon,
   VpnKey as KeyIcon,
   Warning as WarningIcon,
 } from '@mui/icons-material';
 import AIPaintingPage from '@/components/ai-painting/AIPaintingPage';
 import SettingsPage from '@/components/settings/SettingsPage';
-import ReferenceLibraryPage from '@/components/references/ReferenceLibraryPage';
-import PromptTemplatePage from '@/components/references/PromptTemplatePage';
+import GalleryWorkspace from '@/components/gallery/GalleryWorkspace';
 import apiClient from '@/utils/ApiClient';
 import { useI18n } from '@/i18n/I18nProvider';
 import LanguageSwitcher from '@/components/i18n/LanguageSwitcher';
@@ -551,9 +548,8 @@ export default function MainPage() {
     if (storage) migrateLegacyPageColors(storage);
     return [
       { id: PAGE_IDS.AI_PAINTING, labelKey: 'pages.aiPainting', icon: <BrushIcon />, component: <AIPaintingPage />, color: readPageColor(storage, PAGE_IDS.AI_PAINTING), confirmOnClose: true },
-      { id: PAGE_IDS.ARTIST_REFERENCE, labelKey: 'pages.artistReference', icon: <StyleIcon />, component: <ReferenceLibraryPage kind="artist-threads" />, color: readPageColor(storage, PAGE_IDS.ARTIST_REFERENCE), confirmOnClose: false },
-      { id: PAGE_IDS.IMAGE_REFERENCE, labelKey: 'pages.imageReference', icon: <CollectionsIcon />, component: <ReferenceLibraryPage kind="image-references" />, color: readPageColor(storage, PAGE_IDS.IMAGE_REFERENCE), confirmOnClose: false },
-      { id: PAGE_IDS.PROMPT_TEMPLATE, labelKey: 'pages.promptTemplate', icon: <TemplateIcon />, component: <PromptTemplatePage />, color: readPageColor(storage, PAGE_IDS.PROMPT_TEMPLATE), confirmOnClose: false },
+      { id: PAGE_IDS.REFERENCE_GALLERY, labelKey: 'gallery.referencesTitle', icon: <CollectionsIcon />, component: <GalleryWorkspace source="references" />, color: readPageColor(storage, PAGE_IDS.REFERENCE_GALLERY), confirmOnClose: false },
+      { id: PAGE_IDS.LOCAL_GALLERY, labelKey: 'gallery.outputsTitle', icon: <CollectionsIcon />, component: <GalleryWorkspace source="outputs" />, color: readPageColor(storage, PAGE_IDS.LOCAL_GALLERY), confirmOnClose: false },
       { id: PAGE_IDS.SETTINGS, labelKey: 'pages.settings', icon: <SettingsIcon />, color: readPageColor(storage, PAGE_IDS.SETTINGS), confirmOnClose: false },
     ];
   });

@@ -77,6 +77,10 @@ class ApiClient {
       : await response.text();
 
     if (!response.ok) throw createApiError(response, data);
+    if (typeof window !== 'undefined' && Array.isArray(data?.images)) {
+      if (data.images.some((image) => image.save_error)) window.dispatchEvent(new Event('novelai:image-save-failed'));
+      if (data.images.some((image) => image.saved_file)) window.dispatchEvent(new Event('novelai:gallery-updated'));
+    }
     return data;
   }
 
@@ -223,22 +227,39 @@ class ApiClient {
     return { ...response, texts: response.notes || [] };
   }
 
-  /** 读取画师串或图片参考集合，kind 为本地 API 的集合名称。 */
-  async getReferences(kind) {
-    const response = await this.request(`/local/${kind}`);
-    return response[kind.replaceAll('-', '_')];
+  /** 分页读取参考图库或生成文件夹的缩略图索引。 */
+  async getGallery(options = {}) {
+    return this.request(`/local/gallery?${new URLSearchParams(options)}`);
   }
 
-  /** 创建或更新参考条目；id 为空时创建，返回保存后的条目。 */
-  async saveReference(kind, body, id = null) {
-    const path = `/local/${kind}${id ? `/${encodeURIComponent(id)}` : ''}`;
-    const response = await this.request(path, { method: id ? 'PUT' : 'POST', body });
-    return response[kind.replaceAll('-', '_').slice(0, -1)];
+  /** 按 ID 读取一张本地图像的完整元数据。 */
+  async getGalleryEntry(id) {
+    return this.request(`/local/gallery/${encodeURIComponent(id)}`);
   }
 
-  /** 删除指定参考条目及其图片。 */
-  async deleteReference(kind, id) {
-    return this.request(`/local/${kind}/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  /** 将多张图像上传到本机参考目录，后端读取内嵌元数据。 */
+  async importGalleryImages(formData) {
+    return this.request('/local/gallery/import', { method: 'POST', body: formData });
+  }
+
+  /** 保存图像的提示词、画风和分组等本地索引信息。 */
+  async updateGalleryEntry(id, changes) {
+    return this.request(`/local/gallery/${encodeURIComponent(id)}`, { method: 'PATCH', body: changes });
+  }
+
+  /** 读取指定图库来源的分组。 */
+  async getGalleryGroups(source) {
+    return this.request(`/local/gallery/groups?${new URLSearchParams({ source })}`);
+  }
+
+  /** 创建本地虚拟分组。 */
+  async createGalleryGroup(body) {
+    return this.request('/local/gallery/groups', { method: 'POST', body });
+  }
+
+  /** 批量分组、回收、恢复或将编辑后的元数据另存为新图。 */
+  async batchGallery(body) {
+    return this.request('/local/gallery/batch', { method: 'POST', body });
   }
 
   async saveTexts(title, positivePrompt, negativePrompt, imageUrl, characterTabs) {

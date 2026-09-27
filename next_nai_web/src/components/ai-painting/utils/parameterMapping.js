@@ -1,6 +1,7 @@
 /**
  * 参数映射及处理工具函数
  */
+import { isPaintingModelAllowed } from './modelUtils.js';
 
 // 定义分辨率限制变量，默认为普通模式
 let MAX_PRODUCT = 1048576; // 1024 * 1024
@@ -166,6 +167,16 @@ export const findAllowedResolutionWithFixedHeight = (currentWidth, height) => {
 export const mapImageParametersToUI = (parsedParams) => {
   const uiParams = {};
 
+  if (isPaintingModelAllowed(parsedParams.model)) {
+    uiParams.model = parsedParams.model;
+  }
+  const useCoords = parsedParams.use_coords ?? parsedParams.v4_prompt?.use_coords;
+  if (useCoords !== undefined) {
+    // use_coords 表示使用人工坐标，与“由 AI 决定位置”的开关方向相反。
+    uiParams.aiDecidePosition = !useCoords;
+    uiParams.characterPositionMode = useCoords ? 'custom' : 'ai';
+  }
+
   // 基础参数映射
   const basicMappings = {
     'steps': 'steps',
@@ -245,7 +256,7 @@ export const mapImageParametersToUI = (parsedParams) => {
  *   object: 提取后的正面提示词、负面提示词、字段存在标志和角色控制标签。
  *
  * @param {object} parsedParams - 已解析的图像参数或元数据。
- * @returns {{positivePrompt: string, negativePrompt: string, hasPositivePrompt: boolean, hasNegativePrompt: boolean, characterTabs: Array}} 提取后的提示词内容。
+ * @returns {{positivePrompt: string, negativePrompt: string, hasPositivePrompt: boolean, hasNegativePrompt: boolean, characterTabs: Array, hasCharacterTabs: boolean}} 提取后的提示词内容。
  */
 export const extractPromptContent = (parsedParams) => {
   const result = {
@@ -253,7 +264,8 @@ export const extractPromptContent = (parsedParams) => {
     negativePrompt: '',
     hasPositivePrompt: false,
     hasNegativePrompt: false,
-    characterTabs: []
+    characterTabs: [],
+    hasCharacterTabs: false
   };
 
   if (parsedParams.positivePrompt !== undefined) {
@@ -266,7 +278,9 @@ export const extractPromptContent = (parsedParams) => {
     result.hasNegativePrompt = true;
   }
 
-  if (Array.isArray(parsedParams.characterTabs) && parsedParams.characterTabs.length > 0) {
+  if (Array.isArray(parsedParams.characterTabs)) {
+    // 显式空数组表示清空旧角色，不应再从历史元数据补回角色。
+    result.hasCharacterTabs = true;
     result.characterTabs = parsedParams.characterTabs.map((charCaption, index) => ({
       name: typeof charCaption.name === 'string' ? charCaption.name.slice(0, 16) : '',
       prompt: charCaption.prompt || charCaption.char_caption || '',
@@ -298,7 +312,8 @@ export const extractPromptContent = (parsedParams) => {
     }
 
     // 角色控制
-    if (result.characterTabs.length === 0 && parsedParams.v4_prompt.caption.char_captions && parsedParams.v4_prompt.caption.char_captions.length > 0) {
+    if (!result.hasCharacterTabs && Array.isArray(parsedParams.v4_prompt.caption?.char_captions)) {
+      result.hasCharacterTabs = true;
       result.characterTabs = parsedParams.v4_prompt.caption.char_captions.map((charCaption, index) => ({
         name: '',
         prompt: charCaption.char_caption || '',
@@ -328,7 +343,7 @@ export const extractPromptContent = (parsedParams) => {
     }
   }
 
-  if ((!result.hasPositivePrompt || !result.hasNegativePrompt || result.characterTabs.length === 0) && parsedParams.originalMetadata) {
+  if ((!result.hasPositivePrompt || !result.hasNegativePrompt || !result.hasCharacterTabs) && parsedParams.originalMetadata) {
     const fallbackContent = extractPromptContent(parsedParams.originalMetadata);
 
     if (!result.hasPositivePrompt && fallbackContent.hasPositivePrompt) {
@@ -341,8 +356,9 @@ export const extractPromptContent = (parsedParams) => {
       result.hasNegativePrompt = true;
     }
 
-    if (result.characterTabs.length === 0 && fallbackContent.characterTabs.length > 0) {
+    if (!result.hasCharacterTabs && fallbackContent.hasCharacterTabs) {
       result.characterTabs = fallbackContent.characterTabs;
+      result.hasCharacterTabs = true;
     }
   }
 
@@ -371,6 +387,9 @@ export const applyImageParametersToUI = (parsedParams, {
 
     // 应用UI参数
     const uiParams = mapImageParametersToUI(parsedParams);
+    if (parsedParams.model !== undefined && uiParams.model === undefined) {
+      return false;
+    }
 
     if (uiParams.width && uiParams.height) {
       const originalWidth = uiParams.width;
@@ -417,9 +436,9 @@ export const applyImageParametersToUI = (parsedParams, {
       setNegativePrompt(promptContent.negativePrompt, uiParams.model);
     }
 
-    if (promptContent.characterTabs.length > 0 && typeof setCharacterTabsFromNote === 'function') {
+    if (promptContent.hasCharacterTabs && typeof setCharacterTabsFromNote === 'function') {
       setCharacterTabsFromNote(promptContent.characterTabs);
-      if (typeof setExpandedPanels === 'function') {
+      if (promptContent.characterTabs.length > 0 && typeof setExpandedPanels === 'function') {
         setExpandedPanels(prev => ({ ...prev, character: true }));
       }
     }

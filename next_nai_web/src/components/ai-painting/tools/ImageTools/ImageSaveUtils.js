@@ -1,7 +1,6 @@
 // ImageSaveUtils.js
 // 图像保存和文件名生成工具类
 
-import { downloadBlobToFile, downloadUrlToFile } from '@/utils/mediaAssets';
 
 export const DOWNLOAD_NAMING_METHODS = [
   { value: 'seed', labelKey: 'settings.naming.seed' },
@@ -158,33 +157,6 @@ export const generateFileName = (image = {}, imageSettings = {}, options = {}) =
 };
   
 /**
- * 自动保存图像到本地。
- *
- * Args:
- *   image: 图像对象。
- *   imageSettings: 图像下载命名设置。
- *
- * Returns:
- *   Promise<boolean>: 保存成功时返回 true，失败时返回 false。
- */
-export const autoSaveImage = async (image, imageSettings) => {
-  try {
-    const fileName = generateFileName(image, imageSettings);
-
-    if (image.cachedBlob) {
-      await downloadBlobToFile(image.cachedBlob, fileName);
-    } else {
-      await downloadUrlToFile(image.downloadSrc || image.originalSrc || image.src, fileName);
-    }
-    
-    return true;
-  } catch (error) {
-    console.error('自动保存图像失败:', error);
-    return false;
-  }
-};
-  
-/**
  * 从 localStorage 读取图像下载设置。
  *
  * Args:
@@ -195,7 +167,6 @@ export const autoSaveImage = async (image, imageSettings) => {
  */
 export const getImageSettings = () => {
   return {
-    autoSaveEnabled: localStorage.getItem('autoSaveEnabled') === 'true',
     fileNamePrefix: localStorage.getItem('fileNamePrefix') || 'AI_Image',
     fileNameSuffix: '',
     namingMethod: localStorage.getItem('namingMethod') || 'seed',

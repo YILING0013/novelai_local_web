@@ -1,4 +1,17 @@
 const coreenUS = {
+  "librarySettings": {
+    "outputDirectory": "Generated image folder",
+    "outputHint": "Enter an absolute local path, or leave blank for backend data/generated-images. After saving settings, completed images are written directly to disk without browser auto-downloads.",
+    "inspirationSource": "Inspiration gallery source",
+    "default": "Built-in examples",
+    "references": "Reference gallery",
+    "outputs": "Local generated images",
+    "localOnly": "Originals, thumbnails, groups, and styles stay on this computer. Changing folders does not move existing files. Manual download remains available.",
+    "saveFailed": "The image was generated, but saving to disk failed. Download this result now, then check folder permissions and free space.",
+    "sourceFailed": "Could not switch the inspiration gallery. Check the local service.",
+    "styleApplied": "Style added to the positive prompt.",
+    "loadMore": "Load more"
+},
   "login": {
     "invalidCredentials": "Login failed. Check your account and password.",
     "logoAlt": "NovelAI Local logo",
@@ -189,7 +202,7 @@ const coreenUS = {
     "saveFailed": "The settings could not be saved. Please try again.",
     "resetMessage": "Settings reset to their defaults.",
     "title": "System settings",
-    "intro": "Customize the application appearance and behavior. Settings are stored in this browser.",
+    "intro": "Customize appearance and behavior. Settings are saved on this computer; the browser caches appearance preferences for faster display.",
     "themeSettings": "Theme settings",
     "themeMode": "Theme mode",
     "currentDark": "Dark mode is active",
@@ -224,8 +237,8 @@ const coreenUS = {
     "animationDescription": "Control transitions and animation effects.",
     "transitionSpeed": "Transition speed: {speed}ms",
     "imageSettings": "Image settings",
-    "downloadImage": "Download images",
-    "downloadSharedRule": "Manual and automatic downloads share the same filename rules.",
+    "downloadImage": "Image storage and gallery",
+    "downloadSharedRule": "Manual browser downloads and automatic local saves share the same filename rules.",
     "autoDownload": "Download automatically when generation completes",
     "autoDownloadHint": "When disabled, manual downloads still use the filename rules below.",
     "filenameRules": "Filename rules",

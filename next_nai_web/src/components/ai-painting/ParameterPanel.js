@@ -672,11 +672,13 @@ const ParameterPanel = ({
       onResolutionChange: (width, height) => {
         setTempInputs({ width: width.toString(), height: height.toString() });
       },
-      setPositivePrompt: (value) => {
+      setPositivePrompt: (value, model) => {
         promptPayload.positivePrompt = value;
+        promptPayload.model = model;
       },
-      setNegativePrompt: (value) => {
+      setNegativePrompt: (value, model) => {
         promptPayload.negativePrompt = value;
+        promptPayload.model = model;
       },
       setCharacterTabsFromNote: (tabs) => {
         const tabsWithColors = tabs.map((tab, index) => ({
@@ -1357,6 +1359,7 @@ const ParameterPanel = ({
       v4_prompt_char_captions: activeCharacterTabs.map(t => ({ char_caption: t.prompt, centers: [getCenter(t.position)] })),
       v4_negative_prompt_char_captions: activeCharacterTabs.map(t => ({ char_caption: t.uc, centers: [getCenter(t.position)] })),
       aiDecidePosition: activeCharacterTabs.length > 0 ? params.aiDecidePosition : false,
+      use_coords: activeCharacterTabs.length > 0 && !params.aiDecidePosition,
       enabledCharacterCount: activeCharacterTabs.length,
       characterTabs: characterTabs
     };

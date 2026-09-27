@@ -54,7 +54,6 @@ import { GenerationProvider, useGeneration } from './Generation/GenerationContex
 import BatchGenerationDialog from './tools/BatchGeneration/BatchGenerationDialog';
 import ErrorSummaryDialog from './tools/BatchGeneration/ErrorSummaryDialog';
 import MetadataDialog from './tools/ImageTools/MetadataDialog';
-import { getImageSettings, autoSaveImage } from './tools/ImageTools/ImageSaveUtils';
 import { resizeImage } from './tools/ImageTools/ImageResizer';
 import apiClient from '@/utils/ApiClient';
 import { createBlobFromBase64, createObjectUrlFromBlob, revokeObjectUrl } from '@/utils/mediaAssets';
@@ -337,7 +336,6 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
   const [inpaintPreviewBatch, setInpaintPreviewBatch] = useState({ active: false, current: 0, total: 0 });
   const [characterTabsFromNote, setCharacterTabsFromNote] = useState(null);
   const [characterTabsForPromptTokens, setCharacterTabsForPromptTokens] = useState([]);
-  const [imageSettings, setImageSettings] = useState(getImageSettings());
   const [errorSummaryOpen, setErrorSummaryOpen] = useState(false);
   const [batchDialogOpen, setBatchDialogOpen] = useState(false);
   const [workspaceErrors, setWorkspaceErrors] = useState([]);
@@ -915,12 +913,12 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
   const handleApplyMetadata = (metadataInfo) => {
     // 设置正面提示词
     if (metadataInfo.positivePrompt !== undefined) {
-      setPositivePrompt(metadataInfo.positivePrompt);
+      setPositivePrompt(metadataInfo.positivePrompt, metadataInfo.model);
     }
 
     // 设置负面提示词
     if (metadataInfo.negativePrompt !== undefined) {
-      setNegativePrompt(metadataInfo.negativePrompt);
+      setNegativePrompt(metadataInfo.negativePrompt, metadataInfo.model);
     }
 
     if (Array.isArray(metadataInfo.characterTabs)) {
@@ -972,21 +970,12 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
       console.log('生成参数已从缓存加载:', generationParams);
     }
 
-    const handleImageSettingsUpdate = (event) => {
-      if (event.detail) {
-        setImageSettings(event.detail);
-        console.log('已更新图像设置:', event.detail);
-      }
-    };
-
     // 添加事件监听器
     window.addEventListener('error', handleGlobalError);
-    window.addEventListener('imageSettingsUpdate', handleImageSettingsUpdate);
 
     // 清理
     return () => {
       window.removeEventListener('error', handleGlobalError);
-      window.removeEventListener('imageSettingsUpdate', handleImageSettingsUpdate);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showNotification, t]);
@@ -1281,19 +1270,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
       if (!artistPrompt) return;
       setPositivePrompt((current) => current.trim() ? `${current.trim()}, ${artistPrompt}` : artistPrompt);
       window.localStorage.removeItem('novelai:pending-artist-prompt');
-      showNotification('画师串已添加到正面提示词。', 'success');
+      showNotification(t('librarySettings.styleApplied'), 'success');
     };
-    const setTemplatePrompt = (event) => {
-      const prompt = String(event.detail || '').trim();
-      if (!prompt) return;
-      setPositivePrompt(prompt);
-      window.localStorage.removeItem('novelai:pending-positive-prompt');
-      showNotification('提示词模板已应用。', 'success');
-    };
-
     window.addEventListener('novelai:reference-parameters', applyReferenceParameters);
     window.addEventListener('novelai:artist-prompt', applyArtistPrompt);
-    window.addEventListener('novelai:set-positive-prompt', setTemplatePrompt);
 
     const pendingParameters = window.localStorage.getItem('novelai:pending-reference-parameters');
     if (pendingParameters) {
@@ -1301,15 +1281,18 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
     }
     const pendingArtist = window.localStorage.getItem('novelai:pending-artist-prompt');
     if (pendingArtist) applyArtistPrompt({ detail: pendingArtist });
-    const pendingPositivePrompt = window.localStorage.getItem('novelai:pending-positive-prompt');
-    if (pendingPositivePrompt) setTemplatePrompt({ detail: pendingPositivePrompt });
 
     return () => {
       window.removeEventListener('novelai:reference-parameters', applyReferenceParameters);
       window.removeEventListener('novelai:artist-prompt', applyArtistPrompt);
-      window.removeEventListener('novelai:set-positive-prompt', setTemplatePrompt);
     };
-  }, [handleApplyImageParameters, setPositivePrompt, showNotification]);
+  }, [handleApplyImageParameters, setPositivePrompt, showNotification, t]);
+
+  useEffect(() => {
+    const onSaveFailure = () => showNotification(t('librarySettings.saveFailed'), 'warning', false);
+    window.addEventListener('novelai:image-save-failed', onSaveFailure);
+    return () => window.removeEventListener('novelai:image-save-failed', onSaveFailure);
+  }, [showNotification, t]);
 
   // 图像/视频生成请求
   const handleGenerate = async () => {
@@ -1455,21 +1438,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
         try {
           // 调用批量生成服务
           const finalBatchStatus = await generateBatchImages(params,
-            // 为批量生成添加回调，处理成功生成的图像自动保存
-            (newImage) => {
-              // 如果启用了自动保存，则保存每张生成的图像
-              if (imageSettings.autoSaveEnabled) {
-                setTimeout(() => {
-                  autoSaveImage(newImage, imageSettings)
-                    .then(success => {
-                      if (success) {
-                        console.log(`已自动保存图像: ${newImage.id}`);
-                      }
-                    })
-                    .catch(err => console.error('自动保存图像失败:', err));
-                }, 500); // 延迟500ms以确保图像已完全加载
-              }
-            },
+            undefined,
             // 批量错误立即进入统一记录，使批量仍在运行时指示器也保持可见。
             (batchError) => {
               recordWorkspaceError(batchError, {
@@ -1550,18 +1519,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
 
         showNotification(t('painting.workspace.notifications.imageGenerated'), 'success');
 
-        // 如果是图片且启用了自动保存
-        if (imageSettings.autoSaveEnabled) {
-          setTimeout(() => {
-            autoSaveImage(newItem, imageSettings)
-              .then(success => {
-                if (success) {
-                  showNotification(t('painting.workspace.notifications.imageAutoSaved'), 'info', true);
-                }
-              })
-              .catch(err => console.error('自动保存图像失败:', err));
-          }, 500);
-        }
+
       }
     } catch (error) {
       console.error('图像生成过程中发生错误:', error);

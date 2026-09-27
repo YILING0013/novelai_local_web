@@ -10,6 +10,8 @@ import json
 import logging
 import math
 import os
+import re
+import sqlite3
 import secrets
 import string
 import threading
@@ -46,6 +48,8 @@ from api_utils.account_change import (
 )
 from api_utils.local_store import LocalJsonStore, LocalStoreError
 from api_utils.reference_store import ReferenceStore
+from api_utils.local_image_library import LocalImageLibrary
+from api_utils.migrate_reference_library import migrate_reference_library
 from api_utils.image_validation import validate_base64_image, validate_generation_images
 from api_utils.novelai_client import NovelAIClient, NovelAIUpstreamError
 from api_utils.novelai_payload_builder import (
@@ -700,6 +704,36 @@ def _image_result(
     }
 
 
+
+def _save_generated_images(images: list[dict], parameters: dict) -> None:
+    """将成功结果保存到本机；写盘失败时仍返回图片，避免重复消耗生成额度。"""
+    for image in images:
+        try:
+            settings = current_app.extensions["local_store"].read("settings")
+            metadata = dict(parameters)
+            metadata["seed"] = image["seed"]
+            prefix = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(settings.get("fileNamePrefix") or "AI_Image"))[:80]
+            method = settings.get("namingMethod", "seed")
+            if method == "prompt32":
+                label = str(metadata.get("prompt") or metadata.get("positivePrompt") or "image").strip()[:32]
+            elif method == "random":
+                label = "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(8))
+            elif method == "datetime":
+                label = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            elif method == "seed" and image.get("seed") is not None:
+                label = str(image["seed"])
+            else:
+                label = str(int(time.time() * 1000))
+            filename = re.sub(r'[<>:"/\\|?*\x00-\x1f\s]+', "_", f"{prefix}_{label}").strip("._-")
+            filename = re.sub(r"_+", "_", filename)
+            saved = current_app.extensions["image_library"].save_generated(
+                base64.b64decode(image["data"]), filename=filename, metadata=metadata,
+            )
+            image["saved_file"] = {"id": saved["id"], "filename": saved["filename"], "url": saved["url"]}
+        except (OSError, ValueError, LocalStoreError, ExposableError, sqlite3.Error):
+            current_app.logger.warning("event=generated_image_save_failed correlation_id=%s", _request_correlation_id())
+            image["save_error"] = "LOCAL_IMAGE_SAVE_FAILED"
+
 def _correlation_id() -> str:
     """生成官方图像接口要求的六位字母数字关联 ID。"""
 
@@ -788,41 +822,6 @@ def _prepare_note(note: Any, inherited_id: str | None = None) -> dict[str, Any]:
     return prepared
 
 
-def _decode_reference_image(data_url: Any, original_name: Any) -> dict[str, Any]:
-    """在内存中校验参考图片，返回可直接存入 SQLite 的图片内容。"""
-
-    if not isinstance(data_url, str) or "," not in data_url:
-        raise ApiError("A valid image data URL is required.", 400, "IMAGE_INVALID")
-    header, encoded = data_url.split(",", 1)
-    if not header.startswith("data:image/") or ";base64" not in header:
-        raise ApiError("A valid image data URL is required.", 400, "IMAGE_INVALID")
-    try:
-        raw = base64.b64decode(encoded, validate=True)
-    except (ValueError, binascii.Error) as exc:
-        raise ApiError("The uploaded image is invalid.", 400, "IMAGE_INVALID") from exc
-    if not raw:
-        raise ApiError("The uploaded image is invalid.", 400, "IMAGE_INVALID")
-    if len(raw) > 30 * 1024 * 1024:
-        raise ApiError("The uploaded image is too large.", 413, "IMAGE_TOO_LARGE")
-    try:
-        with PillowImage.open(BytesIO(raw)) as image:
-            image.verify()
-            image_format = str(image.format or "").lower()
-    except (PillowImage.DecompressionBombError, UnidentifiedImageError, OSError, ValueError) as exc:
-        raise ApiError("The uploaded image is invalid.", 400, "IMAGE_INVALID") from exc
-    extensions = {"png": ".png", "jpeg": ".jpg", "webp": ".webp", "bmp": ".bmp"}
-    extension = extensions.get(image_format)
-    if not extension:
-        raise ApiError("The uploaded image format is not supported.", 400, "IMAGE_FORMAT_UNSUPPORTED")
-    filename = f"{uuid.uuid4().hex}{extension}"
-    return {
-        "id": uuid.uuid4().hex,
-        "original_name": str(original_name or filename)[:255],
-        "mime_type": f"image/{'jpeg' if extension == '.jpg' else image_format}",
-        "data": raw,
-    }
-
-
 def _ensure_no_account_recovery() -> None:
     """存在恢复日志时阻断普通登录、图像 mutation 和新账户变更。"""
 
@@ -909,6 +908,9 @@ def create_app(
         app.config["DATA_DIR"],
         Path(app.config["FRONTEND_OUT_DIR"]).parent / "public",
     )
+    settings = app.extensions["local_store"].read("settings")
+    app.extensions["image_library"] = LocalImageLibrary(app.config["DATA_DIR"], settings.get("outputDirectory"))
+    migrate_reference_library(app.extensions["image_library"], app.extensions["reference_store"], app.extensions["local_store"])
     app.extensions["local_sessions"] = {}
     app.extensions["session_lock"] = threading.RLock()
     app.extensions["batch_states"] = {}
@@ -1489,6 +1491,12 @@ def create_app(
                     seed=upstream_image.get("seed", seed),
                     index=upstream_image.get("index", index),
                 )]
+        saved_parameters = {key: value for key, value in official_payload.get("parameters", {}).items() if key in {
+            "width", "height", "steps", "scale", "seed", "sampler", "noise_schedule", "cfg_rescale",
+            "uc", "v4_prompt", "v4_negative_prompt", "characterPrompts", "use_coords", "sm", "sm_dyn",
+        }}
+        saved_parameters.update(prompt=source_payload.get("positivePrompt", source_payload.get("prompt", "")), model=model_name)
+        _save_generated_images(images, saved_parameters)
         account_snapshot = _refresh_account_snapshot(
             g.local_session,
             preserve_success_on_unauthorized=True,
@@ -1601,6 +1609,8 @@ def create_app(
                     seed=upstream_image.get("seed"),
                     index=upstream_image.get("index", index),
                 )]
+        _save_generated_images(images, {key: value for key, value in payload.items()
+                                      if key in {"prompt", "width", "height", "req_type", "defry", "scale"}})
         account_snapshot = _refresh_account_snapshot(
             g.local_session,
             preserve_success_on_unauthorized=True,
@@ -1709,12 +1719,25 @@ def create_app(
     @app.put("/api/local/settings")
     @session_required(csrf=True)
     def put_settings() -> Response:
-        """原子替换本地设置对象。"""
+        """合并并原子保存本地设置，先确认生成目录可写。"""
 
         settings = _request_json().get("settings")
         if not isinstance(settings, dict):
             raise ApiError("settings must be a JSON object.")
-        saved = app.extensions["local_store"].write("settings", settings)
+        settings = {**app.extensions["local_store"].read("settings"), **settings}
+        output_directory = settings.get("outputDirectory", "")
+        if not isinstance(output_directory, str) or (output_directory and not Path(output_directory).is_absolute()):
+            raise ApiError("outputDirectory must be an absolute local folder path.")
+        if settings.get("inspirationSource", "default") not in {"default", "references", "outputs"}:
+            raise ApiError("Invalid inspiration source.")
+        library = app.extensions["image_library"]
+        previous_directory = str(library.roots["outputs"])
+        try:
+            library.configure_output_dir(output_directory or None)
+            saved = app.extensions["local_store"].write("settings", settings)
+        except (OSError, ValueError, LocalStoreError, ExposableError):
+            library.configure_output_dir(previous_directory)
+            raise ApiError("The output folder or local settings could not be saved.", 400, "LOCAL_OUTPUT_DIRECTORY_INVALID")
         _log_local_json("write", "settings", saved)
         return jsonify({"settings": saved})
 
@@ -1752,96 +1775,115 @@ def create_app(
         _log_local_json("read", "notes", notes)
         return jsonify({"notes": notes})
 
-    def reference_kind(collection: str) -> str:
-        """将已校验的参考库路径映射为数据库类别。"""
-        return "artist" if collection == "artist-threads" else "image"
-
-    def reference_payload_key(collection: str) -> str:
-        """返回参考记录在 API 响应中的字段名。"""
-        return "artist_thread" if collection == "artist-threads" else "image_reference"
-
-    @app.get("/api/local/<collection>")
+    @app.get("/api/local/gallery")
     @session_required()
-    def get_references(collection: str) -> Response:
-        """读取当前本地参考库的记录与图片地址。"""
-        if collection not in {"artist-threads", "image-references"}:
-            raise ApiError("The reference collection was not found.", 404, "NOT_FOUND")
-        key = "artist_threads" if collection == "artist-threads" else "image_references"
-        return jsonify({key: app.extensions["reference_store"].list(reference_kind(collection))})
+    def gallery_list() -> Response:
+        """按来源分页读取本机图库，返回缩略图地址而不返回原图数据。"""
+        source = request.args.get("source", "references")
+        if source not in {"references", "outputs"}:
+            raise ApiError("Invalid gallery source.")
+        try:
+            offset = int(request.args.get("offset", 0))
+            limit = int(request.args.get("limit", 60))
+        except ValueError as exc:
+            raise ApiError("Invalid gallery pagination.") from exc
+        if offset < 0 or not 1 <= limit <= 120 or offset % limit:
+            raise ApiError("Invalid gallery pagination.")
+        library = app.extensions["image_library"]
+        # 首屏和刷新发现磁盘新增图片，继续翻页只查索引，避免反复遍历大图库。
+        scan = library.scan(source) if offset == 0 else {}
+        result = library.list_images(source=source, page=offset // limit + 1, page_size=limit,
+                                     group_id=request.args.get("group") or None,
+                                     query=request.args.get("q", ""), trashed=request.args.get("trash") == "true")
+        result["has_more"] = offset + len(result["items"]) < result["total"]
+        result["errors"] = scan.get("errors", [])
+        return jsonify(result)
 
-    @app.get("/api/local/reference-images/<image_id>")
+    @app.post("/api/local/gallery/import")
+    @session_required(csrf=True)
+    def gallery_import() -> Response:
+        """逐张导入上传图像，标题和提示词由图像元数据自动填写。"""
+        files = request.files.getlist("files")
+        if not files or len(files) > 30:
+            raise ApiError("Upload between 1 and 30 images at a time.")
+        items, errors = [], []
+        for upload in files:
+            try:
+                raw = upload.read(30 * 1024 * 1024 + 1)
+                if len(raw) > 30 * 1024 * 1024:
+                    raise ValueError("Image exceeds 30 MiB.")
+                items.append(app.extensions["image_library"].import_image(
+                    raw, upload.filename or "image", group_id=request.form.get("group_id") or None))
+            except (OSError, ValueError, LocalStoreError, ExposableError, sqlite3.Error) as exc:
+                errors.append({"filename": upload.filename, "error": str(exc)})
+        return jsonify({"items": items, "errors": errors})
+
+    @app.get("/api/local/gallery/<image_id>")
     @session_required()
-    def get_reference_image(image_id: str) -> Response:
-        """向已登录的本地会话提供参考图片。"""
-        image = app.extensions["reference_store"].image(image_id)
-        if image is None:
-            raise ApiError("The image was not found.", 404, "IMAGE_NOT_FOUND")
-        return send_file(BytesIO(image["image_data"]), mimetype=image["mime_type"], download_name=image["original_name"])
+    def gallery_detail(image_id: str) -> Response:
+        """按需读取当前图像的提示词、画风和参数。"""
+        return jsonify(app.extensions["image_library"].get_image(image_id))
 
-    @app.post("/api/local/<collection>")
+    @app.patch("/api/local/gallery/<image_id>")
     @session_required(csrf=True)
-    def create_reference(collection: str) -> tuple[Response, int]:
-        """校验参考信息和上传图片，并在同一事务中保存。"""
-        if collection not in {"artist-threads", "image-references"}:
-            raise ApiError("The reference collection was not found.", 404, "NOT_FOUND")
-        payload = _request_json()
-        uploads = payload.get("images", [])
-        if not isinstance(uploads, list) or len(uploads) > 30:
-            raise ApiError("images must contain at most 30 entries.")
-        if any(not isinstance(item, dict) for item in uploads):
-            raise ApiError("Each uploaded image must be a JSON object.")
-        title = str(payload.get("title") or "").strip()
-        prompt = str(payload.get("prompt") or "").strip()
-        parameters = payload.get("parameters")
-        if not title or len(title) > 200 or len(prompt) > 100_000:
-            raise ApiError("The reference fields are invalid.")
-        if parameters is not None and not isinstance(parameters, dict):
-            raise ApiError("parameters must be a JSON object or null.")
-        prepared = {
-            "id": uuid.uuid4().hex,
-            "title": title,
-            "prompt": prompt,
-            "parameters": parameters,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-        images = [_decode_reference_image(item.get("data_url"), item.get("original_name"))
-                  for item in uploads]
-        value = app.extensions["reference_store"].create(reference_kind(collection), prepared, images)
-        return jsonify({reference_payload_key(collection): value}), 201
+    def gallery_update(image_id: str) -> Response:
+        """编辑图库索引中的说明、画风和分组，保留图像原文件。"""
+        return jsonify(app.extensions["image_library"].update_image(image_id, _request_json()))
 
-    @app.put("/api/local/<collection>/<reference_id>")
-    @session_required(csrf=True)
-    def update_reference(collection: str, reference_id: str) -> Response:
-        """更新一条参考信息，未提交的字段和已有图片保持原值。"""
-        if collection not in {"artist-threads", "image-references"}:
-            raise ApiError("The reference collection was not found.", 404, "NOT_FOUND")
-        payload = _request_json()
-        current = app.extensions["reference_store"].get(reference_kind(collection), reference_id)
-        if current is None:
-            raise ApiError("The reference was not found.", 404, "REFERENCE_NOT_FOUND")
-        title = str(payload.get("title", current["title"])).strip()
-        prompt = str(payload.get("prompt", current["prompt"])).strip()
-        if not title or len(title) > 200 or len(prompt) > 100_000:
-            raise ApiError("The reference fields are invalid.")
-        if payload.get("parameters") is not None and not isinstance(payload["parameters"], dict):
-            raise ApiError("parameters must be a JSON object or null.")
-        value = app.extensions["reference_store"].update(
-            reference_kind(collection), reference_id, title, prompt,
-            payload.get("parameters"), "parameters" in payload,
-        )
-        if value is None:
-            raise ApiError("The reference was not found.", 404, "REFERENCE_NOT_FOUND")
-        return jsonify({reference_payload_key(collection): value})
+    @app.get("/api/local/gallery/<image_id>/file")
+    @app.get("/api/local/gallery/<image_id>/thumbnail")
+    @session_required()
+    def gallery_file(image_id: str) -> Response:
+        """只通过索引 ID 提供当前图库中的图像，拒绝浏览任意系统路径。"""
+        path = app.extensions["image_library"].image_path(image_id, thumbnail=request.path.endswith("/thumbnail"))
+        response = send_file(path, conditional=True)
+        response.headers["Cache-Control"] = "private, no-cache"
+        return response
 
-    @app.delete("/api/local/<collection>/<reference_id>")
+    @app.get("/api/local/gallery/groups")
+    @session_required()
+    def gallery_groups() -> Response:
+        """读取当前图库来源的本地分组。"""
+        return jsonify({"groups": app.extensions["image_library"].list_groups(request.args.get("source", "references"))})
+
+    @app.post("/api/local/gallery/groups")
     @session_required(csrf=True)
-    def delete_reference(collection: str, reference_id: str) -> Response:
-        """删除一条参考记录及数据库中关联的图片。"""
-        if collection not in {"artist-threads", "image-references"}:
-            raise ApiError("The reference collection was not found.", 404, "NOT_FOUND")
-        if not app.extensions["reference_store"].delete(reference_kind(collection), reference_id):
-            raise ApiError("The reference was not found.", 404, "REFERENCE_NOT_FOUND")
-        return jsonify({"deleted": True, "id": reference_id})
+    def gallery_create_group() -> Response:
+        """创建一个本地虚拟分组，不移动原始图片文件。"""
+        body = _request_json()
+        return jsonify(app.extensions["image_library"].create_group(body.get("name", ""), source=body.get("source", "references")))
+
+    @app.post("/api/local/gallery/batch")
+    @session_required(csrf=True)
+    def gallery_batch() -> Response:
+        """逐项执行分组、回收、恢复或元数据另存，并报告部分失败。"""
+        body = _request_json()
+        ids = body.get("ids")
+        action = body.get("action")
+        if not isinstance(ids, list) or not ids or len(ids) > 200 or any(not isinstance(value, str) for value in ids):
+            raise ApiError("Select between 1 and 200 images.")
+        if action not in {"group", "trash", "restore", "export"}:
+            raise ApiError("Invalid gallery action.")
+        if action == "export" and body.get("mode") not in {"edit", "strip"}:
+            raise ApiError("Choose edit or strip for metadata export.")
+        library = app.extensions["image_library"]
+        items, succeeded, errors = [], [], []
+        for image_id in dict.fromkeys(ids):
+            try:
+                if action == "group":
+                    result = library.update_image(image_id, {"group_id": body.get("group_id") or None})
+                elif action == "trash":
+                    result = library.trash_image(image_id)
+                elif action == "restore":
+                    result = library.restore_image(image_id)
+                else:
+                    result = library.save_metadata_copy(image_id, parameters=body.get("parameters"), clear=body["mode"] == "strip")
+                if result is not None:
+                    items.append(result)
+                succeeded.append(image_id)
+            except (OSError, ValueError, LocalStoreError, ExposableError, sqlite3.Error) as exc:
+                errors.append({"id": image_id, "error": str(exc)})
+        return jsonify({"items": items, "succeeded": succeeded, "errors": errors})
 
     @app.post("/api/local/notes")
     @session_required(csrf=True)
@@ -2020,7 +2062,7 @@ def create_app(
         return send_file(index_path, conditional=True)
 
     app.logger.info(
-        "event=service_initialized bind=%s:%d threads=4 storage=local_json+sqlite_references "
+        "event=service_initialized bind=%s:%d threads=4 storage=local_json+sqlite+image_files "
         "frontend_built=%s upstream_host=image.novelai.net upstream_timeout_seconds=%.1f",
         app.config["HOST"],
         app.config["PORT"],
