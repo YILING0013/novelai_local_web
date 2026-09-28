@@ -1,181 +1,144 @@
 <p align="center">
-  <img src="./next_nai_web/public/logo.png" width="112" alt="NovelAI Local Web Logo">
+  <img src="./next_nai_web/public/logo.png" width="104" alt="NovelAI Local Web Logo">
 </p>
 
 <h1 align="center">NovelAI Local Web</h1>
 
-<p align="center">
-  面向个人桌面使用的 NovelAI 图像生成工作台
-</p>
-
-<p align="center">
-  <img alt="License" src="https://img.shields.io/badge/License-AGPL--3.0-4DB6AC">
-  <img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows11&logoColor=white">
-  <img alt="Python" src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white">
-  <img alt="Node.js" src="https://img.shields.io/badge/Node.js-20%2B-339933?logo=nodedotjs&logoColor=white">
-</p>
+<p align="center">在本机完成图像创作、参考整理与元数据编辑的 NovelAI 工作台</p>
 
 <p align="center">
   <a href="https://nai.idlecloud.cc">在线网站</a> ·
-  <a href="#项目简介">项目简介</a> ·
-  <a href="#页面预览">页面预览</a> ·
-  <a href="#功能概览">功能概览</a> ·
-  <a href="#快速部署">快速部署</a> ·
-  <a href="#使用说明">使用说明</a> ·
-  <a href="#开发与测试">开发与测试</a>
+  <a href="#界面与使用流程">界面预览</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#配置与数据">配置与数据</a> ·
+  <a href="./LICENSE">AGPL-3.0 许可证</a>
 </p>
 
-## 在线网站
+NovelAI Local Web 是面向 Windows 个人用户的本地 Web 客户端。提示词、模型参数、角色控制、参考图片和生成结果集中在一个响应式工作台中；图片与创作资料保存在自己的电脑上。
 
-在线生成体验：[IDLECLOUD AI WEB](https://nai.idlecloud.cc)
+前端使用 Next.js / React / MUI，后端使用 Flask / Waitress。构建后的页面与 `/api` 由同一个本地服务提供，默认地址为 `http://127.0.0.1:5000`；登录、账户查询和图像生成通过后端访问 NovelAI 官方服务。
 
-## 项目简介
-
-NovelAI Local Web 是一个在 Windows 本机运行的 NovelAI 图像生成 Web 客户端。它将提示词编写、模型参数、角色控制、参考图工具、生成预览、账户额度和本地内容管理集中在同一个响应式界面中，适合个人日常创作与参数整理。
-
-浏览器页面由 Next.js 构建，Flask/Waitress 在本机同源提供静态页面和 `/api`。服务默认只监听 `127.0.0.1:5000`，图像与账户请求直接发送至 NovelAI 官方 `https://image.novelai.net`。设置、提示词笔记和随机提示词以本地 JSON 保存；参考图片与生成结果保存为本机图片文件，由 SQLite 统一记录图片信息、画风和分组。
-
-```text
-浏览器（Next.js 静态页面）
-            │
-            │  http://127.0.0.1:5000
-            ▼
-Flask / Waitress ───────────────► NovelAI 官方图像 API
-       │
-       └────────────────────────► 本地图片 / JSON / SQLite 工作区
-```
-
-> [!IMPORTANT]
-> 本项目定位为本机单用户工具，只支持 loopback 访问。请勿将服务直接绑定到局域网或公网地址。
-
-## 页面预览
-
-截图中的邮箱、订阅和额度均为演示数据，不对应任何真实账户。
-
-### 创作工作台
-
-提示词、灵感画廊、模型参数、生成预览、余额与预计消耗在一个页面内完成。
-
-![NovelAI Local Web 创作工作台](./docs/screenshots/workspace.png)
-
-<table>
-  <tr>
-    <td width="50%" align="center"><strong>登录页面</strong></td>
-    <td width="50%" align="center"><strong>账户信息</strong></td>
-  </tr>
-  <tr>
-    <td><img src="./docs/screenshots/login.png" alt="Persistent Token 与邮箱密码登录页面"></td>
-    <td><img src="./docs/screenshots/account.png" alt="NovelAI 账户、订阅、Anlas 与 V5 额度页面"></td>
-  </tr>
-  <tr>
-    <td>支持 Persistent Token 与邮箱密码两种登录方式。</td>
-    <td>集中展示账户状态、订阅、Anlas 余额和 V5 额度。</td>
-  </tr>
-</table>
-
-### 个性化设置
-
-支持亮色/暗色主题、主题色、背景、页面配色、动画、生成图片保存目录和灵感画廊来源设置。
-
-![NovelAI Local Web 设置页面](./docs/screenshots/settings.png)
+本项目为非官方社区项目，与 NovelAI / Anlatan 无隶属关系。需要自行准备可用的 NovelAI 账户；账户权限和实际费用以官方返回为准。服务仅支持本机 loopback 访问。
 
 ## 功能概览
 
-| 模块 | 能力 |
+| 功能 | 可以做什么 |
 | --- | --- |
-| 图像生成 | 文生图、图生图、局部重绘、单张生成和 1–8 张连续生成 |
-| 模型 | NAI Diffusion V3、Furry V3、V4 Full/Curated、V4.5 Full/Curated、V5 Full/Curated |
-| 提示词 | 正向/负向提示词、V4/V5 Tokenizer、官方标签建议、随机提示词、提示词笔记 |
-| 角色与参考 | 角色提示词、角色坐标、Vibe Transfer、Director Reference 与 Director Tools |
-| 图像工具 | NovelAI 官方 Upscale、Augment、PNG 元数据读取与参数回填 |
-| 结果管理 | 即时预览、后端自动保存到本机目录、手动下载和持久图片管理 |
-| 灵感画廊 | 可选择内置 86 张示例、个人参考库或已生成图片，应用提示词和参数 |
-| 本地图库 | 统一管理参考图片与生成结果，查看大图、编辑元数据、整理分组和画风 |
-| 账户与额度 | 官方账户资料、订阅状态、到期时间、固定/购买/总 Anlas、V5 额度 |
-| 本地内容 | 提示词笔记、随机提示词、界面偏好及 JSON 导入/导出 |
-| 界面 | 中文/英文、亮色/暗色、主题色与背景、桌面和移动端响应式布局 |
+| 图像创作 | 文生图、图生图、局部重绘、连续生成、Upscale 与 Augment |
+| 模型与角色 | V3 / Furry V3、V4、V4.5、V5 系列，角色提示词与位置控制，以及模型支持的 Vibe / Director 工具 |
+| 提示词 | 正负提示词编辑、标签建议、V4 / V5 Tokenizer、随机提示词和提示词笔记 |
+| 参考图库 | 拖入或多图上传，读取每张图的元数据，保存画风片段，建立个人参考集合 |
+| 本地图库 | 浏览生成保存目录，分页瀑布流、搜索、虚拟分组、批量选择和可恢复的回收站 |
+| 元数据处理 | 分层查看和编辑 PNG、EXIF、隐写内容；批量选图作为模板，编辑或清除后另存 PNG |
+| 账户与界面 | 官方账户、订阅、Anlas 与 V5 额度；中英文、亮暗主题、主题色与背景设置 |
 
-不同模型支持的参数并不完全相同。界面会根据当前模型启用可用控件，后端也会再次校验请求，避免把不受支持的 Vibe、角色参考或 Director 参数静默发送给官方接口。
+不同模型支持的参数有所区别，界面会按模型调整可用工具。参考图库与本地图库是两个独立入口，共用详情、分组与元数据编辑操作。
 
-## 系统要求
+## 界面与使用流程
 
-| 项目 | 最低要求 | 说明 |
-| --- | --- | --- |
-| 操作系统 | Windows 10 / 11 | 启动与安装脚本为 `.bat` 和 PowerShell |
-| Python | 3.11 或更高版本 | 需要可用的 Windows `py` Launcher |
-| Node.js | 20 或更高版本 | 需要同时提供 `node` 与 `npm` |
-| 浏览器 | Edge、Chrome、Firefox 等现代浏览器 | 启动后会自动打开默认浏览器 |
-| 网络 | 可访问 `https://image.novelai.net` | 登录、账户查询和图像生成均使用官方服务 |
-| NovelAI 账户 | Persistent Token 或邮箱密码 | 图像使用权限与扣费规则以官方账户状态为准 |
+以下为 **1920 × 1080 的演示工作区截图**，使用项目自带示例图片搭建，不涉及真实账户，也不表示截图中的图片是本次实际生成的结果。
 
-## 快速部署
+### 1. 创作工作台
 
-### 1. 获取项目
+左侧浏览图库与灵感图片，右侧编写正负提示词并配置模型、画布和角色，右侧底部集中显示生成操作和账户消耗信息。灵感来源可在卡片或设置中切换为内置示例、参考图库或本地图库。
 
-下载源码压缩包并解压，或使用 Git 克隆仓库。进入包含下列文件的项目根目录：
+![创作工作台：提示词、角色参数、灵感图片与生成操作](./docs/screenshots/workspace.png)
 
-```text
-novelai_local_web/
-├─ setup.bat
-├─ start.bat
-├─ nai_flask/
-└─ next_nai_web/
-```
+单张生成保留手动填写的 Seed，留空时使用随机值。连续生成支持 1–8 张，逐张显示结果，相邻请求间隔 15 秒；取消会阻止后续请求，异常时停止且不会自动重试。连续生成每张使用新的 Seed，需要复现时请选择单张。
 
-### 2. 首次安装
+成功的生成结果由后端自动保存到输出目录。刷新或关闭页面不会删除已保存的文件，手动下载入口仍可使用。
 
-双击根目录的 `setup.bat`。
+### 2. 参考图库与本地图库
 
-安装脚本会依次：
+**参考图库**用于收藏外部参考。拖入图片或一次上传多张即可导入，标题和提示词无需预先填写；有元数据时自动提取，没有时可在详情中补充。
 
-1. 检查 Python 3.11+ 与 Node.js 20+；
-2. 在 `nai_flask/.venv` 创建 Python 虚拟环境；
-3. 安装 Flask 后端依赖；
-4. 使用 `npm ci` 安装前端依赖；
-5. 构建 Next.js 静态页面到 `next_nai_web/out`。
+![参考图库：多图导入、搜索、分组与画风收藏](./docs/screenshots/reference-gallery.png)
 
-也可以在 PowerShell 中运行：
+**本地图库**读取设置中的生成输出目录。使用缩略图瀑布流浏览结果，可搜索、选择多张、移动分组或放入回收站。分组只整理图库记录，不移动原图；删除会把文件移入应用专用回收站，可恢复到原位置，遇到同名文件时会提示冲突而不覆盖。
+
+![本地图库：生成目录中的图片与批量操作](./docs/screenshots/local-gallery.png)
+
+### 3. 图片详情：分别应用提示词、画风和参数
+
+大图旁按卡片展示图片信息、主提示词、画风、角色与生成参数。长文本可滚动阅读，其他嵌套字段可逐层展开。
+
+- **应用正向 / 应用负向**：只替换对应方向的提示词，保留另一方向和当前参数。
+- **仅应用提示词**：同时应用正负提示词。
+- **应用画风**：将保存的画风片段追加到当前正向提示词，也可单独复制画风。
+- **应用全部参数**：回填图片中可识别的生成设置与角色信息。
+- **保存为画风**：在主正向或角色正向提示词中选择文字，在底部确认区查看选段并保存；手机可长按选词。
+
+![图片详情：独立应用入口、画风选段与参数卡片](./docs/screenshots/image-detail.png)
+
+“编辑信息”修改图库记录；需要将参数写入图片文件时，点击图片信息卡片中的 **编辑元数据**。
+
+### 4. 可视化元数据与批量模板
+
+元数据编辑以表单展示主正负提示词、每个角色的提示词与坐标，以及其他生成参数。PNG 文本、EXIF、alpha / RGB 隐写中的已识别重复字段合并编辑，同一角色按索引分别对应；未知对象、数组、布尔值和空值仍可展开、修改或增删，无需手写 JSON。
+
+![可视化元数据编辑：提示词、角色、参数和多载体字段](./docs/screenshots/metadata-editor.png)
+
+批量选图后点击 **编辑元数据**，可选择两种方式：
+
+1. **不使用模板**：只覆盖本次改动的字段，每张图保留其余原值。
+2. **选择已选图片作为模板**：通过缩略图和标题挑选一张，加载其完整元数据作为整批默认值，再继续编辑。模板替换元数据，不替换每张图片的图像内容。
+
+也可以选择“清除后另存”，移除文本、EXIF 和支持的隐写元数据。编辑、清除与模板操作都创建新文件，原始图片保留。
+
+### 5. 另存到指定目录
+
+填写本机绝对路径，或通过 **浏览目录** 选择磁盘、进入子目录和返回上一级。默认建议位置是 `nai_flask/data/metadata-exports`；目录尚不存在时，会在保存时创建。
+
+![元数据导出：批量图片模板与本地保存目录](./docs/screenshots/metadata-export.png)
+
+副本只写入所选目录，不额外复制到生成图库，也不覆盖已有文件。若主动选择了生成输出目录，新文件会在图库扫描时显示。
+
+<details>
+<summary><strong>登录、账户与个性化设置</strong></summary>
+
+登录支持 **Persistent Token** 和 **邮箱密码**。若官方要求额外验证码，请改用 Persistent Token。
+
+![登录页面：Persistent Token 与邮箱密码入口](./docs/screenshots/login.png)
+
+设置页可调整语言、亮暗主题、主题色、背景和动画；**生成图片保存目录**决定自动保存与本地图库读取的位置，**灵感来源**决定工作台使用哪一组图片。这与元数据另存时单独选择的目录相互独立。
+
+![设置页面：外观、生成保存目录与灵感来源](./docs/screenshots/settings.png)
+
+账户页集中显示登录方式、订阅状态、固定与购买 Anlas、V5 额度，并可手动刷新。通过邮箱密码登录时，还可按页面提示管理账户凭据；修改前请先在官方页面备份重要内容。
+
+![账户页面：演示账户的订阅、Anlas 与 V5 额度](./docs/screenshots/account.png)
+
+</details>
+
+## 快速开始
+
+需要 Windows 10 / 11、Python **3.11+**（含 `py` Launcher）、Node.js **20+**（含 npm），以及可访问 NovelAI 官方服务的网络。
 
 ```powershell
-cd E:\path\to\novelai_local_web
+git clone https://github.com/YILING0013/novelai_local_web.git
+cd novelai_local_web
 .\setup.bat
-```
-
-首次安装需要下载依赖，耗时取决于网络和磁盘速度。出现“安装完成”后即可启动。
-
-### 3. 启动应用
-
-双击根目录的 `start.bat`，或在 PowerShell 中执行：
-
-```powershell
 .\start.bat
 ```
 
-服务就绪后会自动打开：
+也可下载源码压缩包解压，先双击 `setup.bat`，完成后双击 `start.bat`。
 
-<http://127.0.0.1:5000/login>
+- `setup.bat` 创建 `nai_flask/.venv`、安装后端和前端依赖，并构建静态页面到 `next_nai_web/out`。
+- `start.bat` 启动本地服务，就绪后自动打开 <http://127.0.0.1:5000/login>。保持启动窗口开启，按 `Ctrl+C` 或关闭该窗口停止服务。
+- 启动器会复用当前项目已运行的健康服务；其他程序占用端口时会报错，不会自动换端口。
+- 更新源码时，先停止旧服务，重新运行 `setup.bat`，完成后再运行 `start.bat`。
 
-请保持启动窗口开启。按 `Ctrl+C` 或关闭该窗口即可停止服务。
+## 配置与数据
 
-启动器会先检查目标端口：
+### 服务配置
 
-- 如果端口空闲，启动当前项目；
-- 如果当前项目已经健康运行，直接复用现有服务并打开浏览器；
-- 如果端口被其他程序占用，明确报错并停止，不会自动切换到其他端口。
-
-### 4. 更新项目
-
-拉取或覆盖新版本源码后，再次运行 `setup.bat`。脚本会更新依赖并重新生成前端静态产物，然后使用 `start.bat` 启动。
-
-## 本地配置
-
-默认配置可以直接使用。如需修改端口、数据目录或官方请求超时，将示例文件复制为本地配置：
+默认配置可直接使用。需要修改端口、数据位置或请求超时时，在项目根目录执行：
 
 ```powershell
 Copy-Item .\nai_flask\config.example.json .\nai_flask\config.local.json
 ```
 
-`nai_flask/config.local.json`：
+编辑 `nai_flask/config.local.json`：
 
 ```json
 {
@@ -185,261 +148,81 @@ Copy-Item .\nai_flask\config.example.json .\nai_flask\config.local.json
 }
 ```
 
-| 配置项 | 默认值 | 说明 |
-| --- | ---: | --- |
-| `port` | `5000` | 本机 loopback 端口，允许范围为 `1`–`65535` |
-| `data_dir` | `data` | 本地数据目录；相对路径以 `nai_flask` 为基准，也可填写绝对路径 |
-| `upstream_timeout_seconds` | `120` | 单次 NovelAI 官方请求的读取超时秒数 |
+`data_dir` 的相对路径以 `nai_flask` 为基准，也可填写绝对路径，例如 `E:/NovelAIData`。配置修改后重启后端；不要在此文件中保存账户凭据。
 
-Windows JSON 中建议使用正斜杠表示绝对路径，例如 `E:/NovelAIData`。配置修改后需要重启后端。未知配置项、无效端口或无法解析的 JSON 会使服务拒绝启动并显示错误。
+### 图片目录与工作区
 
-> [!WARNING]
-> `config.local.json` 只用于运行参数。不要在其中写入 Persistent Token、邮箱、密码或其他账户凭据。
-
-## 使用说明
-
-### 登录
-
-登录页提供两种方式：
-
-- **Persistent Token**：默认入口，适合日常使用。粘贴 NovelAI 官方 Persistent Token 后登录。
-- **邮箱密码**：输入 NovelAI 官方账户邮箱和密码。密码只在本机后端内存中用于派生 Access Key，原始密码不会发送给 NovelAI 官方接口，也不会保存到磁盘。
-
-如果官方接口要求额外验证码，邮箱密码登录会返回 `OFFICIAL_CAPTCHA_REQUIRED` 并提示改用 Persistent Token，本项目不会尝试绕过官方验证。
-
-### 创建图像
-
-1. 在正向提示词中描述画面，并按需填写负向提示词；
-2. 选择模型、画布尺寸、采样器、步数、CFG Scale 和 Seed；
-3. 按需展开图生图、局部重绘、角色控制、Vibe 或 Director 工具；
-4. 在生成栏确认 Anlas 余额、图像数量和预计消耗；
-5. 点击生成，完成的图片会立即加入当前页面画廊；
-6. 后端自动将生成图片保存到本机输出目录；也可以使用下载按钮另存一份。
-
-生成栏中的预计消耗用于创作前参考，最终扣费和订阅免费规则以 NovelAI 官方返回为准。
-
-单张生成会保留手动填写的 Seed，成功后不会自动覆盖；Seed 留空时生成请求使用随机值。V5 的模型默认步数为 `23`，普通模式最多 `28` 步，大图模式最多 `50` 步。切换模式时，超过当前上限的缓存参数会调整至允许范围。
-
-### 连续生成
-
-一次点击可连续生成 `1`–`8` 张图片。每次官方请求固定生成一张，单张成功后立即显示；还有后续任务时，应用等待 15 秒再发送下一次请求。
-
-- 最后一张完成后不会额外等待；
-- 页面关闭或刷新后不会在后台继续发送下一张请求；
-- 取消只会阻止尚未发送的请求；
-- 遇到限流、超时、断连、官方 5xx、响应损坏或结果不确定时，整批立即停止；
-- 不会自动重试，已经成功的图片保留在本机输出目录。
-
-连续生成会为每张图片使用新的 Seed。需要按指定 Seed 复现图片时，请选择单张生成。
-
-请根据自己的账户权限使用连续生成，并遵守 [NovelAI 服务条款](https://novelai.net/terms)。
-
-### 提示词与灵感
-
-- **提示词编辑器**：分别编辑正向和负向提示词，查看 V4/V5 Tokenizer 结果并请求官方标签建议；
-- **随机提示词**：按分类和集合维护词条，支持随机或顺序模式；
-- **提示词笔记**：保存标题、提示词、角色、参数和可选缩略图，支持 JSON 导入/导出；
-- **灵感画廊**：在设置中选择内置示例、个人参考图片或生成结果，点击图片查看并应用参数；
-- **PNG 参数回填**：读取 NovelAI PNG 元数据，并将可识别参数带回编辑器。
-
-### 本地图库与画风
-
-本地图库统一查看个人参考图片和生成结果。每张图片独立保存提示词、生成参数和画风信息；点击图片打开大图与详情，可以查看和编辑对应元数据，也可以通过分组整理图片。
-
-导入时读取每张图片可识别的 NovelAI 元数据，正面提示词、负面提示词和画风分别显示。没有元数据的图片仍可保存，后续在详情中补充。应用画风时使用画风字段；需要还原生成设置时应用图片参数。
-
-图片详情以提示词区、角色区和参数卡片展示信息，嵌套 JSON 对象和数组可以逐层查看和编辑。同一主提示词或同一角色提示词在不同元数据记录中的副本合并显示，另存时同步更新。选中提示词后，在选段预览区点击“保存为画风”即可单独保存。
-
-正向和负向提示词各自提供应用按钮，只替换绘画页中对应方向的提示词。“编辑元数据”位于图片信息区和批量操作栏。批量编辑可以保留每张图的原始参数、仅覆盖改动项，也可以从已选图片中选择一张作为元数据模板，再统一编辑后另存；模板替换元数据，不替换各张图片的图像内容。
-
-元数据另存支持浏览本地目录或输入绝对路径，默认建议 `nai_flask/data/metadata-exports`。后端直接写入所选目录，不再额外复制到生成图库，不覆盖已有文件；如果主动选择了生成图库目录，新文件会在扫描该目录时显示。
-
-元数据处理核对 [NovelAI 官方读取与写入脚本](https://github.com/NovelAI/novelai-image-metadata)，同时处理 PNG 文本、EXIF 和透明通道中的隐藏参数。编辑和清除均另存新图，原图保持不变。
-
-参考图片默认保存在 `nai_flask/data/reference-images`。每次成功生成的图片由后端自动保存，默认目录为 `nai_flask/data/generated-images`，可在设置中修改。页面刷新不会删除已保存图片；浏览器不再自动触发下载，手动下载入口继续保留。
-
-`data` 或图库子目录缺失时，启动与运行期间的访问都会自动建立必要目录和数据库表；仍保存在输出目录中的图片会重新扫描入库。重新初始化不会找回已经从磁盘删除的图片或分组记录。
-
-首次使用新版时，旧画师串与图片参考库中的每张图片会导入统一图库。旧画师串同时保留为图片的画风和正面提示词；旧多图条目保留为同名分组，单图保持未分组；没有图片的旧记录转入提示词笔记。迁移保留原数据库和源文件，中断后可继续，完成后的重启不会重复导入。
-
-### 账户与额度
-
-账户页面会显示：
-
-- 登录方式和凭据管理权限；
-- 邮箱及验证状态、账户创建时间、试用和封禁状态；
-- 订阅等级、有效状态、宽限期和到期时间；
-- 固定 Anlas、购买 Anlas 与总 Anlas；
-- V5 百分比、可用状态和下一次更新时间。
-
-余额也会显示在桌面生成栏和移动端操作区域。登录、生成、图像工具操作、账户变更或手动刷新后会更新账户快照；刷新失败时保留上一次数据并标记为过期，避免把缺失字段显示成错误的 `0`。
-
-通过邮箱密码登录的会话可以在账户页修改密码或邮箱。每次操作都需要重新输入当前密码。
-
-> [!CAUTION]
-> 修改密码或邮箱前，请先在 NovelAI 官方页面备份重要远程内容。凭据变更依赖官方当前接口和 keystore 格式；遇到超时或结果不确定时不会自动重试。
-
-### 设置
-
-设置页包含：
-
-- 中文与英文界面；
-- 亮色/暗色主题；
-- 主题色、背景预设与自定义页面配色；
-- 页面动画开关；
-- 生成图片的本机保存目录；
-- 灵感画廊使用内置示例、个人参考库或生成结果。
-
-图像设置保存在本地设置中：
-
-| 字段 | 默认值 | 说明 |
-| --- | --- | --- |
-| `outputDirectory` | 空值，使用 `nai_flask/data/generated-images` | 后端保存生成结果的目录，可在设置页填写本机绝对路径 |
-| `inspirationSource` | `default` | `default` 为内置示例，`references` 为个人参考图片，`outputs` 为本机生成结果 |
-
-首次使用默认显示英文。手动切换为中文后，语言选择会在本地持久保存。
-
-## 本地数据与隐私
-
-默认数据目录为 `nai_flask/data`。不同官方账户共享同一个本地个人工作区，退出或换号不会删除提示词笔记、参考库和界面设置。
-
-| 文件或存储 | 内容 |
+| 位置或设置 | 用途 |
 | --- | --- |
-| `settings.json` | 本地应用设置 |
-| `random-prompts.json` | 随机提示词分类、集合、启用状态与模式 |
-| `notes.json` | 提示词笔记、参数和可选缩略图 |
-| `image-library.db` | 统一图库索引、提示词、生成参数、画风、分组与迁移标记 |
-| `reference-images/` | 个人参考图片文件 |
-| `generated-images/` | 默认生成结果目录，可通过 `outputDirectory` 修改 |
-| `gallery-thumbnails/` | 图库缩略图缓存 |
-| `references.db` | 旧版参考库，升级后保留作为迁移来源，不再用于新图片存储 |
-| `account-change-recovery.json` | 未完成凭据变更的非敏感恢复阶段信息，仅在需要时出现 |
-| 浏览器 localStorage | 提示词草稿和部分界面偏好 |
-| 浏览器 IndexedDB | Vibe 派生缓存 |
+| `data/reference-images/` | 参考图库导入的图片 |
+| `data/generated-images/` | 默认生成输出目录；设置中的 `outputDirectory` 可改为本机绝对路径 |
+| `data/metadata-exports/` | 元数据另存的默认建议目录，每次另存也可另选位置 |
+| `data/image-library.db` | 图库索引、提示词、画风、虚拟分组和迁移记录 |
+| `data/gallery-thumbnails/` | 图库缩略图缓存 |
+| `data/settings.json` | 界面偏好、输出目录与灵感来源 |
+| `data/notes.json`、`data/random-prompts.json` | 提示词笔记和随机提示词资料 |
+| 浏览器存储 | 提示词草稿、部分界面偏好和 Vibe 缓存 |
 
-本地 JSON 使用 schema 校验、独立锁、同目录临时文件、原子替换和 last-good 备份。单个文件默认限制为 10 MiB；文件损坏时会明确报错，不会静默重置。
+表中 `data` 默认指 `nai_flask/data`，随 `data_dir` 调整；自定义生成目录和另存目录可位于它之外。设置中的 `inspirationSource` 分别使用 `default`（内置）、`references`（参考）、`outputs`（本地生成）三种来源。
 
-图库索引和参考图片随 `data_dir` 配置存放。已有 `artist-threads.json` 或 `image-references.json` 时，会先导入旧参考库，再迁入统一图库并保留源文件。浏览器草稿不在后端数据目录中。
+不同官方账户共享同一个本地工作区。退出、换号或刷新页面不会删除资料。备份时先停止服务，再复制完整数据目录、自定义生成目录和需要保留的另存目录；浏览器草稿不包含在后端数据目录中。
 
-备份个人工作区时，请先停止服务，再复制完整数据目录；自定义了 `outputDirectory` 时，也需要备份该输出目录。生成结果已保存到本机磁盘，刷新或关闭浏览器不会清除它们。
+<details>
+<summary><strong>旧数据迁移与凭据处理</strong></summary>
 
-### 凭据处理
+旧画师串、图片参考库会迁入参考图库，保留源数据库和图片；多图条目整理为分组，无图记录转入提示词笔记。迁移可在中断后继续，完成后不会重复导入。缺失的数据目录会自动建立，仍在生成目录中的图片可重新扫描，但不会恢复已经从磁盘删除的文件或丢失的分组。
 
-- Persistent Token、JWT、密码、Access Key 和 Encryption Key 仅存在于后端进程内存；
-- 浏览器 Cookie 只保存随机会话 ID，并启用 `HttpOnly` 与 `SameSite=Strict`；
-- 退出登录、浏览器会话结束、服务重启或官方返回 401 后，本地会话失效；
-- 本地接口校验 `Host`、`Origin` 和 CSRF Token；
-- 携带 Authorization 的官方请求不跟随跨主机重定向；
-- 日志不记录 Authorization、Token、密码、Cookie、请求正文、官方响应正文或图片 Base64。
+Persistent Token、密码及官方访问凭据保留在后端进程内存中，不写入工作区文件。浏览器使用本机会话 Cookie；本地接口执行会话、来源与 CSRF 校验。服务重启后需要重新登录。不要向 Issue、截图或日志附件中放入真实凭据。
 
-请不要把凭据写入源码、配置文件、截图、Issue 或终端历史。如果凭据意外泄露，请立即通过 NovelAI 官方渠道轮换。
-
-## 运行日志与问题排查
-
-`start.bat` 窗口会输出结构化运行日志，包括：
-
-- 本地 API 请求方法、路由、状态码、耗时和 correlation ID；
-- 官方操作类型、目标主机、状态码和稳定错误码；
-- 生成批次进度、余额刷新和账户操作结果。
-
-默认日志级别为 `INFO`。需要临时查看更详细日志时，在同一个 PowerShell 窗口执行：
-
-```powershell
-$env:NOVELAI_LOCAL_LOG_LEVEL = 'DEBUG'
-.\start.bat
-```
-
-调试完成后关闭该窗口即可清除临时环境变量。反馈问题时可提供错误时间、稳定错误码和 correlation ID，但不要提供 Token、密码或完整账户响应。
-
-| 问题 | 处理方式 |
-| --- | --- |
-| 提示未找到 Python Launcher | 安装 Python 3.11+，并确认终端可运行 `py -3 --version` |
-| 提示未找到 Node.js 或 npm | 安装 Node.js 20+，并确认 `node --version`、`npm --version` 可用 |
-| `setup.bat` 构建失败 | 保留窗口中的首个错误，检查网络后重新运行；不要只根据最后一行判断原因 |
-| 端口 5000 被占用 | 关闭占用端口的旧程序，或在 `config.local.json` 中明确设置其他空闲端口 |
-| 修改前端后页面没有变化 | 重新运行 `setup.bat` 或在 `next_nai_web` 执行 `npm run build`，再重启服务 |
-| Persistent Token 登录返回 401 | 检查 Token 是否完整、有效并属于当前官方账户，必要时在官方页面轮换 |
-| 邮箱密码登录要求验证码 | 改用 Persistent Token 登录 |
-| 生成返回 400 | 检查当前模型与 Vibe、参考图、角色等参数是否兼容，可先恢复默认参数再逐项添加 |
-| 账户数据标记为过期 | 检查网络和官方服务状态，然后在账户页手动刷新 |
-| 本地 JSON 损坏 | 根据错误中给出的文件检查同目录 `.bak`，修复前先保留损坏文件和备份副本 |
-
-查看本机端口占用：
-
-```powershell
-Get-NetTCPConnection -State Listen -LocalPort 5000
-```
-
-## 项目结构
-
-```text
-novelai_local_web/
-├─ .github/workflows/       # 自动化测试与构建
-├─ docs/screenshots/        # README 页面截图
-├─ nai_flask/               # Flask API、官方客户端、本地数据与后端测试
-│  ├─ api_utils/
-│  ├─ tests/
-│  ├─ config.example.json
-│  └─ requirements.txt
-├─ next_nai_web/            # Next.js / React 前端
-│  ├─ public/
-│  ├─ src/
-│  └─ package.json
-├─ scripts/                 # 本地启动与发布检查脚本
-├─ setup.bat                # 首次安装与重新构建
-├─ start.bat                # 双击启动入口
-├─ LICENSE
-└─ README.md
-```
-
-## 本地 API 概览
-
-这些接口服务于同源前端，不是面向公网开放的远程 API。
-
-| 分组 | 接口 |
-| --- | --- |
-| 会话 | `GET /api/session`、`POST /api/session/persistent-token`、`POST /api/session/password`、`DELETE /api/session` |
-| 账户 | `GET /api/account`、凭据变更与恢复接口 |
-| 图像 | `POST /api/images/generate`、批次取消、Vibe、Upscale、Augment、标签建议 |
-| 本地内容 | 设置、随机提示词和提示词笔记的读取、保存、删除与导入/导出 |
-| 本地图库 | 参考图片与生成结果列表、图片读取、元数据编辑和分组管理 |
-
-错误响应使用稳定错误码、安全消息、结果确定性和 correlation ID，不会把官方响应正文或 Authorization 返回给浏览器。
+</details>
 
 ## 开发与测试
 
-先运行一次 `setup.bat` 准备 Python 虚拟环境和前端依赖。
+项目主要目录为 `next_nai_web/`（前端）、`nai_flask/`（后端）和 `scripts/`（启动与发布检查）。先运行一次 `setup.bat` 准备依赖。
 
-### 后端测试
+从项目根目录进入后端，运行测试后返回：
 
 ```powershell
 cd nai_flask
 .\.venv\Scripts\python.exe -m pytest
+cd ..
 ```
 
-### 前端测试、Lint 与生产构建
+在前端目录运行测试、静态检查和构建：
 
 ```powershell
 cd next_nai_web
 npm test
 npm run lint
 npm run build
+cd ..
 ```
 
-### 发布边界检查
-
-在项目根目录执行：
+在项目根目录检查发布边界：
 
 ```powershell
 .\nai_flask\.venv\Scripts\python.exe .\scripts\verify_release.py
 ```
 
-自动化测试使用模拟官方接口，不需要 NovelAI 凭据。
+自动化测试使用模拟官方接口，不需要真实 NovelAI 凭据。修改前端后需重新构建静态产物；仅重启后端不会更新旧页面。
+
+<details>
+<summary><strong>常见问题与日志</strong></summary>
+
+| 情况 | 处理方式 |
+| --- | --- |
+| 找不到 Python / Node.js | 检查 `py -3 --version`、`node --version`、`npm --version` |
+| 5000 端口被占用 | 用 `Get-NetTCPConnection -State Listen -LocalPort 5000` 确认进程，再停止对应旧服务或明确调整配置 |
+| 安装或构建失败 | 查看窗口中的首个错误，确认依赖下载与网络后重试 |
+| Token 返回 401 / 登录要求验证码 | 在官方页面核对 Token；验证码场景改用 Persistent Token |
+| 生成参数报错 | 核对模型与参考图、Vibe、角色等工具是否兼容 |
+| 保存目录不可用 | 检查绝对路径和当前 Windows 用户的写入权限 |
+| 本地 JSON 损坏 | 保留损坏文件，检查同目录备份文件后再恢复 |
+
+运行日志在启动窗口中。反馈时提供操作步骤、错误码和 correlation ID，避免附带 Token、密码或完整账户响应。临时调试可先在 PowerShell 中设置 `$env:NOVELAI_LOCAL_LOG_LEVEL = 'DEBUG'`，再运行 `start.bat`。
+
+</details>
 
 ## 许可证
 
-本项目使用 [GNU Affero General Public License v3.0](./LICENSE) 发布。
-
-## 免责声明
-
-NovelAI Local Web 是非官方社区项目，与 NovelAI 或 Anlatan 不存在隶属、授权或背书关系。使用者需要自行准备合法的 NovelAI 账户，并对账户安全、生成内容、费用和对官方服务条款的遵守负责。
+本项目按 [GNU Affero General Public License v3.0](./LICENSE) 发布。使用 NovelAI 服务时请遵守其[服务条款](https://novelai.net/terms)，并自行负责账户安全、生成内容与费用。
