@@ -445,6 +445,8 @@ const paintingWorkspacezhCN = {
         "previewEmpty": "生成结果将在这里显示",
         "useParameters": "使用此图参数",
         "copyImage": "复制图像",
+        "imageCopyUnavailable": "当前浏览器不支持复制图像，请使用下载。",
+        "imageCopyFailed": "图像复制失败，请使用下载。",
         "downloadImage": "下载图像",
         "deleteImage": "删除图像",
         "seedApplyHelp": "点击将此 Seed 应用到当前参数",

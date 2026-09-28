@@ -15,6 +15,7 @@
     "@mui/icons-material": "^6.4.5",
     "@mui/material": "^6.4.5",
     "@mui/material-nextjs": "^6.4.12",
+    "@noble/hashes": "2.4.0",
     "exifreader": "^4.44.0",
     "file-saver": "^2.0.5",
     "gsap": "^3.13.0",

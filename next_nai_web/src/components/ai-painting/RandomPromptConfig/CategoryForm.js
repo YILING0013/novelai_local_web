@@ -45,6 +45,7 @@ import {
   FormatListBulleted as ListIcon
 } from '@mui/icons-material';
 import { v4 as uuidv4 } from 'uuid';
+import { copyTextToClipboard } from '@/utils/browserCapabilities.mjs';
 import { useI18n } from '@/i18n/I18nProvider';
 
 // 类别表单组件
@@ -420,14 +421,14 @@ const CategoryForm = ({ categories = [], onChange, onInsert, generateExample }) 
                           variant="outlined"
                           size="small"
                           startIcon={<CopyIcon />}
-                          onClick={() => {
+                          onClick={async () => {
                             const syntax = `<ran_id="${category.name}"/>`;
-                            navigator.clipboard.writeText(syntax);
-                            setSnackbar({
-                              open: true,
-                              messageKey: 'painting.tools.randomPrompt.messages.syntaxCopied',
-                              severity: 'success'
-                            });
+                            try {
+                              await copyTextToClipboard(syntax);
+                              setSnackbar({ open: true, messageKey: 'painting.tools.randomPrompt.messages.syntaxCopied', severity: 'success' });
+                            } catch {
+                              setSnackbar({ open: true, messageKey: 'common.copyFailed', severity: 'error' });
+                            }
                           }}
                         >
                           {t('painting.tools.randomPrompt.copySyntax')}

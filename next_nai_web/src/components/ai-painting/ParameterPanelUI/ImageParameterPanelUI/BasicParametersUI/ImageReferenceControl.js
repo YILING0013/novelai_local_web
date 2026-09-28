@@ -21,25 +21,7 @@ import {
   Add as AddIcon,
 } from '@mui/icons-material';
 import { useI18n } from '@/i18n/I18nProvider';
-
-// 辅助函数：生成 HMAC-SHA256
-const generateHMAC = async (key, message) => {
-  if (!key || !message) return null;
-  try {
-    const enc = new TextEncoder();
-    const keyData = enc.encode(key);
-    const msgData = enc.encode(message);
-
-    const cryptoKey = await window.crypto.subtle.importKey(
-      "raw", keyData, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
-    );
-    const signature = await window.crypto.subtle.sign("HMAC", cryptoKey, msgData);
-    return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('');
-  } catch (e) {
-    console.error("HMAC Generation Failed", e);
-    return null;
-  }
-};
+import { hmacSha256 } from '../../../utils/cryptoUtils';
 
 // 生成随机密钥
 const generateRandomKey = () => {
@@ -71,7 +53,7 @@ const ImageReferenceControl = ({ onReferenceImageChange, disabled = false }) => 
       const updatedImages = await Promise.all(images.map(async (img) => {
         if (!img.data || img.cache_secret_key) return img;
 
-        const newKey = await generateHMAC(masterKey, img.data);
+        const newKey = hmacSha256(masterKey, img.data);
         if (newKey) {
           hasUpdates = true;
           return { ...img, cache_secret_key: newKey };

@@ -120,6 +120,8 @@ const corezhCN = {
     "logout": "退出登录"
   },
   "common": {
+    "copied": "已复制",
+    "copyFailed": "复制失败，请选中文字后手动复制。",
     "close": "关闭",
     "cancel": "取消",
     "refresh": "刷新",

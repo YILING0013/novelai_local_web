@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Box, Button, Dialog, DialogActions, DialogContent, DialogTitle,
-  IconButton, Paper, Tooltip, Typography,
+  Alert, IconButton, Paper, Tooltip, Typography,
 } from '@mui/material';
 import {
   Close as CloseIcon,
@@ -9,6 +9,7 @@ import {
   ErrorOutline as ErrorIcon,
 } from '@mui/icons-material';
 import { useI18n } from '@/i18n/I18nProvider';
+import { copyTextToClipboard } from '@/utils/browserCapabilities.mjs';
 import { GENERATION_ERROR_MESSAGE_KEYS } from '../../Generation/errors';
 
 const BATCH_CATEGORY_KEYS = Object.freeze({
@@ -21,6 +22,7 @@ const BATCH_CATEGORY_KEYS = Object.freeze({
 
 const ErrorSummaryDialog = ({ open, onClose, onClear, errors = [] }) => {
   const { t, formatDate } = useI18n();
+  const [copyFailed, setCopyFailed] = React.useState(false);
 
   const getErrorMessage = React.useCallback((error) => {
     if (error.messageKey) return t(error.messageKey);
@@ -41,7 +43,12 @@ const ErrorSummaryDialog = ({ open, onClose, onClear, errors = [] }) => {
   }, [formatDate, getErrorMessage, t]);
 
   const copyText = async (value) => {
-    await navigator.clipboard.writeText(value);
+    try {
+      await copyTextToClipboard(value);
+      setCopyFailed(false);
+    } catch {
+      setCopyFailed(true);
+    }
   };
 
   return (
@@ -54,6 +61,7 @@ const ErrorSummaryDialog = ({ open, onClose, onClear, errors = [] }) => {
         <IconButton aria-label={t('painting.workspace.actions.close')} onClick={onClose} size="small"><CloseIcon /></IconButton>
       </DialogTitle>
       <DialogContent sx={{ py: 3 }}>
+        {copyFailed && <Alert severity="error" sx={{ mb: 2 }}>{t('common.copyFailed')}</Alert>}
         {errors.length === 0 ? (
           <Typography align="center" color="text.secondary" sx={{ py: 3 }}>
             {t('painting.workspace.errorRecords.noRecords')}

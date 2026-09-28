@@ -27,6 +27,7 @@ import {
   Casino as CasinoIcon,
 } from '@mui/icons-material';
 import apiClient from '../../utils/ApiClient';
+import { copyTextToClipboard } from '@/utils/browserCapabilities.mjs';
 import { useI18n } from '@/i18n/I18nProvider';
 
 // 导入提示词编辑器组件
@@ -72,6 +73,15 @@ const PromptPanel = ({
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
+
+  const copyPrompt = async (text) => {
+    try {
+      await copyTextToClipboard(text || '');
+      setSnackbar({ open: true, message: t('common.copied'), severity: 'success' });
+    } catch {
+      setSnackbar({ open: true, message: t('common.copyFailed'), severity: 'error' });
+    }
+  };
 
   const [randomPromptDialogOpen, setRandomPromptDialogOpen] = useState(false);
   const [randomPromptEnabled, setRandomPromptEnabled] = useState(false);
@@ -686,7 +696,7 @@ const PromptPanel = ({
                           <IconButton
                             aria-label={t('painting.workspace.prompt.copyPositive')}
                             size="small"
-                            onClick={() => navigator.clipboard.writeText(positivePrompt || '')}
+                            onClick={() => copyPrompt(positivePrompt)}
                             sx={{ opacity: 0.6, '&:hover': { opacity: 1 } }}
                           >
                             <CopyIcon fontSize="small" />
@@ -800,7 +810,7 @@ const PromptPanel = ({
                           <IconButton
                             aria-label={t('painting.workspace.prompt.copyNegative')}
                             size="small"
-                            onClick={() => navigator.clipboard.writeText(negativePrompt || '')}
+                            onClick={() => copyPrompt(negativePrompt)}
                             sx={{ opacity: 0.6, '&:hover': { opacity: 1 } }}
                           >
                             <CopyIcon fontSize="small" />

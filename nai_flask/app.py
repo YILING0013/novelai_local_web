@@ -7,11 +7,13 @@ import copy
 import base64
 import binascii
 import json
+import ipaddress
 import logging
 import math
 import os
 import re
 import sqlite3
+import socket
 import secrets
 import string
 import threading
@@ -70,10 +72,12 @@ IMAGE_ENDPOINT_LOG_NAMES = {
     "upscale_image": "upscale",
 }
 TRUSTED_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+LAN_IPV4_NETWORKS = tuple(ipaddress.ip_network(value) for value in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
 LOCAL_CONFIG_KEYS = frozenset({
     "port",
     "data_dir",
     "upstream_timeout_seconds",
+    "allow_lan",
 })
 
 
@@ -163,7 +167,28 @@ def load_local_config(path: str | os.PathLike[str] | None = None) -> dict[str, A
     unknown_keys = set(config) - LOCAL_CONFIG_KEYS
     if unknown_keys:
         raise ValueError("Local config contains unsupported fields.")
+    if "allow_lan" in config and not isinstance(config["allow_lan"], bool):
+        raise ValueError("allow_lan must be a JSON boolean.")
     return config
+
+
+def discover_lan_ipv4_addresses() -> list[str]:
+    """
+    枚举本机已配置的 RFC1918 IPv4 地址，供访问白名单和启动器链接共用。
+
+    Returns:
+        去重并按地址排序的私网 IPv4；不含公网、198.18/15 VPN 测试地址或回环。
+    """
+    addresses = set()
+    try:
+        interfaces = socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)
+    except socket.gaierror as exc:
+        raise ValueError("Could not detect this computer's LAN IPv4 addresses. Connect to the local network or disable allow_lan.") from exc
+    for result in interfaces:
+        address = ipaddress.IPv4Address(result[4][0])
+        if any(address in network for network in LAN_IPV4_NETWORKS):
+            addresses.add(address)
+    return [str(address) for address in sorted(addresses)]
 
 
 def _error_response(error: ApiError | NovelAIUpstreamError) -> tuple[Response, int]:
@@ -203,6 +228,8 @@ def _origin_is_allowed(origin: str, allowed_origins: set[str]) -> bool:
     except ValueError:
         return False
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    if parsed.username is not None or parsed.password is not None or parsed.path or parsed.query or parsed.fragment:
         return False
     normalized = f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
     return normalized in allowed_origins
@@ -839,7 +866,7 @@ def create_app(
     novelai_client: NovelAIClient | None = None,
 ) -> Flask:
     """
-    创建仅供本机 loopback 使用的 Flask 应用。
+    创建默认仅本机访问、可显式开启局域网访问的 Flask 应用。
 
     Args:
         test_config: 测试或嵌入运行时覆盖的非敏感配置。
@@ -853,6 +880,7 @@ def create_app(
     app = Flask(__name__, static_folder=None)
     app.config.update(
         HOST="127.0.0.1",
+        ALLOW_LAN=False,
         PORT=5000,
         DATA_DIR=str(BASE_DIR / "data"),
         FRONTEND_OUT_DIR=str(BASE_DIR.parent / "next_nai_web" / "out"),
@@ -870,8 +898,19 @@ def create_app(
     if test_config:
         app.config.update(test_config)
 
-    if app.config["HOST"] not in TRUSTED_HOSTS:
+    if not isinstance(app.config["ALLOW_LAN"], bool):
+        raise ValueError("allow_lan must be a JSON boolean.")
+    lan_override = os.getenv("NOVELAI_LOCAL_ALLOW_LAN")
+    if lan_override not in {None, "0", "1"}:
+        raise ValueError("NOVELAI_LOCAL_ALLOW_LAN must be exactly 0 or 1.")
+    if lan_override is not None:
+        app.config["ALLOW_LAN"] = lan_override == "1"
+    if app.config["ALLOW_LAN"]:
+        app.config["HOST"] = "0.0.0.0"
+    elif app.config["HOST"] not in TRUSTED_HOSTS:
         raise ValueError("The local API host must be a loopback address.")
+    app.config["LAN_IPV4_ADDRESSES"] = discover_lan_ipv4_addresses() if app.config["ALLOW_LAN"] else []
+    app.config["ALLOWED_HOSTS"] = TRUSTED_HOSTS | set(app.config["LAN_IPV4_ADDRESSES"])
     if (
         isinstance(app.config["PORT"], bool)
         or not isinstance(app.config["PORT"], int)
@@ -887,7 +926,7 @@ def create_app(
         frontend_out_dir = BASE_DIR / frontend_out_dir
     app.config["FRONTEND_OUT_DIR"] = str(frontend_out_dir.resolve())
     port = int(app.config["PORT"])
-    # 本地配置只能改变服务端口，浏览器来源始终由最终端口和固定开发端口推导。
+    # 开发来源保持固定；局域网来源必须在请求时与目标本机 IP 和服务端口同源。
     app.config["ALLOWED_ORIGINS"] = {
         f"http://localhost:{port}",
         f"http://127.0.0.1:{port}",
@@ -987,17 +1026,42 @@ def create_app(
 
     @app.before_request
     def enforce_local_request_boundary() -> Response | None:
-        """阻止非 loopback Host 和未批准浏览器 Origin。"""
+        """只接收回环或已枚举的本机 LAN Host，并校验实际连接地址与浏览器来源。"""
 
+        g.allowed_request_origins = set()
         try:
-            hostname = urlsplit(f"http://{request.host}").hostname
+            parsed_host = urlsplit(f"http://{request.host}")
+            hostname = parsed_host.hostname
+            host_port = parsed_host.port if parsed_host.port is not None else (443 if request.scheme == "https" else 80)
         except ValueError:
             hostname = None
-        if hostname not in TRUSTED_HOSTS:
+        if hostname not in app.config["ALLOWED_HOSTS"]:
+            raise ApiError("The Host header is not allowed.", 400, "HOST_NOT_ALLOWED")
+        is_lan_host = hostname in app.config["LAN_IPV4_ADDRESSES"]
+        if (parsed_host.username is not None or parsed_host.password is not None or parsed_host.path or parsed_host.query
+                or parsed_host.fragment or (is_lan_host and host_port != app.config["PORT"])):
             raise ApiError("The Host header is not allowed.", 400, "HOST_NOT_ALLOWED")
 
+        # 使用 WSGI 的真实 peer，不读取 Forwarded/X-Forwarded-For 提供的地址。
+        try:
+            peer = ipaddress.ip_address(request.remote_addr or "")
+        except ValueError:
+            peer = None
+        if isinstance(peer, ipaddress.IPv6Address) and peer.ipv4_mapped is not None:
+            peer = peer.ipv4_mapped
+        is_lan_peer = isinstance(peer, ipaddress.IPv4Address) and any(peer in network for network in LAN_IPV4_NETWORKS)
+        if peer is None or not (peer.is_loopback or (app.config["ALLOW_LAN"] and is_lan_peer)):
+            raise ApiError("Only local or enabled private-network connections are allowed.", 403, "PEER_NOT_ALLOWED")
+
+        allowed_origins = set() if is_lan_host else set(app.config["ALLOWED_ORIGINS"])
+        if is_lan_host:
+            allowed_origins.add(f"{request.scheme}://{hostname}:{app.config['PORT']}")
+            if app.config["PORT"] == (443 if request.scheme == "https" else 80):
+                allowed_origins.add(f"{request.scheme}://{hostname}")
+        g.allowed_request_origins = allowed_origins
+
         origin = request.headers.get("Origin")
-        if origin and not _origin_is_allowed(origin, app.config["ALLOWED_ORIGINS"]):
+        if origin and not _origin_is_allowed(origin, allowed_origins):
             raise ApiError("The Origin header is not allowed.", 403, "ORIGIN_NOT_ALLOWED")
         if request.method in MUTATING_METHODS and request.method != "OPTIONS" and not origin:
             raise ApiError("The Origin header is required.", 403, "ORIGIN_REQUIRED")
@@ -1010,7 +1074,7 @@ def create_app(
         """仅为批准的本地前端 Origin 返回凭据型 CORS 头。"""
 
         origin = request.headers.get("Origin")
-        if origin and _origin_is_allowed(origin, app.config["ALLOWED_ORIGINS"]):
+        if origin and _origin_is_allowed(origin, getattr(g, "allowed_request_origins", set())):
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Access-Control-Allow-Credentials"] = "true"
             response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-CSRF-Token"

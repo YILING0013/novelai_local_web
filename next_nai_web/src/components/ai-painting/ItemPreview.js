@@ -16,6 +16,8 @@ import {
   DialogContent,
   DialogActions,
   Slide,
+  Alert,
+  Snackbar,
   useMediaQuery,
 } from '@mui/material';
 import {
@@ -90,6 +92,11 @@ const ItemPreview = ({
   const selectedItemRef = useRef(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [copyingId, setCopyingId] = useState(null);
+  const [imageCopySupported, setImageCopySupported] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
+  useEffect(() => {
+    setImageCopySupported(Boolean(navigator.clipboard?.write && typeof ClipboardItem !== 'undefined'));
+  }, []);
   const currentItem = items.find((item) => item.id === currentItemId) || null;
   const currentItemMetadata = currentItem?.metadataStatus === 'ready' && currentItem?.metadataSource === currentItem?.src
     ? currentItem.metadata
@@ -113,7 +120,7 @@ const ItemPreview = ({
   }, []);
 
   const copyImageToClipboard = useCallback(async (item) => {
-    if (!item) return;
+    if (!item || !imageCopySupported) return;
 
     setCopyingId(item.id);
     try {
@@ -155,11 +162,11 @@ const ItemPreview = ({
         new ClipboardItem({ 'image/png': pngBlob }),
       ]);
     } catch {
-      // silent fail
+      setCopyFailed(true);
     } finally {
       setCopyingId(null);
     }
-  }, [getItemBlob]);
+  }, [getItemBlob, imageCopySupported]);
 
   const downloadItem = useCallback(async (item) => {
     if (!item) return;
@@ -178,35 +185,38 @@ const ItemPreview = ({
     await downloadUrlToFile(item.downloadSrc || item.originalSrc || item.src, fileName);
   }, []);
 
-  const renderActionControl = ({ key, label, icon, onClick, color = 'inherit', disabled = false }) => {
+  const renderActionControl = ({ key, label, tooltip = label, icon, onClick, color = 'inherit', disabled = false }) => {
     if (showActionText) {
       return (
-        <Button
-          key={key}
-          size="small"
-          color={color === 'error' ? 'error' : 'inherit'}
-          variant="text"
-          startIcon={icon}
-          onClick={onClick}
-          disabled={disabled}
-          sx={{
-            minWidth: 0,
-            px: 1,
-            py: 0.5,
-            borderRadius: 1.25,
-            color: color === 'error' ? theme.palette.error.main : theme.palette.text.secondary,
-            '&:hover': {
-              bgcolor: alpha(color === 'error' ? theme.palette.error.main : theme.palette.primary.main, 0.08),
-            },
-          }}
-        >
-          {label}
-        </Button>
+        <Tooltip key={key} title={tooltip} arrow placement="top">
+          <span>
+            <Button
+              size="small"
+              color={color === 'error' ? 'error' : 'inherit'}
+              variant="text"
+              startIcon={icon}
+              onClick={onClick}
+              disabled={disabled}
+              sx={{
+                minWidth: 0,
+                px: 1,
+                py: 0.5,
+                borderRadius: 1.25,
+                color: color === 'error' ? theme.palette.error.main : theme.palette.text.secondary,
+                '&:hover': {
+                  bgcolor: alpha(color === 'error' ? theme.palette.error.main : theme.palette.primary.main, 0.08),
+                },
+              }}
+            >
+              {label}
+            </Button>
+          </span>
+        </Tooltip>
       );
     }
 
     return (
-      <Tooltip key={key} title={label} arrow placement="top">
+      <Tooltip key={key} title={tooltip} arrow placement="top">
         <span>
           <IconButton
             aria-label={label}
@@ -224,11 +234,6 @@ const ItemPreview = ({
       </Tooltip>
     );
   };
-
-  const handleCopyImage = useCallback(async (e, item) => {
-    e.stopPropagation();
-    await copyImageToClipboard(item);
-  }, [copyImageToClipboard]);
 
   const handleDownloadSingle = useCallback(async (e, item) => {
     e.stopPropagation();
@@ -429,9 +434,10 @@ const ItemPreview = ({
             {renderActionControl({
               key: 'copy-image',
               label: t('painting.workspace.gallery.copyImage'),
+              tooltip: t(imageCopySupported ? 'painting.workspace.gallery.copyImage' : 'painting.workspace.gallery.imageCopyUnavailable'),
               icon: <CopyIcon sx={{ fontSize: 18 }} />,
               onClick: () => { void copyImageToClipboard(currentItem); },
-              disabled: copyingId === currentItem.id,
+              disabled: !imageCopySupported || copyingId === currentItem.id,
             })}
             {renderActionControl({
               key: 'download-item',
@@ -686,6 +692,9 @@ const ItemPreview = ({
           </Button>
         </DialogActions>
       </Dialog>
+      <Snackbar open={copyFailed} autoHideDuration={6000} onClose={() => setCopyFailed(false)}>
+        <Alert severity="warning" onClose={() => setCopyFailed(false)}>{t('painting.workspace.gallery.imageCopyFailed')}</Alert>
+      </Snackbar>
     </Box>
   );
 };

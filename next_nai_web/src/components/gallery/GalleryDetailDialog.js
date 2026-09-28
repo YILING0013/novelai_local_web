@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Chip, CircularProgress, Dialog, IconButton, MenuItem, Stack, TextField, Tooltip, Typography } from '@mui/material';
 import { ChevronLeft, ChevronRight, Close, ContentCopy, DeleteOutline, DescriptionOutlined, EditOutlined, ExpandMore, ImageOutlined, PaletteOutlined, RestoreFromTrashOutlined, SaveOutlined } from '@mui/icons-material';
 import apiClient from '@/utils/ApiClient';
+import { copyTextToClipboard } from '@/utils/browserCapabilities.mjs';
 import { useI18n } from '@/i18n/I18nProvider';
 import GalleryMetadataFields, { getParameterSharedPaths } from './GalleryMetadataFields';
 
@@ -68,7 +69,7 @@ export default function GalleryDetailDialog({ entryId, groups, onClose, onChange
   };
 
   const copy = async (text) => {
-    try { await navigator.clipboard.writeText(text); setNotice(t('gallery.copied')); }
+    try { await copyTextToClipboard(text); setNotice(t('gallery.copied')); }
     catch { setError(t('gallery.copyFailed')); }
   };
 

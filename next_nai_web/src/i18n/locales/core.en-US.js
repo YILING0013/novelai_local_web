@@ -120,6 +120,8 @@ const coreenUS = {
     "logout": "Log out"
   },
   "common": {
+    "copied": "Copied",
+    "copyFailed": "Could not copy. Select the text and copy it manually.",
     "close": "Close",
     "cancel": "Cancel",
     "refresh": "Refresh",

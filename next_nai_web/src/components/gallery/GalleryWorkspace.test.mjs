@@ -53,6 +53,7 @@ function renderComponent(filename, props, apiOverrides = {}) {
     '@mui/material': new Proxy({}, { get: (_, key) => key === 'useTheme' ? () => ({ breakpoints: { up: (name) => name } }) : key === 'useMediaQuery' ? () => false : key }),
     '@mui/icons-material': new Proxy({}, { get: (_, key) => key }),
     '@/utils/ApiClient': { __esModule: true, default: api },
+    '@/utils/browserCapabilities.mjs': { copyTextToClipboard: async () => {} },
     '@/i18n/I18nProvider': { useI18n: () => ({ t: translation }) },
     './GalleryDetailDialog': { __esModule: true, default: 'GalleryDetailDialog' },
     './GalleryMetadataDialog': { __esModule: true, default: 'GalleryMetadataDialog' },

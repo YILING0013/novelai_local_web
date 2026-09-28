@@ -56,6 +56,7 @@ import ErrorSummaryDialog from './tools/BatchGeneration/ErrorSummaryDialog';
 import MetadataDialog from './tools/ImageTools/MetadataDialog';
 import { resizeImage } from './tools/ImageTools/ImageResizer';
 import apiClient from '@/utils/ApiClient';
+import { copyTextToClipboard, createClientId } from '@/utils/browserCapabilities.mjs';
 import { createBlobFromBase64, createObjectUrlFromBlob, revokeObjectUrl } from '@/utils/mediaAssets';
 import { extractActiveContent } from './PromptEditor';
 import { applyImageParametersToUI } from './utils/parameterMapping';
@@ -1188,7 +1189,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
     setExpandedPanels(prev => ({ ...prev, basic: true }));
 
     try {
-      await navigator.clipboard.writeText(seedValue);
+      await copyTextToClipboard(seedValue);
       showNotification(t('painting.workspace.notifications.seedCopiedAndApplied'), 'success');
     } catch (error) {
       console.error('复制 Seed 失败:', error);
@@ -1371,7 +1372,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
         }
 
         let generatedPreviewCount = 0;
-        const previewBatchId = crypto.randomUUID();
+        const previewBatchId = createClientId();
 
         setInpaintPreviewBatch({ active: true, current: 0, total: previewCount });
 

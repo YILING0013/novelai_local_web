@@ -20,6 +20,7 @@ import {
   sanitizeNovelAIReferenceParams,
 } from './utils/modelUtils';
 import apiClient from '../../utils/ApiClient';
+import { createClientId } from '@/utils/browserCapabilities.mjs';
 import {
   Box,
   Typography,
@@ -783,7 +784,7 @@ const ParameterPanel = ({
             ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
 
             resolve({
-              id: crypto.randomUUID(),
+              id: createClientId(),
               image: canvas.toDataURL('image/png'),
               informationExtracted: 0.7,
               referenceStrength: 0.5,
@@ -876,7 +877,7 @@ const ParameterPanel = ({
         const imageB64 = cachedVibe.image ? (cachedVibe.image.startsWith('data:') ? cachedVibe.image : `data:image/png;base64,${cachedVibe.image}`) : null;
 
         newVibes.push({
-          id: crypto.randomUUID(),
+          id: createClientId(),
           image: imageB64,
           thumbnail: cachedVibe.thumbnail || (imageB64 ? await createThumbnail(imageB64) : null),
           hash: cachedVibe.id || hash,
@@ -890,7 +891,7 @@ const ParameterPanel = ({
         });
       } else {
         newVibes.push({
-          id: crypto.randomUUID(),
+          id: createClientId(),
           image: base64,
           thumbnail: thumbnail,
           hash: hash,
@@ -980,7 +981,7 @@ const ParameterPanel = ({
     const infoExtractedFromFile = encodingInfo?.params?.information_extracted ?? data.importInfo?.information_extracted ?? 0.7;
 
     const result = {
-      id: crypto.randomUUID(),
+      id: createClientId(),
       image: imageB64,
       thumbnail: thumbnail || null,
       hash: hash,

@@ -18,19 +18,19 @@ if errorlevel 1 (
 
 where npm >nul 2>nul
 if errorlevel 1 (
-  echo [错误] 未找到 npm。请先安装 Node.js 20 或更高版本。
+  echo [错误] 未找到 npm。请先安装 Node.js 20.19 或更高版本。
   pause
   exit /b 1
 )
 where node >nul 2>nul
 if errorlevel 1 (
-  echo [错误] 未找到 Node.js 20 或更高版本。
+  echo [错误] 未找到 Node.js 20.19 或更高版本。
   pause
   exit /b 1
 )
-node -e "process.exit(Number(process.versions.node.split('.')[0]) >= 20 ? 0 : 1)"
+node -e "const [major,minor]=process.versions.node.split('.').map(Number);process.exit(major>20 || (major===20 && minor>=19) ? 0 : 1)"
 if errorlevel 1 (
-  echo [错误] Node.js 版本低于 20，请升级后重试。
+  echo [错误] Node.js 版本低于 20.19，请升级后重试。
   pause
   exit /b 1
 )
@@ -64,7 +64,7 @@ if errorlevel 1 (
 popd
 
 echo.
-echo 安装完成。现在可以双击 start.bat 启动。
+echo 安装完成。电脑使用请双击 start.bat；同一 Wi-Fi 的手机也要使用时请双击 start-lan.bat。
 pause
 exit /b 0
 

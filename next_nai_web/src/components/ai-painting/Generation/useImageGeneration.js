@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { generateImage } from './ImageGenerationService';
 import batchController from '../tools/BatchGeneration/BatchGenerationService';
 import apiClient from '@/utils/ApiClient';
+import { createClientId } from '@/utils/browserCapabilities.mjs';
 import {
   createGenerationError,
   GENERATION_ERROR_CODES,
@@ -101,7 +102,7 @@ const useImageGeneration = () => {
 
   const startBatchGeneration = useCallback(async (params, onImageGenerated, onBatchError) => {
     const batchSize = Math.min(8, Math.max(1, Number.parseInt(params.batchSize, 10) || 1));
-    const batchId = crypto.randomUUID();
+    const batchId = createClientId();
     batchIdRef.current = batchId;
     batchController.initialize(batchSize);
     batchController.setParams(params);

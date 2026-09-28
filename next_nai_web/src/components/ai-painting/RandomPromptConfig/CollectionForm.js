@@ -45,6 +45,7 @@ import {
   PlaylistPlay as SequentialIcon // 新增
 } from '@mui/icons-material';
 import { v4 as uuidv4 } from 'uuid';
+import { copyTextToClipboard } from '@/utils/browserCapabilities.mjs';
 import { useI18n } from '@/i18n/I18nProvider';
 
 // 集合表单组件
@@ -390,14 +391,14 @@ const CollectionForm = ({ collections = [], categories = [], onChange, onInsert,
                           variant="outlined"
                           size="small"
                           startIcon={<CopyIcon />}
-                          onClick={() => {
+                          onClick={async () => {
                             const syntax = `<ran_sorting_id="${collection.name}"/>`;
-                            navigator.clipboard.writeText(syntax);
-                            setSnackbar({
-                              open: true,
-                              messageKey: 'painting.tools.randomPrompt.messages.syntaxCopied',
-                              severity: 'success'
-                            });
+                            try {
+                              await copyTextToClipboard(syntax);
+                              setSnackbar({ open: true, messageKey: 'painting.tools.randomPrompt.messages.syntaxCopied', severity: 'success' });
+                            } catch {
+                              setSnackbar({ open: true, messageKey: 'common.copyFailed', severity: 'error' });
+                            }
                           }}
                           sx={{ mr: 1 }}
                         >

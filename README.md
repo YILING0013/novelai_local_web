@@ -18,7 +18,7 @@ NovelAI Local Web 是面向 Windows 个人用户的本地 Web 客户端。提示
 
 前端使用 Next.js / React / MUI，后端使用 Flask / Waitress。构建后的页面与 `/api` 由同一个本地服务提供，默认地址为 `http://127.0.0.1:5000`；登录、账户查询和图像生成通过后端访问 NovelAI 官方服务。
 
-本项目为非官方社区项目，与 NovelAI / Anlatan 无隶属关系。需要自行准备可用的 NovelAI 账户；账户权限和实际费用以官方返回为准。服务仅支持本机 loopback 访问。
+本项目为非官方社区项目，与 NovelAI / Anlatan 无隶属关系。需要自行准备可用的 NovelAI 账户；账户权限和实际费用以官方返回为准。默认仅允许本机访问，也可主动开启局域网模式供同一 Wi-Fi 的手机使用。
 
 ## 功能概览
 
@@ -112,7 +112,7 @@ NovelAI Local Web 是面向 Windows 个人用户的本地 Web 客户端。提示
 
 ## 快速开始
 
-需要 Windows 10 / 11、Python **3.11+**（含 `py` Launcher）、Node.js **20+**（含 npm），以及可访问 NovelAI 官方服务的网络。
+需要 Windows 10 / 11、Python **3.11+**（含 `py` Launcher）、Node.js **20.19+**（含 npm），以及可访问 NovelAI 官方服务的网络。
 
 ```powershell
 git clone https://github.com/YILING0013/novelai_local_web.git
@@ -128,11 +128,27 @@ cd novelai_local_web
 - 启动器会复用当前项目已运行的健康服务；其他程序占用端口时会报错，不会自动换端口。
 - 更新源码时，先停止旧服务，重新运行 `setup.bat`，完成后再运行 `start.bat`。
 
+### 同一 Wi-Fi 的手机访问
+
+1. 电脑和手机连接同一路由器的局域网，手机使用普通 Wi-Fi，不使用访客网络；电脑也可以通过网线连接该路由器。
+2. 如果已经启动服务，先关闭旧启动窗口，再双击 **`start-lan.bat`**。在手机浏览器打开启动窗口显示的局域网地址，例如 `http://192.168.1.20:5000/login`，然后单独登录 NovelAI 账户。手机无需安装本项目，也不要输入 `127.0.0.1`。
+3. 在电脑的 **设置 → 网络和 Internet → Wi-Fi → 当前网络属性** 中，将可信家庭 Wi-Fi 设为**专用网络**。Windows 首次询问 Python 的网络访问权限时，只允许专用网络；防火墙放行范围应限于该 Python 程序、服务端口和本地子网，不要放行公用网络。启动器不会修改网络类别、防火墙或自动更换端口。
+
+`start-lan.bat` 只为本次启动开启局域网访问；需要持续启用时，可在下面的 `config.local.json` 中设置 `"allow_lan": true`，以后使用 `start.bat` 启动即可。电脑应保持开机、唤醒和服务窗口运行；切换网络或电脑 IP 变化后，重启服务并使用新显示的地址。
+
+手机和电脑共享电脑上的图库、笔记与设置，登录会话和浏览器草稿各自独立。生成保存目录、浏览目录和元数据另存路径都指**电脑的磁盘**；手动下载则由当前手机或电脑的浏览器保存。
+
+局域网 HTTP 页面支持文字复制；浏览器不允许直接复制图片到剪贴板，请使用图片的**下载**按钮保存后再分享。
+
+局域网模式使用 HTTP，传输内容未加密，只用于可信的家庭或私人网络；不要开启公网端口转发，也不要关闭防火墙或向公用网络开放服务。
+
+若手机仍打不开页面，检查 Python 的防火墙规则，以及路由器是否启用了访客网络或 AP / 客户端隔离。
+
 ## 配置与数据
 
 ### 服务配置
 
-默认配置可直接使用。需要修改端口、数据位置或请求超时时，在项目根目录执行：
+默认配置可直接使用。需要修改端口、局域网访问、数据位置或请求超时时，在项目根目录执行：
 
 ```powershell
 Copy-Item .\nai_flask\config.example.json .\nai_flask\config.local.json
@@ -143,12 +159,13 @@ Copy-Item .\nai_flask\config.example.json .\nai_flask\config.local.json
 ```json
 {
   "port": 5000,
+  "allow_lan": false,
   "data_dir": "data",
   "upstream_timeout_seconds": 120
 }
 ```
 
-`data_dir` 的相对路径以 `nai_flask` 为基准，也可填写绝对路径，例如 `E:/NovelAIData`。配置修改后重启后端；不要在此文件中保存账户凭据。
+`allow_lan` 默认 `false`，仅监听本机；设为 `true` 后允许通过电脑的局域网 IPv4 地址访问。`data_dir` 的相对路径以 `nai_flask` 为基准，也可填写绝对路径，例如 `E:/NovelAIData`。配置修改后重启后端；不要在此文件中保存账户凭据。
 
 ### 图片目录与工作区
 
@@ -213,6 +230,7 @@ cd ..
 | --- | --- |
 | 找不到 Python / Node.js | 检查 `py -3 --version`、`node --version`、`npm --version` |
 | 5000 端口被占用 | 用 `Get-NetTCPConnection -State Listen -LocalPort 5000` 确认进程，再停止对应旧服务或明确调整配置 |
+| 手机无法访问 | 用 `start-lan.bat` 启动并使用窗口中的局域网地址；检查同一局域网、非访客 Wi-Fi、路由器隔离和专用网络防火墙设置 |
 | 安装或构建失败 | 查看窗口中的首个错误，确认依赖下载与网络后重试 |
 | Token 返回 401 / 登录要求验证码 | 在官方页面核对 Token；验证码场景改用 Persistent Token |
 | 生成参数报错 | 核对模型与参考图、Vibe、角色等工具是否兼容 |

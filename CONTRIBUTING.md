@@ -4,7 +4,7 @@
 
 ## 开发环境
 
-- Python 3.11+、Node.js 20+ 和 npm；CI 当前使用 Python 3.11 与 Node.js 20。
+- Python 3.11+、Node.js 20.19+ 和 npm；CI 当前使用 Python 3.11 与 Node.js 20 的最新补丁版。
 - Windows 可先运行 `setup.bat`，创建 `nai_flask/.venv`、安装依赖并构建前端，再通过 `start.bat` 启动。
 - 手动安装时，在 `nai_flask` 创建虚拟环境并执行 `python -m pip install -r requirements.txt`；在 `next_nai_web` 执行 `npm ci`。
 - 本地配置请参考仓库配置示例，真实配置和凭据不得提交。前端修改后需要重新构建静态文件。

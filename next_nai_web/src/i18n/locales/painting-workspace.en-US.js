@@ -445,6 +445,8 @@ const paintingWorkspaceenUS = {
         "previewEmpty": "Generated results will appear here",
         "useParameters": "Use these parameters",
         "copyImage": "Copy image",
+        "imageCopyUnavailable": "Image copying is unavailable in this browser. Use download instead.",
+        "imageCopyFailed": "Could not copy the image. Use download instead.",
         "downloadImage": "Download image",
         "deleteImage": "Delete image",
         "seedApplyHelp": "Click to apply this Seed to the current parameters",

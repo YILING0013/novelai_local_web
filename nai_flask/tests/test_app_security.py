@@ -1,5 +1,78 @@
+import pytest
+
+import app as app_module
+from app import create_app
 from api_utils.novelai_client import NovelAIUpstreamError
 from conftest import ORIGIN, login
+
+
+@pytest.fixture
+def lan_app(tmp_path, monkeypatch, fake_client):
+    """使用合成本机地址创建 LAN 应用，不打开任何网络监听。"""
+    monkeypatch.delenv("NOVELAI_LOCAL_ALLOW_LAN", raising=False)
+    monkeypatch.setattr(app_module, "discover_lan_ipv4_addresses", lambda: ["192.168.0.103", "10.0.0.5"])
+    return create_app({"TESTING": True, "ALLOW_LAN": True, "DATA_DIR": str(tmp_path / "lan-data")}, novelai_client=fake_client)
+
+
+def test_default_mode_rejects_lan_host_and_non_loopback_peer(client):
+    """默认不能借修改 Host 或代理头让私网设备访问本机 API。"""
+    host = client.get("/api/session", base_url="http://192.168.0.103:5000", environ_overrides={"REMOTE_ADDR": "192.168.0.20"})
+    assert host.status_code == 400 and host.get_json()["code"] == "HOST_NOT_ALLOWED"
+    peer = client.get("/api/session", environ_overrides={"REMOTE_ADDR": "192.168.0.20"},
+                      headers={"X-Forwarded-For": "127.0.0.1", "Forwarded": "for=127.0.0.1;host=localhost"})
+    assert peer.status_code == 403 and peer.get_json()["code"] == "PEER_NOT_ALLOWED"
+
+
+def test_lan_login_cookie_and_csrf_write_use_exact_same_origin(lan_app):
+    """真实私网 peer 经本机地址同源登录后可写设置，仍要求会话 Cookie 与 CSRF。"""
+    client = lan_app.test_client()
+    origin = "http://192.168.0.103:5000"
+    peer = {"REMOTE_ADDR": "192.168.0.20"}
+    response = client.post("/api/session/persistent-token", base_url=origin, environ_overrides=peer,
+                           json={"token": "pst-lan-test"}, headers={"Origin": origin})
+    assert response.status_code == 200
+    assert response.headers["Access-Control-Allow-Origin"] == origin
+    assert "HttpOnly" in response.headers["Set-Cookie"] and "SameSite=Strict" in response.headers["Set-Cookie"]
+    csrf = response.get_json()["csrf_token"]
+    assert client.get("/api/session", base_url=origin, environ_overrides=peer).get_json()["authenticated"] is True
+    missing_csrf = client.put("/api/local/settings", base_url=origin, environ_overrides=peer,
+                              json={"settings": {"theme": "dark"}}, headers={"Origin": origin})
+    assert missing_csrf.status_code == 403 and missing_csrf.get_json()["code"] == "CSRF_INVALID"
+    written = client.put("/api/local/settings", base_url=origin, environ_overrides=peer,
+                         json={"settings": {"theme": "dark"}}, headers={"Origin": origin, "X-CSRF-Token": csrf,
+                         "X-Forwarded-For": "8.8.8.8", "X-Forwarded-Host": "attacker.example", "X-Forwarded-Proto": "https"})
+    assert written.status_code == 200 and written.get_json()["settings"]["theme"] == "dark"
+    dev = client.options("/api/session/persistent-token", base_url="http://localhost:5000",
+                         headers={"Origin": "http://localhost:3000"})
+    assert dev.status_code == 204
+
+
+@pytest.mark.parametrize("host", ["192.168.0.99:5000", "192.168.0.103.attacker.example:5000", "198.18.0.1:5000", "attacker.example", "192.168.0.103:3000"])
+def test_lan_mode_rejects_undiscovered_or_spoofed_hosts(lan_app, host):
+    """私网地址也必须属于本机发现集合，不能放开所有私网 Host 或相似域名。"""
+    response = lan_app.test_client().get("/api/session", headers={"Host": host}, environ_overrides={"REMOTE_ADDR": "192.168.0.20"})
+    assert response.status_code == 400 and response.get_json()["code"] == "HOST_NOT_ALLOWED"
+
+
+@pytest.mark.parametrize("origin", ["https://attacker.example", "http://192.168.0.103.attacker.example:5000", "http://10.0.0.5:5000",
+                                  "http://192.168.0.103:3000", "https://192.168.0.103:5000", "http://192.168.0.103:5000/path",
+                                  "http://localhost:3000"])
+def test_lan_origin_must_match_this_request_host_and_port(lan_app, origin):
+    """另一张本机网卡、错误协议/端口及伪造相似来源均不视为本请求同源。"""
+    response = lan_app.test_client().post("/api/session/persistent-token", base_url="http://192.168.0.103:5000",
+                                        environ_overrides={"REMOTE_ADDR": "192.168.0.20"}, json={"token": "pst-test"}, headers={"Origin": origin})
+    assert response.status_code == 403 and response.get_json()["code"] == "ORIGIN_NOT_ALLOWED"
+    assert "Access-Control-Allow-Origin" not in response.headers
+
+
+@pytest.mark.parametrize("peer", ["8.8.8.8", "198.18.0.1", "100.64.0.1", "169.254.1.2", "2001:4860:4860::8888"])
+def test_lan_mode_rejects_non_rfc1918_peers_despite_forwarded_headers(lan_app, peer):
+    """代理头不能把公网或特殊地址连接伪装为同 Wi-Fi 私网设备。"""
+    origin = "http://192.168.0.103:5000"
+    response = lan_app.test_client().get("/api/session", base_url=origin, environ_overrides={"REMOTE_ADDR": peer},
+                                       headers={"Origin": origin, "X-Forwarded-For": "192.168.0.20", "Forwarded": "for=192.168.0.20"})
+    assert response.status_code == 403 and response.get_json()["code"] == "PEER_NOT_ALLOWED"
+    assert "Access-Control-Allow-Origin" not in response.headers
 
 
 def password_login(client, email="owner@example.com"):
