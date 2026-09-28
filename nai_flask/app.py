@@ -1799,6 +1799,40 @@ def create_app(
         result["errors"] = scan.get("errors", [])
         return jsonify(result)
 
+    @app.get("/api/local/directories")
+    @session_required()
+    def local_directories() -> Response:
+        """浏览用户选择的本机目录，仅返回子目录和导航入口，不读取文件内容。"""
+        library = app.extensions["image_library"]
+        suggested = library.data_dir / "metadata-exports"
+        requested = request.args.get("path", "")
+        if requested and not Path(requested).is_absolute():
+            raise ApiError("Choose an absolute local folder path.", 400, "LOCAL_DIRECTORY_INVALID")
+        path = Path(requested).resolve() if requested else suggested
+        try:
+            # 首次打开可展示尚未创建的建议目录；用户确认另存时才创建它。
+            if not path.exists():
+                if requested:
+                    raise ApiError("The selected folder does not exist.", 404, "LOCAL_DIRECTORY_NOT_FOUND")
+                directories = []
+            elif not path.is_dir():
+                raise ApiError("The selected path is not a folder.", 400, "LOCAL_DIRECTORY_INVALID")
+            else:
+                directories = [{"name": child.name, "path": str(child.resolve())}
+                               for child in sorted(path.iterdir(), key=lambda child: child.name.casefold()) if child.is_dir()]
+            roots = [{"name": "Home", "path": str(Path.home())}]
+            if os.name == "nt":
+                roots.extend({"name": f"{drive}:\\", "path": f"{drive}:\\"}
+                             for drive in string.ascii_uppercase if Path(f"{drive}:\\").is_dir())
+            else:
+                roots.append({"name": "/", "path": "/"})
+        except PermissionError as exc:
+            raise ApiError("The selected folder cannot be read with the current permissions.", 403, "LOCAL_DIRECTORY_FORBIDDEN") from exc
+        except OSError as exc:
+            raise ApiError(f"The selected folder could not be read: {exc}", 400, "LOCAL_DIRECTORY_INVALID") from exc
+        return jsonify({"path": str(path), "parent": str(path.parent) if path.parent != path else None,
+                        "directories": directories, "roots": roots, "suggested_export_directory": str(suggested)})
+
     @app.post("/api/local/gallery/import")
     @session_required(csrf=True)
     def gallery_import() -> Response:
@@ -1880,6 +1914,9 @@ def create_app(
                     result = library.save_metadata_copy(
                         image_id, parameters=body.get("parameters"), clear=body["mode"] == "strip",
                         metadata_document=body.get("metadata_document"),
+                        output_directory=body.get("output_directory"),
+                        template_metadata_document=body.get("template_metadata_document"),
+                        template_original_document=body.get("template_original_document"),
                     )
                 if result is not None:
                     items.append(result)

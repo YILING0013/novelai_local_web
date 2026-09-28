@@ -607,7 +607,8 @@ class LocalImageLibrary:
             ))
             return self._record(self._row(db, image_id))
 
-    def save_metadata_copy(self, image_id, parameters=None, clear=False, metadata_document=None):
+    def save_metadata_copy(self, image_id, parameters=None, clear=False, metadata_document=None,
+                           output_directory=None, template_metadata_document=None, template_original_document=None):
         """
         改写或清除多载体元数据后另存 PNG，原始文件保持不变。
 
@@ -616,14 +617,26 @@ class LocalImageLibrary:
             parameters: 仅本次修改的 UI 或官方参数；只编辑文档时可省略。
             clear: 清除文本、EXIF 与 NovelAI alpha 隐写信息。
             metadata_document: 用户编辑后的完整元数据树；删除字段不从旧索引补回。
+            output_directory: 用户选择的绝对另存目录；省略时兼容原生成图库另存行为。
+            template_metadata_document: 批量选定并编辑的完整模板树，替换每张源图的全部元数据。
+            template_original_document: 模板编辑前快照，用于识别删除字段并阻止旧参数重新补回。
 
         Returns:
-            另存 PNG 的详情。
+            指定目录时返回 saved_path、filename 与实际尺寸；否则返回图库详情。
         """
         if parameters is not None and not isinstance(parameters, dict):
             raise ExposableError("The image parameters must be a JSON object.", code="LIBRARY_EDIT_INVALID")
         if metadata_document is not None and not isinstance(metadata_document, dict):
             raise ExposableError("The metadata document must be a JSON object.", code="LIBRARY_EDIT_INVALID")
+        if template_metadata_document is not None and not isinstance(template_metadata_document, dict):
+            raise ExposableError("The metadata template must be a JSON object.", code="LIBRARY_EDIT_INVALID")
+        if template_original_document is not None and not isinstance(template_original_document, dict):
+            raise ExposableError("The original metadata template must be a JSON object.", code="LIBRARY_EDIT_INVALID")
+        destination = None
+        if output_directory is not None:
+            if not isinstance(output_directory, str) or not output_directory.strip() or not Path(output_directory).is_absolute():
+                raise ExposableError("The export directory must be an absolute local folder path.", code="LIBRARY_EXPORT_DIRECTORY_INVALID")
+            destination = Path(output_directory).resolve()
         with self.lock:
             record = self.get_image(image_id)
             with Image.open(self.image_path(image_id)) as original:
@@ -631,17 +644,32 @@ class LocalImageLibrary:
                 if clear:
                     document = {}
                 else:
-                    overrides = parameters if parameters is not None else ({} if metadata_document is not None else record["parameters"])
+                    using_template = template_metadata_document is not None
+                    baseline = record["metadata_document"]
+                    if using_template:
+                        baseline = template_original_document if template_original_document is not None else template_metadata_document
+                    submitted = template_metadata_document if using_template else metadata_document
+                    overrides = parameters if parameters is not None else ({} if submitted is not None else record["parameters"])
                     # 未知参数留在原 Comment，已知别名统一使用同一语义值写回全部载体。
                     changes = {**overrides, **normalize_image_parameters(overrides)}
                     for canonical, aliases in (("positivePrompt", ("prompt", "input", "Description")), ("negativePrompt", ("uc", "negative_prompt")), ("guidanceScale", ("scale",)), ("noiseSchedule", ("noise_schedule",)), ("promptGuidanceRescale", ("cfg_rescale",)), ("smea", ("sm",)), ("dyn", ("sm_dyn",)), ("model", ("model_name",))):
                         if canonical in changes:
                             for alias in aliases:
                                 changes.pop(alias, None)
-                    document = edit_metadata_document(record["metadata_document"], metadata_document, changes,
-                                                      pixels_changed=original.getexif().get(274, 1) != 1 or "stealth_rgb" in record["metadata_document"])
+                    # 模板来自另一张图，即使 Comment 完全相同也不能复用其像素签名。
+                    document = edit_metadata_document(baseline, submitted, changes,
+                                                      pixels_changed=using_template or original.getexif().get(274, 1) != 1
+                                                      or "stealth_rgb" in record["metadata_document"] or "stealth_rgb" in (submitted or {}))
                 encoded = write_metadata_png(pixels, document, clear_rgb="stealth_rgb" in record["metadata_document"])
             suffix = "clean" if clear else "edited"
+            if destination is not None:
+                destination.mkdir(parents=True, exist_ok=True)
+                filename = f"{Path(record['filename']).stem[:150]}-{suffix}-{uuid.uuid4().hex}.png"
+                saved_path = destination / filename
+                # 指定目录只写这一份；即使用户选生成图库，也留给扫描建立索引。
+                with saved_path.open("xb") as output:
+                    output.write(encoded)
+                return {"saved_path": str(saved_path), "filename": filename, "width": pixels.width, "height": pixels.height}
             return self.import_image(encoded, f"{Path(record['filename']).stem}-{suffix}.png", source="outputs")
 
     def trash_image(self, image_id):

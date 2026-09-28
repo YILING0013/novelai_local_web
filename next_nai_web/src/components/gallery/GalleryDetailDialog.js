@@ -105,6 +105,7 @@ export default function GalleryDetailDialog({ entryId, groups, onClose, onChange
                     if (editing) setDraft({ title: entry.title || '', prompt: entry.prompt || '', negative_prompt: entry.negative_prompt || '', style_prompt: entry.style_prompt || '', group_id: entry.group_id || '' });
                     setEditing(!editing); setSelectedText('');
                   }}>{t(editing ? 'gallery.cancelEdit' : 'gallery.editDetails')}</Button>}
+                  {!trashed && <Button size="small" startIcon={<DescriptionOutlined />} disabled={actionBusy || editing} onClick={() => onMetadata(entry)}>{t('gallery.metadata')}</Button>}
                 </Stack>
                 {editing ? <Stack spacing={1.5}>
                   <TextField size="small" label={t('gallery.optionalTitle')} value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} inputProps={{ maxLength: 200 }} />
@@ -125,7 +126,10 @@ export default function GalleryDetailDialog({ entryId, groups, onClose, onChange
                   {['prompt', 'negative_prompt'].map((field) => <Box key={field}>
                     <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 0.5 }}>
                       <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>{t(`gallery.${field}`)}</Typography>
-                      {!editing && <Tooltip title={t(field === 'prompt' ? 'gallery.copyPrompt' : 'gallery.copyNegativePrompt')}><IconButton size="small" aria-label={t(field === 'prompt' ? 'gallery.copyPrompt' : 'gallery.copyNegativePrompt')} disabled={!entry[field]} onClick={() => copy(entry[field])}><ContentCopy sx={{ fontSize: 15 }} /></IconButton></Tooltip>}
+                      {!editing && <Stack direction="row" alignItems="center" spacing={0.5}>
+                        <Tooltip title={t(field === 'prompt' ? 'gallery.copyPrompt' : 'gallery.copyNegativePrompt')}><IconButton size="small" aria-label={t(field === 'prompt' ? 'gallery.copyPrompt' : 'gallery.copyNegativePrompt')} disabled={!entry[field]} onClick={() => copy(entry[field])}><ContentCopy sx={{ fontSize: 15 }} /></IconButton></Tooltip>
+                        <Button size="small" variant="outlined" disabled={trashed || actionBusy} onClick={() => onApply(entry, field === 'prompt' ? 'positivePrompt' : 'negativePrompt')}>{t(field === 'prompt' ? 'gallery.applyPositivePrompt' : 'gallery.applyNegativePrompt')}</Button>
+                      </Stack>}
                     </Stack>
                     {editing ? <TextField fullWidth multiline minRows={field === 'prompt' ? 5 : 2} maxRows={14} size="small" label={t(`gallery.${field}`)} value={draft[field]} onChange={(event) => setDraft({ ...draft, [field]: event.target.value })} />
                       : <Typography ref={field === 'prompt' ? promptRef : undefined} tabIndex={0} variant="body2" color={entry[field] ? 'text.primary' : 'text.secondary'} sx={promptSx}>{entry[field] || t('gallery.emptyPrompt')}</Typography>}
@@ -177,11 +181,10 @@ export default function GalleryDetailDialog({ entryId, groups, onClose, onChange
             <Button fullWidth size="small" variant="contained" startIcon={<SaveOutlined />} disabled={actionBusy} onClick={() => save({ style_prompt: selectedText })} sx={{ minHeight: 38 }}>{t('gallery.saveSelectedStyle')}</Button>
           </Box>}
           <Box sx={{ p: 1.25, pb: 'max(10px, env(safe-area-inset-bottom))', borderTop: 1, borderColor: 'divider', flexShrink: 0 }}>
-            <Stack direction="row" flexWrap="wrap" gap={0.75}>
+            <Stack direction="row" flexWrap="wrap" justifyContent="flex-end" gap={0.75}>
               {trashed ? <Button size="small" disabled={actionBusy} startIcon={<RestoreFromTrashOutlined />} onClick={() => onRestore(entry)}>{t('gallery.restore')}</Button> : <>
                 <Button size="small" variant="contained" disabled={actionBusy || editing || (!entry.prompt && !Object.keys(parameters).length)} onClick={() => onApply(entry, 'parameters')}>{t('gallery.applyAll')}</Button>
                 <Button size="small" variant="outlined" disabled={actionBusy || editing || (!entry.prompt && !entry.negative_prompt)} onClick={() => onApply(entry, 'prompt')}>{t('gallery.applyPrompt')}</Button>
-                <Button size="small" startIcon={<DescriptionOutlined />} disabled={actionBusy || editing} onClick={() => onMetadata(entry)}>{t('gallery.metadata')}</Button>
                 <Tooltip title={t('gallery.trash')}><IconButton size="small" color="error" aria-label={t('gallery.trash')} disabled={actionBusy || editing} onClick={() => onTrash(entry)}><DeleteOutline fontSize="small" /></IconButton></Tooltip>
               </>}
             </Stack>

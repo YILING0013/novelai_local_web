@@ -184,7 +184,9 @@ export default function GalleryWorkspace({ source = 'references' }) {
         window.localStorage.setItem('novelai:pending-artist-prompt', entry.style_prompt);
         window.dispatchEvent(new CustomEvent('novelai:artist-prompt', { detail: entry.style_prompt }));
       } else {
-        const parameters = { ...(mode === 'parameters' ? { ...entry.parameters, characterTabs: entry.parameters.characterTabs || [] } : {}), positivePrompt: entry.prompt || '', negativePrompt: entry.negative_prompt || '' };
+        const parameters = mode === 'positivePrompt' ? { positivePrompt: entry.prompt || '' }
+          : mode === 'negativePrompt' ? { negativePrompt: entry.negative_prompt || '' }
+            : { ...(mode === 'parameters' ? { ...entry.parameters, characterTabs: entry.parameters.characterTabs || [] } : {}), positivePrompt: entry.prompt || '', negativePrompt: entry.negative_prompt || '' };
         window.localStorage.setItem('novelai:pending-reference-parameters', JSON.stringify(parameters));
         window.dispatchEvent(new CustomEvent('novelai:reference-parameters', { detail: parameters }));
       }
@@ -249,7 +251,7 @@ export default function GalleryWorkspace({ source = 'references' }) {
         <Typography variant="body2" sx={{ mr: 'auto' }}>{t('gallery.selectedCount', { count: selected.size })}</Typography>
         {trash ? <Button size="small" sx={actionButtonSx} startIcon={<RestoreFromTrashOutlined />} disabled={!selected.size || busy} onClick={() => batch('restore', selectedIds)}>{t('gallery.restore')}</Button> : <>
           <Button size="small" sx={actionButtonSx} startIcon={<DriveFileMoveOutlined />} disabled={!selected.size || busy} onClick={(event) => setGroupMenu(event.currentTarget)}>{t('gallery.moveGroup')}</Button>
-          <Button size="small" sx={actionButtonSx} startIcon={<DescriptionOutlined />} disabled={!selected.size || busy} onClick={() => { setError(''); setMetadataTarget({ ids: selectedIds, parameters: {} }); }}>{t('gallery.metadata')}</Button>
+          <Button size="small" sx={actionButtonSx} startIcon={<DescriptionOutlined />} disabled={!selected.size || busy} onClick={() => { setError(''); setMetadataTarget({ ids: selectedIds, parameters: {}, templates: items.filter((item) => selected.has(item.id)) }); }}>{t('gallery.metadata')}</Button>
           <Button size="small" sx={actionButtonSx} color="error" startIcon={<DeleteOutline />} disabled={!selected.size || busy} onClick={() => { setError(''); setTrashIds(selectedIds); }}>{t('gallery.trash')}</Button>
         </>}
       </Stack>}
@@ -297,7 +299,7 @@ export default function GalleryWorkspace({ source = 'references' }) {
       onMetadata={(entry) => { setError(''); setMetadataTarget({ ids: [entry.id], parameters: { ...entry.parameters, positivePrompt: entry.prompt || '', negativePrompt: entry.negative_prompt || '' }, document: entry.metadata_document, sharedPaths: entry.metadata_shared_paths }); }}
       onPrevious={detailIndex > 0 ? () => setDetailId(items[detailIndex - 1].id) : null}
       onNext={detailIndex >= 0 && detailIndex < items.length - 1 ? () => setDetailId(items[detailIndex + 1].id) : null} />}
-    {metadataTarget && <GalleryMetadataDialog count={metadataTarget.ids.length} initialParameters={metadataTarget.parameters} initialDocument={metadataTarget.document} metadataSharedPaths={metadataTarget.sharedPaths} busy={busy} error={error} onClose={() => setMetadataTarget(null)}
+    {metadataTarget && <GalleryMetadataDialog count={metadataTarget.ids.length} initialParameters={metadataTarget.parameters} initialDocument={metadataTarget.document} metadataSharedPaths={metadataTarget.sharedPaths} templateEntries={metadataTarget.templates} busy={busy} error={error} onClose={() => setMetadataTarget(null)}
       onSubmit={async (options) => { const result = await batch('export', metadataTarget.ids, options); if (result && !result.errors.length) setMetadataTarget(null); else if (result) setMetadataTarget({ ...metadataTarget, ids: result.errors.map((item) => item.id) }); }} />}
     <Snackbar open={Boolean(notice)} autoHideDuration={3500} onClose={() => setNotice('')} message={notice} />
   </Box>;

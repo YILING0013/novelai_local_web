@@ -48,3 +48,16 @@ test('卸载批次删除请求可启用 keepalive', async (t) => {
   assert.equal(requestOptions.keepalive, true);
   assert.equal(requestOptions.body, JSON.stringify({ batch_id: 'batch-on-unmount' }));
 });
+
+test('目录浏览复用本地会话请求并正确编码Windows路径', async (t) => {
+  let request;
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    request = { url, options };
+    return new Response(JSON.stringify({ path: 'E:\\exports', directories: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  });
+  await new ApiClient().getLocalDirectories('E:\\My Art\\导出');
+  const url = new URL(request.url, 'http://localhost');
+  assert.equal(url.pathname, '/api/local/directories');
+  assert.equal(url.searchParams.get('path'), 'E:\\My Art\\导出');
+  assert.equal(request.options.credentials, 'include');
+});

@@ -237,6 +237,11 @@ class ApiClient {
     return this.request(`/local/gallery/${encodeURIComponent(id)}`);
   }
 
+  /** 浏览本机目录；空路径返回元数据导出的建议位置和磁盘根目录。 */
+  async getLocalDirectories(path = '') {
+    return this.request(`/local/directories?${new URLSearchParams({ path })}`);
+  }
+
   /** 将多张图像上传到本机参考目录，后端读取内嵌元数据。 */
   async importGalleryImages(formData) {
     return this.request('/local/gallery/import', { method: 'POST', body: formData });

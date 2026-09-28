@@ -2,6 +2,7 @@ import copy
 import gzip
 import io
 import json
+from pathlib import Path
 
 import pytest
 from PIL import Image, PngImagePlugin
@@ -64,6 +65,94 @@ def _read_alpha_metadata(image):
     length = int.from_bytes(header[15:19], "big")
     content = bytes(sum(bits[offset + bit] << (7 - bit) for bit in range(8)) for offset in range(152, 152 + length, 8))
     return json.loads(gzip.decompress(content))
+
+
+def test_batch_template_replaces_source_metadata_across_request_chunks(client, app, tmp_path, multi_container_png):
+    """模板树在不同请求中完整复用，改主提示词及角色时不混入各源图旧参数。"""
+    csrf = login(client)
+    library = app.extensions["image_library"]
+    template_entry = library.import_image(multi_container_png, "template.png")
+    metadata = PngImagePlugin.PngInfo()
+    metadata.add_text("Comment", json.dumps({"prompt": "source-only old prompt", "seed": 9876, "source_only": True}))
+    metadata.add_text("Description", "source-only old description")
+    buffer = io.BytesIO()
+    Image.new("RGB", (640, 384), (66, 88, 110)).save(buffer, "PNG", pnginfo=metadata)
+    original = buffer.getvalue()
+    target_entry = library.import_image(original, "different-source.png")
+    document = copy.deepcopy(template_entry["metadata_document"])
+    document["png"]["metadata"]["JSON"]["unknown_array"] = ["chosen template", {"editable": True}]
+    # 用户从模板中删除字段，应在所有输出中保持删除。
+    document["png"]["Comment"].pop("seed")
+    destination = tmp_path / "template-results"
+    copies = []
+    for entry in (template_entry, target_entry):
+        response = client.post("/api/local/gallery/batch", json={
+            "action": "export", "ids": [entry["id"]], "mode": "edit", "output_directory": str(destination),
+            "template_metadata_document": document,
+            "parameters": {"positivePrompt": "template edited main", "negativePrompt": "template edited negative",
+                           "characterTabs": [{"prompt": "template edited character", "uc": "template edited character negative",
+                                              "center": {"x": 0.6, "y": 0.4}, "position": "D3"}]},
+        }, headers={"Origin": ORIGIN, "X-CSRF-Token": csrf})
+        assert response.status_code == 200
+        result = response.get_json()
+        assert result["errors"] == [] and result["succeeded"] == [entry["id"]]
+        copies.append(Path(result["items"][0]["saved_path"]))
+    assert len(list(destination.iterdir())) == 2
+    assert list(library.roots["outputs"].iterdir()) == []
+    for path, size, color in ((copies[0], (512, 512), (12, 34, 56)), (copies[1], (640, 384), (66, 88, 110))):
+        with Image.open(path) as image:
+            assert image.size == size and image.convert("RGB").getpixel((0, 0)) == color
+            comment = json.loads(image.info["Comment"])
+            assert comment["prompt"] == "template edited main"
+            assert "seed" not in comment and "source_only" not in comment and "signed_hash" not in comment
+            alpha_comment = json.loads(_read_alpha_metadata(image)["Comment"])
+            assert alpha_comment["prompt"] == "template edited main"
+            assert alpha_comment["v4_prompt"]["caption"]["char_captions"][0]["char_caption"] == "template edited character"
+            assert "signed_hash" not in alpha_comment
+            assert all("source-only" not in value for value in image.info.values() if isinstance(value, str))
+            assert b"source-only" not in image.info["exif"]
+    assert library.image_path(target_entry["id"]).read_bytes() == original
+    assert library.image_path(template_entry["id"]).read_bytes() == multi_container_png
+
+
+def test_unchanged_template_drops_signature_for_other_image(client, app, tmp_path, multi_container_png):
+    """模板 Comment 未编辑也不能在另一张图上保留原像素签名。"""
+    csrf = login(client)
+    library = app.extensions["image_library"]
+    template = library.import_image(multi_container_png, "template.png")
+    buffer = io.BytesIO()
+    Image.new("RGB", (512, 512), (50, 100, 150)).save(buffer, "PNG")
+    target = library.import_image(buffer.getvalue(), "target.png")
+    result = client.post("/api/local/gallery/batch", json={
+        "action": "export", "ids": [target["id"]], "mode": "edit",
+        "output_directory": str(tmp_path / "unchanged-template"),
+        "template_metadata_document": template["metadata_document"],
+    }, headers={"Origin": ORIGIN, "X-CSRF-Token": csrf}).get_json()
+    assert result["errors"] == []
+    with Image.open(result["items"][0]["saved_path"]) as image:
+        assert "signed_hash" not in json.loads(image.info["Comment"])
+        assert "signed_hash" not in json.loads(_read_alpha_metadata(image)["Comment"])
+
+
+def test_template_container_deletion_wins_over_previously_changed_parameter(client, app, tmp_path, multi_container_png):
+    """先改 seed 后删除模板 Comment，另存时整块删除优先且源图旧数据不参与。"""
+    csrf = login(client)
+    source = app.extensions["image_library"].import_image(multi_container_png, "source.png")
+    original_template = {"png": {"Description": "chosen template", "Comment": {"prompt": "chosen template", "seed": 42}}}
+    edited_template = {"png": {"Description": "chosen template"}}
+    response = client.post("/api/local/gallery/batch", json={
+        "action": "export", "ids": [source["id"]], "mode": "edit",
+        "output_directory": str(tmp_path / "deleted-template-container"),
+        "template_original_document": original_template,
+        "template_metadata_document": edited_template,
+        "parameters": {"seed": 100},
+    }, headers={"Origin": ORIGIN, "X-CSRF-Token": csrf})
+    assert response.status_code == 200
+    result = response.get_json()
+    assert result["errors"] == []
+    with Image.open(result["items"][0]["saved_path"]) as image:
+        assert image.text == {"Description": "chosen template"}
+        assert not image.getexif() and _read_alpha_metadata(image) is None
 
 
 def test_gallery_export_updates_every_metadata_container_and_keeps_unknown_arrays(client, app, multi_container_png):

@@ -8,6 +8,7 @@ import React from 'react';
 const require = createRequire(import.meta.url);
 const { transformSync } = require('next/dist/build/swc');
 const translation = (key) => key;
+const exportDirectory = 'E:\\metadata-exports';
 const fixture = { id: 'image-1', title: 'Example', filename: 'example.png', url: '/image.png', thumbnail_url: '/thumb.png', prompt: 'girl, artist:example, sunset', negative_prompt: 'lowres', style_prompt: 'artist:example', parameters: { seed: 42, steps: 28, model: 'nai-diffusion-4-5-full' }, metadata: {}, width: 832, height: 1216 };
 
 function renderComponent(filename, props, apiOverrides = {}) {
@@ -22,6 +23,7 @@ function renderComponent(filename, props, apiOverrides = {}) {
     getGallery: async () => ({ items: [fixture], total: 1, has_more: false }),
     getGalleryGroups: async () => ({ groups: [] }),
     getGalleryEntry: async () => fixture,
+    getLocalDirectories: async () => ({ path: exportDirectory, parent: 'E:\\', directories: [], roots: [{ name: 'E:', path: 'E:\\' }], suggested_export_directory: exportDirectory }),
     ...apiOverrides,
   };
   const useSlot = (initial) => {
@@ -39,7 +41,11 @@ function renderComponent(filename, props, apiOverrides = {}) {
     getSelection: () => selection,
   };
   const dependencies = {
-    react: { ...React, useState: useSlot, useRef: (initial) => useSlot(() => ({ current: initial }))[0], useCallback: (callback) => callback,
+    react: { ...React, useState: useSlot, useRef: (initial) => useSlot(() => ({ current: initial }))[0], useCallback: (callback, deps) => {
+      const [previous, update] = useSlot(null);
+      if (!previous || deps.some((value, index) => value !== previous.deps[index])) { update({ callback, deps }); return callback; }
+      return previous.callback;
+    },
       useEffect: (effect, deps) => {
         const [old, update] = useSlot(null);
         if (!old || deps.some((value, index) => value !== old[index])) { effects.push(effect); update(deps); }
@@ -58,7 +64,7 @@ function renderComponent(filename, props, apiOverrides = {}) {
     const result = {};
     runInNewContext(code, { exports: result, require: (name) => dependencies[name] || require(name), window,
       document: { addEventListener: (name, listener) => { listeners[name] = listener; }, removeEventListener: () => {} },
-      FormData, CustomEvent, IntersectionObserver: class { observe() {} disconnect() {} },
+      FormData, CustomEvent, structuredClone, IntersectionObserver: class { observe() {} disconnect() {} },
       navigator: { clipboard: { writeText: async () => {} } },
     });
     return result;
@@ -129,6 +135,12 @@ test('画风、提示词和全部参数分别应用，不会把种子混入仅�
   details.props.onApply(fixture, 'parameters');
   assert.deepEqual(JSON.parse(gallery.storage.get('novelai:pending-reference-parameters')), { ...fixture.parameters, characterTabs: [], positivePrompt: fixture.prompt, negativePrompt: 'lowres' });
   assert.equal(gallery.events.filter((event) => event.type === 'novelai:open-page').length, 3);
+  details.props.onApply(fixture, 'positivePrompt');
+  assert.deepEqual(JSON.parse(gallery.storage.get('novelai:pending-reference-parameters')), { positivePrompt: fixture.prompt });
+  details.props.onApply(fixture, 'negativePrompt');
+  assert.deepEqual(JSON.parse(gallery.storage.get('novelai:pending-reference-parameters')), { negativePrompt: fixture.negative_prompt });
+  details.props.onApply({ ...fixture, negative_prompt: '' }, 'negativePrompt');
+  assert.deepEqual(JSON.parse(gallery.storage.get('novelai:pending-reference-parameters')), { negativePrompt: '' });
 });
 
 test('详情中的提示词选段只保存画风，不覆盖完整提示词或生成参数', async () => {
@@ -162,27 +174,29 @@ test('详情中的提示词选段只保存画风，不覆盖完整提示词或�
   assert.equal(button(detail.render(), 'gallery.saveSelectedStyle') ?? null, null);
 });
 
-test('批量编辑元数据只提交填写的字段，清除模式不带编辑参数', () => {
+test('批量编辑元数据只提交填写的字段，清除模式不带编辑参数', async () => {
   const requests = [];
   const dialog = renderComponent('GalleryMetadataDialog.js', { count: 2, initialParameters: {}, onSubmit: (request) => requests.push(request) });
+  dialog.render(); await dialog.flush();
   const positive = findNode(dialog.render(), (node) => node.type === 'TextField' && node.props.label === 'gallery.positivePrompt');
   positive.props.onChange({ target: { value: 'new prompt' } });
   button(dialog.render(), 'gallery.saveCopy').props.onClick();
-  assert.deepEqual(JSON.parse(JSON.stringify(requests[0])), { mode: 'edit', parameters: { positivePrompt: 'new prompt' } });
+  assert.deepEqual(JSON.parse(JSON.stringify(requests[0])), { mode: 'edit', output_directory: exportDirectory, parameters: { positivePrompt: 'new prompt' } });
   findNode(dialog.render(), (node) => node.type === 'ToggleButtonGroup').props.onChange(null, 'strip');
   button(dialog.render(), 'gallery.saveCopy').props.onClick();
-  assert.deepEqual(JSON.parse(JSON.stringify(requests[1])), { mode: 'strip' });
+  assert.deepEqual(JSON.parse(JSON.stringify(requests[1])), { mode: 'strip', output_directory: exportDirectory });
 });
 
-test('元数据树修改保留未知数组与空值，单图另存不提交未改参数', () => {
+test('元数据树修改保留未知数组与空值，单图另存不提交未改参数', async () => {
   const requests = [];
   const original = { png: { Comment: { prompt: 'old', unknown: [{ active: true, value: null }] } }, exif: {}, stealth: {} };
   const dialog = renderComponent('GalleryMetadataDialog.js', { count: 1, initialParameters: { seed: 42, positivePrompt: 'old' }, initialDocument: original, onSubmit: (request) => requests.push(request) });
+  dialog.render(); await dialog.flush();
   const fields = findNode(dialog.render(), (node) => node.type === 'GalleryMetadataFields' && node.props.value === original);
   const edited = { ...original, png: { Comment: { unknown: [{ active: false, value: null }] } } };
   fields.props.onChange(edited, ['png', 'Comment', 'prompt']);
   button(dialog.render(), 'gallery.saveCopy').props.onClick();
-  assert.deepEqual(JSON.parse(JSON.stringify(requests[0])), { mode: 'edit', parameters: {}, metadata_document: edited });
+  assert.deepEqual(JSON.parse(JSON.stringify(requests[0])), { mode: 'edit', output_directory: exportDirectory, parameters: {}, metadata_document: edited });
   assert.equal(original.png.Comment.prompt, 'old');
   assert.equal(findNode(dialog.render(), (node) => node.type === 'TextField' && node.props.label === 'gallery.parametersJson') ?? null, null);
 });
@@ -219,4 +233,52 @@ test('合并角色优先显示提示词与坐标，原始元数据保持字段�
   const original = renderComponent('GalleryMetadataFields.js', { value: character, path: ['png', 'Comment', 'characterTabs', 0] });
   assert.deepEqual(Array.from(original.render().props.children[0], (node) => node.key), Object.keys(character));
   assert.equal(character.colorId, 2);
+});
+
+test('批量模板加载完整详情，融合图库提示词但不补UI尺寸，删除字段仍在模板另存中生效', async () => {
+  const requests = [];
+  const source = { ...fixture, parameters: { seed: 42, width: 832, height: 1216 }, metadata_document: { png: { Comment: { prompt: 'embedded prompt', seed: 42, custom: { keep: true } } } }, metadata_bindings: [
+    { path: ['png', 'Comment', 'prompt'], parameter_path: ['positivePrompt'] },
+    { path: ['png', 'Comment', 'seed'], parameter_path: ['seed'] },
+  ], metadata_shared_paths: [['png', 'Comment', 'prompt'], ['png', 'Comment', 'seed']] };
+  const dialog = renderComponent('GalleryMetadataDialog.js', { count: 2, templateEntries: [fixture], onSubmit: (request) => requests.push(request) }, { getGalleryEntry: async () => source });
+  dialog.render(); await dialog.flush();
+  findNode(dialog.render(), (node) => node.type === 'TextField' && node.props.label === 'gallery.batchTemplate').props.onChange({ target: { value: fixture.id } });
+  await dialog.flush();
+  const fields = findNode(dialog.render(), (node) => node.type === 'GalleryMetadataFields' && node.props.value.png);
+  assert.equal(fields.props.value.png.Comment.prompt, fixture.prompt);
+  assert.equal(fields.props.value.png.Comment.negativePrompt, fixture.negative_prompt);
+  assert.equal(Object.hasOwn(fields.props.value.png.Comment, 'width'), false);
+  const edited = structuredClone(fields.props.value);
+  delete edited.png.Comment.seed;
+  fields.props.onChange(edited, ['png', 'Comment', 'seed']);
+  findNode(dialog.render(), (node) => node.type === 'TextField' && node.props.label === 'gallery.negativePrompt').props.onChange({ target: { value: 'edited negative' } });
+  button(dialog.render(), 'gallery.saveCopy').props.onClick();
+  assert.deepEqual(JSON.parse(JSON.stringify(requests[0])), { mode: 'edit', output_directory: exportDirectory, parameters: { negativePrompt: 'edited negative' }, template_metadata_document: edited, template_original_document: fields.props.value });
+  assert.equal(source.metadata_document.png.Comment.prompt, 'embedded prompt');
+  findNode(dialog.render(), (node) => node.type === 'TextField' && node.props.label === 'gallery.batchTemplate').props.onChange({ target: { value: '' } });
+  button(dialog.render(), 'gallery.saveCopy').props.onClick();
+  assert.deepEqual(JSON.parse(JSON.stringify(requests[1])), { mode: 'edit', output_directory: exportDirectory, parameters: {} });
+});
+
+test('目录浏览可进入子目录并确认，另存也接受用户手填路径', async () => {
+  const requests = [];
+  const visited = [];
+  const child = `${exportDirectory}\\finished`;
+  const dialog = renderComponent('GalleryMetadataDialog.js', { count: 1, onSubmit: (request) => requests.push(request) }, {
+    getLocalDirectories: async (path) => { visited.push(path); return { path: path || exportDirectory, parent: 'E:\\', directories: path === child ? [] : [{ name: 'finished', path: child }], roots: [{ name: 'E:', path: 'E:\\' }], suggested_export_directory: exportDirectory }; },
+  });
+  dialog.render(); await dialog.flush();
+  button(dialog.render(), 'gallery.browseDirectory').props.onClick(); await dialog.flush();
+  assert.deepEqual(visited, ['', '']);
+  findNode(dialog.render(), (node) => node.type === 'ListItemButton').props.onClick(); await dialog.flush();
+  button(dialog.render(), 'gallery.useDirectory').props.onClick();
+  button(dialog.render(), 'gallery.saveCopy').props.onClick();
+  assert.equal(requests[0].output_directory, child);
+  assert.ok(visited.includes(child));
+  findNode(dialog.render(), (node) => node.type === 'TextField' && node.props.label === 'gallery.directoryPath').props.onChange({ target: { value: 'E:\\not-opened' } });
+  assert.equal(button(dialog.render(), 'gallery.useDirectory').props.disabled, true);
+  findNode(dialog.render(), (node) => node.type === 'TextField' && node.props.label === 'gallery.outputDirectory').props.onChange({ target: { value: ' E:\\other-exports ' } });
+  button(dialog.render(), 'gallery.saveCopy').props.onClick();
+  assert.equal(requests[1].output_directory, 'E:\\other-exports');
 });

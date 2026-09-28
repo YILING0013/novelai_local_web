@@ -3,6 +3,7 @@ import io
 import json
 import sqlite3
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from PIL import Image, PngImagePlugin
@@ -64,7 +65,7 @@ def gallery_batch(client, csrf, action, ids, **options):
 
 
 def test_gallery_authentication_and_csrf_are_required(client, app, metadata_png):
-    for path in ("/api/local/gallery", "/api/local/gallery/groups", "/api/local/gallery/unknown/file"):
+    for path in ("/api/local/gallery", "/api/local/gallery/groups", "/api/local/gallery/unknown/file", "/api/local/directories"):
         assert client.get(path).status_code == 401
     rejected = upload_images(client, "not-authenticated", [("test.png", metadata_png)])
     assert rejected.status_code == 401
@@ -73,6 +74,88 @@ def test_gallery_authentication_and_csrf_are_required(client, app, metadata_png)
     assert rejected.status_code == 403
     assert rejected.get_json()["code"] == "CSRF_INVALID"
     assert app.extensions["image_library"].list_images()["total"] == 0
+
+
+def test_directory_browser_lists_only_folders_and_validates_paths(client, app, tmp_path):
+    """目录浏览有会话保护、可见根入口，只列目录且不提前创建导出目录。"""
+    login(client)
+    default = client.get("/api/local/directories")
+    assert default.status_code == 200
+    payload = default.get_json()
+    suggested = Path(app.config["DATA_DIR"]) / "metadata-exports"
+    assert payload["path"] == payload["suggested_export_directory"] == str(suggested)
+    assert payload["directories"] == [] and not suggested.exists()
+    assert {"name", "path"} <= payload["roots"][0].keys()
+    parent = tmp_path / "browse"
+    (parent / "second").mkdir(parents=True)
+    (parent / "First").mkdir()
+    file_path = parent / "private.txt"
+    file_path.write_text("not exposed", encoding="utf-8")
+    listing = client.get("/api/local/directories", query_string={"path": str(parent)}).get_json()
+    assert [item["name"] for item in listing["directories"]] == ["First", "second"]
+    assert listing["parent"] == str(tmp_path)
+    assert client.get("/api/local/directories", query_string={"path": "relative-folder"}).status_code == 400
+    assert client.get("/api/local/directories", query_string={"path": str(file_path)}).status_code == 400
+    assert client.get("/api/local/directories", query_string={"path": str(parent / "missing")}).status_code == 404
+
+
+def test_export_directory_writes_one_file_without_populating_outputs(client, app, tmp_path, metadata_png):
+    """选定另存目录后只写一个文件；再次保存不覆盖，也不复制到生成图库。"""
+    csrf = login(client)
+    entry = upload_images(client, csrf, [("source.png", metadata_png)]).get_json()["items"][0]
+    library = app.extensions["image_library"]
+    destination = tmp_path / "chosen" / "metadata-copy"
+    first = gallery_batch(client, csrf, "export", [entry["id"]], mode="edit",
+                          parameters={"positivePrompt": "exported"}, output_directory=str(destination)).get_json()
+    assert first["errors"] == [] and first["succeeded"] == [entry["id"]]
+    exported = first["items"][0]
+    exported_path = Path(exported["saved_path"])
+    assert exported_path.parent == destination and exported["filename"] == exported_path.name
+    assert "id" not in exported and exported_path.is_file()
+    assert list(library.roots["outputs"].iterdir()) == []
+    assert library.list_images("outputs")["total"] == 0
+    assert len(list(destination.iterdir())) == 1
+    original_export = exported_path.read_bytes()
+    with Image.open(exported_path) as image:
+        assert json.loads(image.info["Comment"])["prompt"] == "exported"
+        assert image.size == (640, 360) and image.getpixel((0, 0))[:3] == (12, 34, 56)
+    second = gallery_batch(client, csrf, "export", [entry["id"]], mode="strip", output_directory=str(destination)).get_json()
+    assert second["errors"] == []
+    assert second["items"][0]["saved_path"] != str(exported_path)
+    assert len(list(destination.iterdir())) == 2 and exported_path.read_bytes() == original_export
+    assert library.image_path(entry["id"]).read_bytes() == metadata_png
+    with Image.open(second["items"][0]["saved_path"]) as image:
+        assert not image.info
+
+    # 用户主动选择生成目录时也只写一次，普通图库扫描随后才建索引。
+    before = library.list_images("outputs")["total"]
+    saved = gallery_batch(client, csrf, "export", [entry["id"]], mode="edit", output_directory=str(library.roots["outputs"])).get_json()
+    assert saved["errors"] == [] and len(list(library.roots["outputs"].iterdir())) == 1
+    assert library.list_images("outputs")["total"] == before
+    assert library.scan("outputs") == {"indexed": 1, "errors": []}
+
+
+def test_export_directory_errors_do_not_save_any_copy(client, app, tmp_path, metadata_png):
+    """无效另存目录通过逐项错误明确返回，不回退生成图库。"""
+    csrf = login(client)
+    entry = upload_images(client, csrf, [("source.png", metadata_png)]).get_json()["items"][0]
+    occupied = tmp_path / "not-a-folder"
+    occupied.write_text("keep", encoding="utf-8")
+    for destination in ("", "relative", str(occupied)):
+        result = gallery_batch(client, csrf, "export", [entry["id"]], mode="edit", output_directory=destination).get_json()
+        assert result["succeeded"] == [] and len(result["errors"]) == 1
+    assert occupied.read_text(encoding="utf-8") == "keep"
+    assert list(app.extensions["image_library"].roots["outputs"].iterdir()) == []
+    destination = tmp_path / "already-exists"
+    destination.mkdir()
+    collision = destination / f"{Path(entry['filename']).stem[:150]}-edited-collision.png"
+    collision.write_bytes(b"existing file must remain untouched")
+    with patch("api_utils.local_image_library.uuid.uuid4") as fixed_uuid:
+        fixed_uuid.return_value.hex = "collision"
+        result = gallery_batch(client, csrf, "export", [entry["id"]], mode="edit", output_directory=str(destination)).get_json()
+    assert result["succeeded"] == [] and len(result["errors"]) == 1
+    assert collision.read_bytes() == b"existing file must remain untouched"
+    assert list(destination.iterdir()) == [collision]
 
 
 def test_gallery_import_extracts_metadata_and_serves_thumbnail(client, app, metadata_png):
