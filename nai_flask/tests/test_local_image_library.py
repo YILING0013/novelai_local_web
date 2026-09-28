@@ -1,4 +1,5 @@
 import gzip
+import copy
 import io
 import json
 import os
@@ -9,6 +10,7 @@ from PIL import Image, PngImagePlugin
 
 from api_utils.custom_errors import ExposableError
 from api_utils.local_image_library import LocalImageLibrary, normalize_image_parameters
+from api_utils.image_metadata import read_stealth_metadata
 
 
 def image_bytes(image_format="PNG", metadata=None, size=(48, 32)):
@@ -209,7 +211,7 @@ def test_metadata_rewrite_and_strip_create_new_png_and_remove_old_stealth(librar
     assert edited["source"] == "outputs"
     assert edited["prompt"] == "new prompt"
     assert edited["parameters"]["seed"] == 789
-    assert "stealth" not in edited["metadata"]
+    assert edited["metadata_document"]["stealth"]["Comment"]["prompt"] == "new prompt"
     assert "private image description" not in json.dumps(edited["metadata"])
     partial_edit = library.save_metadata_copy(edited["id"], {"positivePrompt": "partial update"})
     assert partial_edit["prompt"] == "partial update"
@@ -316,9 +318,8 @@ def test_metadata_edits_round_trip_official_captions_characters_and_advanced_par
     edited = library.save_metadata_copy(entry["id"], changes)
     with Image.open(library.image_path(edited["id"])) as image:
         comment = json.loads(image.info["Comment"])
-        assert image.info["Description"] == "new prompt"
-    assert comment["prompt"] == comment["positivePrompt"] == comment["v4_prompt"]["caption"]["base_caption"] == "new prompt"
-    assert comment["uc"] == comment["negativePrompt"] == comment["v4_negative_prompt"]["caption"]["base_caption"] == "new negative"
+    assert comment["prompt"] == comment["v4_prompt"]["caption"]["base_caption"] == "new prompt"
+    assert comment["uc"] == comment["v4_negative_prompt"]["caption"]["base_caption"] == "new negative"
     assert comment["v4_prompt"]["caption"]["char_captions"] == [{"char_caption": "new character", "centers": [{"x": 0.3, "y": 0.8}]}]
     assert comment["v4_negative_prompt"]["caption"]["char_captions"][0]["char_caption"] == "new character negative"
     assert comment["v4_prompt"]["use_order"] is True
@@ -382,3 +383,135 @@ def test_interrupted_stable_import_recovers_written_file_without_overwriting(lib
     assert written_file.stat().st_mtime_ns == first_write_time
     assert library.image_path(restored["id"]).read_bytes() == original
     assert library.list_images("references")["total"] == 1
+
+
+def test_running_library_recreates_data_database_roots_and_thumbnails(library, tmp_path):
+    """用改名模拟运行中目录丢失，实例继续可用并重新扫描外部输出。"""
+    entry = library.import_image(image_bytes(), "external.png", source="outputs")
+    output_path = library.image_path(entry["id"])
+    library.data_dir.rename(tmp_path / "saved-data")
+    assert library.list_groups("references") == []
+    assert library.data_dir.is_dir() and library.path.is_file()
+    assert library.roots["references"].is_dir() and library.thumbnail_dir.is_dir()
+    assert library.scan("outputs") == {"indexed": 1, "errors": []}
+    recovered = library.list_images("outputs")["items"][0]
+    assert library.image_path(recovered["id"]) == output_path
+    library.thumbnail_dir.rename(tmp_path / "saved-thumbnails")
+    assert library.image_path(recovered["id"], thumbnail=True).is_file()
+    library.path.rename(tmp_path / "saved-index.db")
+    assert library.list_images()["total"] == 0
+    assert library.scan("outputs")["indexed"] == 1
+    library.roots["references"].rename(tmp_path / "saved-references")
+    imported = library.import_image(image_bytes(), "new-reference.png")
+    assert library.image_path(imported["id"]).is_file()
+    library.roots["outputs"].rename(tmp_path / "saved-outputs")
+    assert library.scan("outputs") == {"indexed": 0, "errors": []}
+    assert library.roots["outputs"].is_dir()
+
+
+def test_metadata_document_deletions_unknown_fields_and_signatures(library):
+    """文档删除不从索引补回，未知嵌套 prompt 不与主提示词混用。"""
+    entry = library.import_image(image_bytes(metadata={
+        "prompt": "original", "uc": "bad", "seed": 42, "signed_hash": "old-signature",
+        "signature": "custom-not-novelai", "unknown": {"prompt": "unrelated", "items": [1, {"enabled": True}]},
+    }), "document.png")
+    document = copy.deepcopy(entry["metadata_document"])
+    comment = document["png"]["Comment"]
+    del comment["seed"]
+    del comment["uc"]
+    comment["unknown"]["items"][1]["enabled"] = False
+    edited = library.save_metadata_copy(entry["id"], {"positivePrompt": "changed", "width": 1024}, metadata_document=document)
+    saved = edited["metadata_document"]["png"]["Comment"]
+    assert saved["prompt"] == "changed"
+    assert "uc" not in saved and "seed" not in saved and "signed_hash" not in saved
+    assert saved["signature"] == "custom-not-novelai"
+    assert saved["unknown"] == {"prompt": "unrelated", "items": [1, {"enabled": False}]}
+    assert edited["parameters"]["width"] == 1024 and edited["width"] == 48
+    document["png"].pop("Comment")
+    empty = library.save_metadata_copy(entry["id"], metadata_document=document)
+    assert empty["metadata_document"].get("png", {}) == {}
+    assert empty["prompt"] == ""
+    unchanged = library.save_metadata_copy(entry["id"], {}, metadata_document=entry["metadata_document"])
+    assert unchanged["metadata_document"]["png"]["Comment"]["signed_hash"] == "old-signature"
+
+
+def test_jpeg_orientation_and_webp_exif_document_round_trip(library):
+    """照片方向只校正一次，JPEG/WebP 的 EXIF 文档可读写、清空。"""
+    for image_format in ("JPEG", "WEBP"):
+        source = Image.new("RGB", (40, 20), (30, 60, 90))
+        exif = Image.Exif()
+        exif[274] = 6
+        exif[34665] = {37510: b"ASCII\x00\x00\x00" + json.dumps({"Comment": json.dumps({"prompt": "old", "seed": 7})}).encode("ascii")}
+        output = io.BytesIO()
+        source.save(output, image_format, exif=exif)
+        original = output.getvalue()
+        entry = library.import_image(original, f"orientation.{image_format.lower()}")
+        assert entry["metadata_document"]["exif"]["37510"]["value"]["Comment"]["prompt"] == "old"
+        edited = library.save_metadata_copy(entry["id"], {"positivePrompt": "new"})
+        assert (edited["width"], edited["height"]) == (20, 40)
+        with Image.open(library.image_path(edited["id"])) as image:
+            assert image.size == (20, 40)
+            assert image.getexif().get(274, 1) == 1
+        assert edited["prompt"] == "new"
+        document = copy.deepcopy(entry["metadata_document"])
+        document["exif"]["37510"].pop("value")
+        removed = library.save_metadata_copy(entry["id"], metadata_document=document)
+        assert "37510" not in removed["metadata_document"].get("exif", {})
+        document["exif"]["37510"]["value"] = "中文测试"
+        chinese = library.save_metadata_copy(entry["id"], metadata_document=document)
+        assert chinese["metadata_document"]["exif"]["37510"]["value"] == "中文测试"
+        document["exif"]["37510"]["value"] = [{"label": "中文"}, [False, 1]]
+        array = library.save_metadata_copy(entry["id"], metadata_document=document)
+        assert array["metadata_document"]["exif"]["37510"]["value"] == [{"label": "中文"}, [False, 1]]
+        assert library.image_path(entry["id"]).read_bytes() == original
+
+
+@pytest.mark.parametrize("compressed", [False, True])
+def test_rgb_stealth_edit_and_strip_remove_old_payload(library, compressed):
+    """兼容社区 RGB 隐写，编辑重编码、清除全部旧位，不改源文件。"""
+    image = Image.new("RGB", (96, 96), (30, 60, 90))
+    payload = json.dumps({"Comment": json.dumps({"prompt": "rgb old", "seed": 55})}).encode("utf-8")
+    if compressed:
+        payload = gzip.compress(payload)
+    magic = b"stealth_rgbcomp" if compressed else b"stealth_rgbinfo"
+    content = magic + (len(payload) * 8).to_bytes(4, "big") + payload
+    pixels = image.load()
+    for index in range(len(content) * 8):
+        pixel_index, channel = divmod(index, 3)
+        x, y = divmod(pixel_index, image.height)
+        color = list(pixels[x, y])
+        color[channel] = (color[channel] & 254) | ((content[index // 8] >> (7 - index % 8)) & 1)
+        pixels[x, y] = tuple(color)
+    output = io.BytesIO()
+    image.save(output, "PNG")
+    original = output.getvalue()
+    entry = library.import_image(original, "rgb.png")
+    assert entry["prompt"] == "rgb old"
+    assert "stealth_rgb" in entry["metadata_document"]
+    edited = library.save_metadata_copy(entry["id"], {"positivePrompt": "rgb new"})
+    assert edited["prompt"] == "rgb new" and edited["parameters"]["seed"] == 55
+    with Image.open(library.image_path(edited["id"])) as saved:
+        assert read_stealth_metadata(saved, "rgb")["Comment"]["prompt"] == "rgb new"
+    stripped = library.save_metadata_copy(entry["id"], clear=True)
+    assert stripped["metadata"] == {} and stripped["metadata_document"] == {}
+    with Image.open(library.image_path(stripped["id"])) as saved:
+        assert read_stealth_metadata(saved, "rgb") is None
+        assert saved.convert("RGB").getextrema() == ((30, 30), (60, 60), (90, 90))
+    assert library.image_path(entry["id"]).read_bytes() == original
+
+
+def test_blank_character_index_and_character_prompts_are_preserved(library):
+    """空角色不压缩索引；共享路径只隐藏已有对应编辑值的叶子。"""
+    raw = {"v4_prompt": {"caption": {"char_captions": [{"char_caption": ""}, {"char_caption": "second"}]}}}
+    normalized = normalize_image_parameters(raw)
+    assert [tab["prompt"] for tab in normalized["characterTabs"]] == ["", "second"]
+    entry = library.import_image(image_bytes(metadata={"characterPrompts": [
+        {"prompt": "first", "negative_prompt": "bad", "name": "one", "centers": [{"x": 0.1, "y": 0.9}], "custom": True},
+    ]}), "characters.png")
+    assert entry["parameters"]["characterTabs"][0]["prompt"] == "first"
+    assert ["png", "Comment", "characterPrompts", 0, "prompt"] in entry["metadata_shared_paths"]
+    assert ["png", "Comment", "characterPrompts", 0, "custom"] not in entry["metadata_shared_paths"]
+    edited = library.save_metadata_copy(entry["id"], {"characterTabs": [{"prompt": "new first", "uc": "new bad", "center": {"x": 0.2, "y": 0.8}}]})
+    character = edited["metadata_document"]["png"]["Comment"]["characterPrompts"][0]
+    assert character["prompt"] == "new first" and character["negative_prompt"] == "new bad"
+    assert character["custom"] is True

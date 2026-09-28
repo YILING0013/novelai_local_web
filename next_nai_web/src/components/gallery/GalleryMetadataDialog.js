@@ -1,86 +1,80 @@
 "use client";
 
 import React, { useState } from 'react';
-import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
-import { ExpandMore } from '@mui/icons-material';
+import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 import { useI18n } from '@/i18n/I18nProvider';
+import GalleryMetadataFields, { getParameterSharedPaths } from './GalleryMetadataFields';
+
+const basicFields = ['model', 'seed', 'steps', 'guidanceScale', 'sampler', 'width', 'height'];
 
 /**
- * 单张和批量图片共用的元数据另存表单，原图始终保留。
- * @param {object} props 图片数量、初始参数和另存回调；批量编辑只提交填写的字段。
- * @returns {React.ReactElement} 元数据编辑与清除对话框。
+ * 用统一提示词、角色和递归字段编辑图片元数据；只提交改过的参数，另存时保留原图。
+ * @param {object} props 单张图片的参数与完整元数据树；批量操作只覆盖用户填写的参数。
+ * @returns {React.ReactElement} 可视化元数据另存表单。
  */
-export default function GalleryMetadataDialog({ count, initialParameters = {}, onClose, onSubmit, busy, error }) {
+export default function GalleryMetadataDialog({ count, initialParameters = {}, initialDocument, metadataSharedPaths = [], onClose, onSubmit, busy, error }) {
   const { t } = useI18n();
   const [mode, setMode] = useState('edit');
   const [parameters, setParameters] = useState(initialParameters);
-  const [advanced, setAdvanced] = useState(false);
-  const [jsonText, setJsonText] = useState(JSON.stringify(initialParameters, null, 2));
-  const [validationError, setValidationError] = useState('');
+  const [changes, setChanges] = useState({});
+  const [document, setDocument] = useState(initialDocument);
+  const [documentChanged, setDocumentChanged] = useState(false);
+  const hiddenParameters = [...getParameterSharedPaths(parameters), ...basicFields.map((key) => [key])];
+  const cardSx = { p: { xs: 1.5, sm: 2 }, border: 1, borderColor: 'divider', borderRadius: 2, bgcolor: 'background.paper' };
 
-  const submit = () => {
-    let result = parameters;
-    if (mode === 'edit' && advanced) {
-      try {
-        result = JSON.parse(jsonText);
-        if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error();
-      } catch {
-        setValidationError(t('gallery.invalidParameters'));
-        return;
-      }
-    }
-    setValidationError('');
-    onSubmit({ mode, ...(mode === 'edit' ? { parameters: result } : {}) });
+  const changeParameters = (next, path) => {
+    setParameters(next);
+    setChanges((current) => ({ ...current, [path[0]]: next[path[0]] }));
   };
 
-  return <Dialog open onClose={() => !busy && onClose()} maxWidth="sm" fullWidth>
+  return <Dialog open onClose={() => !busy && onClose()} maxWidth="md" fullWidth>
     <DialogTitle>{t('gallery.metadataTitle', { count })}</DialogTitle>
-    <DialogContent sx={{ pt: '8px !important' }}>
+    <DialogContent sx={{ pt: '8px !important', px: { xs: 1.5, sm: 3 }, bgcolor: 'background.default' }}>
       <Stack spacing={2}>
-        {(error || validationError) && <Alert severity="error">{validationError || error}</Alert>}
+        {error && <Alert severity="error">{error}</Alert>}
         <Typography variant="body2" color="text.secondary">{t('gallery.metadataCopyHint')}</Typography>
-        <ToggleButtonGroup exclusive value={mode} size="small" onChange={(_, next) => next && setMode(next)} aria-label={t('gallery.metadataAction')}>
+        <ToggleButtonGroup exclusive value={mode} size="small" onChange={(_, next) => next && setMode(next)} aria-label={t('gallery.metadataAction')} disabled={busy}>
           <ToggleButton value="edit">{t('gallery.editMetadata')}</ToggleButton>
           <ToggleButton value="strip">{t('gallery.clearMetadata')}</ToggleButton>
         </ToggleButtonGroup>
         {mode === 'strip' ? <Alert severity="info">{t('gallery.clearMetadataHint')}</Alert> : <>
           {count > 1 && <Alert severity="info">{t('gallery.batchMetadataHint')}</Alert>}
-          {!advanced && <>
-            {['positivePrompt', 'negativePrompt'].map((field) => <TextField key={field} size="small" multiline minRows={3}
+          <Box sx={cardSx}>
+            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>{t('gallery.mainPrompts')}</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>{t('gallery.sharedPromptHint')}</Typography>
+            <Stack spacing={2}>{['positivePrompt', 'negativePrompt'].map((field) => <TextField key={field} size="small" multiline minRows={3} maxRows={12}
               label={t(`gallery.${field}`)} value={parameters[field] ?? ''} disabled={busy}
-              onChange={(event) => setParameters({ ...parameters, [field]: event.target.value })} />)}
+              onChange={(event) => changeParameters({ ...parameters, [field]: event.target.value }, [field])} />)}</Stack>
+          </Box>
+          <Box sx={cardSx}>
+            <Typography variant="subtitle2" sx={{ mb: 2 }}>{t('gallery.generationParameters')}</Typography>
             <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 1.5 }}>
-              {['model', 'seed', 'steps', 'guidanceScale'].map((field) => <TextField key={field} size="small"
-                label={t(`gallery.${field}`)} value={parameters[field] ?? ''} disabled={busy}
-                type={field === 'model' ? 'text' : 'number'}
-                onChange={(event) => setParameters({ ...parameters, [field]: field === 'model' || event.target.value === '' ? event.target.value : Number(event.target.value) })} />)}
+              {basicFields.map((field) => <TextField key={field} size="small" label={t(`gallery.${field}`)} value={parameters[field] ?? ''} disabled={busy}
+                type={['model', 'sampler'].includes(field) ? 'text' : 'number'} inputProps={{ step: 'any' }} sx={field === 'model' ? { gridColumn: '1 / -1' } : undefined}
+                onChange={(event) => changeParameters({ ...parameters, [field]: ['model', 'sampler'].includes(field) || event.target.value === '' ? event.target.value : Number(event.target.value) }, [field])} />)}
             </Box>
-          </>}
-          <Accordion expanded={advanced} disableGutters onChange={(_, expanded) => {
-            if (expanded) setJsonText(JSON.stringify(parameters, null, 2));
-            else {
-              try {
-                const value = JSON.parse(jsonText);
-                if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error();
-                setParameters(value);
-                setValidationError('');
-              } catch { setValidationError(t('gallery.invalidParameters')); return; }
-            }
-            setAdvanced(expanded);
-          }}>
-            <AccordionSummary expandIcon={<ExpandMore />}><Typography variant="body2">{t('gallery.allParameters')}</Typography></AccordionSummary>
-            <AccordionDetails>
-              <TextField fullWidth multiline minRows={10} maxRows={18} value={jsonText} disabled={busy}
-                label={t('gallery.parametersJson')} onChange={(event) => setJsonText(event.target.value)}
-                slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: 13 } } }} />
-            </AccordionDetails>
-          </Accordion>
+          </Box>
+          {parameters.characterTabs?.length > 0 && <Box sx={cardSx}>
+            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>{t('gallery.characterPrompts')}</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>{t('gallery.characterPromptHint')}</Typography>
+            <GalleryMetadataFields value={{ characterTabs: parameters.characterTabs }} disabled={busy} allowStructure={false}
+              onChange={(next, path) => changeParameters({ ...parameters, ...next }, path)} />
+          </Box>}
+          <Box sx={cardSx}>
+            <Typography variant="subtitle2" sx={{ mb: 1.5 }}>{t('gallery.otherParameters')}</Typography>
+            <GalleryMetadataFields value={parameters} hiddenPaths={hiddenParameters} disabled={busy} allowStructure={count > 1} onChange={changeParameters} />
+          </Box>
+          {document && count === 1 && <Box sx={cardSx}>
+            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>{t('gallery.originalMetadata')}</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>{t('gallery.metadataTreeHint')}</Typography>
+            <GalleryMetadataFields value={document} hiddenPaths={metadataSharedPaths} disabled={busy} onChange={(next) => { setDocument(next); setDocumentChanged(true); }} />
+          </Box>}
         </>}
       </Stack>
     </DialogContent>
-    <DialogActions sx={{ px: 3, pb: 2 }}>
+    <DialogActions sx={{ px: { xs: 1.5, sm: 3 }, py: 2, borderTop: 1, borderColor: 'divider' }}>
       <Button onClick={onClose} disabled={busy}>{t('gallery.cancel')}</Button>
-      <Button variant="contained" onClick={submit} disabled={busy}>{t(busy ? 'gallery.saving' : 'gallery.saveCopy')}</Button>
+      <Button variant="contained" onClick={() => onSubmit({ mode, ...(mode === 'edit' ? { parameters: changes, ...(documentChanged ? { metadata_document: document } : {}) } : {}) })} disabled={busy}>{t(busy ? 'gallery.saving' : 'gallery.saveCopy')}</Button>
     </DialogActions>
   </Dialog>;
 }

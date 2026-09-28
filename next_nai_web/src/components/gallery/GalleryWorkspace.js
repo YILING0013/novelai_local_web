@@ -294,10 +294,10 @@ export default function GalleryWorkspace({ source = 'references' }) {
       <DialogActions><Button disabled={busy} onClick={() => setTrashIds(null)}>{t('gallery.cancel')}</Button><Button variant="contained" color="error" disabled={busy} onClick={async () => { const result = await batch('trash', trashIds); if (result) setTrashIds(null); }}>{t('gallery.trash')}</Button></DialogActions></Dialog>
     {detailId && <GalleryDetailDialog key={detailId} entryId={detailId} groups={groups} operationError={error} operationBusy={busy} onClose={() => setDetailId(null)} onChanged={() => setRevision((value) => value + 1)}
       onApply={apply} onTrash={(entry) => { setError(''); setTrashIds([entry.id]); }} onRestore={(entry) => batch('restore', [entry.id])}
-      onMetadata={(entry) => { setError(''); setMetadataTarget({ ids: [entry.id], parameters: { ...entry.parameters, positivePrompt: entry.prompt || '', negativePrompt: entry.negative_prompt || '' } }); }}
+      onMetadata={(entry) => { setError(''); setMetadataTarget({ ids: [entry.id], parameters: { ...entry.parameters, positivePrompt: entry.prompt || '', negativePrompt: entry.negative_prompt || '' }, document: entry.metadata_document, sharedPaths: entry.metadata_shared_paths }); }}
       onPrevious={detailIndex > 0 ? () => setDetailId(items[detailIndex - 1].id) : null}
       onNext={detailIndex >= 0 && detailIndex < items.length - 1 ? () => setDetailId(items[detailIndex + 1].id) : null} />}
-    {metadataTarget && <GalleryMetadataDialog count={metadataTarget.ids.length} initialParameters={metadataTarget.parameters} busy={busy} error={error} onClose={() => setMetadataTarget(null)}
+    {metadataTarget && <GalleryMetadataDialog count={metadataTarget.ids.length} initialParameters={metadataTarget.parameters} initialDocument={metadataTarget.document} metadataSharedPaths={metadataTarget.sharedPaths} busy={busy} error={error} onClose={() => setMetadataTarget(null)}
       onSubmit={async (options) => { const result = await batch('export', metadataTarget.ids, options); if (result && !result.errors.length) setMetadataTarget(null); else if (result) setMetadataTarget({ ...metadataTarget, ids: result.errors.map((item) => item.id) }); }} />}
     <Snackbar open={Boolean(notice)} autoHideDuration={3500} onClose={() => setNotice('')} message={notice} />
   </Box>;

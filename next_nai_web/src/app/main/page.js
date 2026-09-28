@@ -42,7 +42,8 @@ import {
   Brightness4 as DarkModeIcon,
   Brightness7 as LightModeIcon,
   Brush as BrushIcon,
-  Collections as CollectionsIcon,
+  PhotoLibraryOutlined as ReferenceGalleryIcon,
+  FolderOutlined as LocalGalleryIcon,
   ChevronLeft as ChevronLeftIcon,
   ChevronRight as ChevronRightIcon,
   Close as CloseIcon,
@@ -548,8 +549,8 @@ export default function MainPage() {
     if (storage) migrateLegacyPageColors(storage);
     return [
       { id: PAGE_IDS.AI_PAINTING, labelKey: 'pages.aiPainting', icon: <BrushIcon />, component: <AIPaintingPage />, color: readPageColor(storage, PAGE_IDS.AI_PAINTING), confirmOnClose: true },
-      { id: PAGE_IDS.REFERENCE_GALLERY, labelKey: 'gallery.referencesTitle', icon: <CollectionsIcon />, component: <GalleryWorkspace source="references" />, color: readPageColor(storage, PAGE_IDS.REFERENCE_GALLERY), confirmOnClose: false },
-      { id: PAGE_IDS.LOCAL_GALLERY, labelKey: 'gallery.outputsTitle', icon: <CollectionsIcon />, component: <GalleryWorkspace source="outputs" />, color: readPageColor(storage, PAGE_IDS.LOCAL_GALLERY), confirmOnClose: false },
+      { id: PAGE_IDS.REFERENCE_GALLERY, labelKey: 'gallery.referencesTitle', icon: <ReferenceGalleryIcon />, component: <GalleryWorkspace source="references" />, color: readPageColor(storage, PAGE_IDS.REFERENCE_GALLERY), confirmOnClose: false },
+      { id: PAGE_IDS.LOCAL_GALLERY, labelKey: 'gallery.outputsTitle', icon: <LocalGalleryIcon />, component: <GalleryWorkspace source="outputs" />, color: readPageColor(storage, PAGE_IDS.LOCAL_GALLERY), confirmOnClose: false },
       { id: PAGE_IDS.SETTINGS, labelKey: 'pages.settings', icon: <SettingsIcon />, color: readPageColor(storage, PAGE_IDS.SETTINGS), confirmOnClose: false },
     ];
   });

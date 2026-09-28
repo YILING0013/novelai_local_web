@@ -201,6 +201,11 @@ class LocalJsonStore:
 
         path = self._path(name)
         with self._locks[name]:
+            # 用户在服务运行中移走 data 后，读取空集合也应重建工作目录。
+            try:
+                self.data_dir.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                raise LocalStoreError("The local data directory could not be created.") from exc
             if not path.exists():
                 return copy.deepcopy(self.DEFAULTS[name])
             return self._decode(name, self._read_bytes(path, name))

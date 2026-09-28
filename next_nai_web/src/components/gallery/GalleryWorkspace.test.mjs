@@ -17,6 +17,7 @@ function renderComponent(filename, props, apiOverrides = {}) {
   const events = [];
   const listeners = {};
   const storage = new Map();
+  const selection = { anchorNode: 'prompt', focusNode: 'prompt', text: 'artist:example', toString() { return this.text; }, removeAllRanges() { this.text = ''; } };
   const api = {
     getGallery: async () => ({ items: [fixture], total: 1, has_more: false }),
     getGalleryGroups: async () => ({ groups: [] }),
@@ -35,7 +36,7 @@ function renderComponent(filename, props, apiOverrides = {}) {
     removeEventListener: () => {},
     setTimeout: (callback) => { callback(); return 1; },
     clearTimeout: () => {},
-    getSelection: () => ({ anchorNode: 'prompt', focusNode: 'prompt', toString: () => 'artist:example' }),
+    getSelection: () => selection,
   };
   const dependencies = {
     react: { ...React, useState: useSlot, useRef: (initial) => useSlot(() => ({ current: initial }))[0], useCallback: (callback) => callback,
@@ -50,19 +51,24 @@ function renderComponent(filename, props, apiOverrides = {}) {
     './GalleryDetailDialog': { __esModule: true, default: 'GalleryDetailDialog' },
     './GalleryMetadataDialog': { __esModule: true, default: 'GalleryMetadataDialog' },
   };
-  const { code } = transformSync(readFileSync(new URL(filename, import.meta.url), 'utf8'), {
-    filename, jsc: { parser: { syntax: 'ecmascript', jsx: true }, transform: { react: { runtime: 'classic' } } }, module: { type: 'commonjs' },
-  });
-  const exports = {};
-  runInNewContext(code, { exports, require: (name) => dependencies[name] || require(name), window,
-    document: { addEventListener: (name, listener) => { listeners[name] = listener; }, removeEventListener: () => {} },
-    FormData, CustomEvent, IntersectionObserver: class { observe() {} disconnect() {} },
-    navigator: { clipboard: { writeText: async () => {} } },
-  });
+  const load = (source) => {
+    const { code } = transformSync(readFileSync(new URL(source, import.meta.url), 'utf8'), {
+      filename: source, jsc: { parser: { syntax: 'ecmascript', jsx: true }, transform: { react: { runtime: 'classic' } } }, module: { type: 'commonjs' },
+    });
+    const result = {};
+    runInNewContext(code, { exports: result, require: (name) => dependencies[name] || require(name), window,
+      document: { addEventListener: (name, listener) => { listeners[name] = listener; }, removeEventListener: () => {} },
+      FormData, CustomEvent, IntersectionObserver: class { observe() {} disconnect() {} },
+      navigator: { clipboard: { writeText: async () => {} } },
+    });
+    return result;
+  };
+  dependencies['./GalleryMetadataFields'] = { ...load('GalleryMetadataFields.js'), __esModule: true, default: 'GalleryMetadataFields' };
+  const exports = load(filename);
   return {
     render: () => { cursor = 0; return exports.default(props); },
     flush: async () => { for (const effect of effects.splice(0)) effect(); await new Promise((resolve) => setImmediate(resolve)); },
-    storage, events, listeners,
+    storage, events, listeners, exports, selection,
   };
 }
 
@@ -136,10 +142,24 @@ test('详情中的提示词选段只保存画风，不覆盖完整提示词或�
   detail.listeners.selectionchange();
   const save = button(detail.render(), 'gallery.saveSelectedStyle');
   assert.equal(save.props.disabled, false);
+  assert.equal(save.props.variant, 'contained');
+  detail.selection.text = '';
+  detail.listeners.selectionchange();
+  assert.ok(button(detail.render(), 'gallery.saveSelectedStyle'));
+  detail.selection.text = 'artist:example';
   await save.props.onClick();
   assert.equal(patches.length, 1);
   assert.equal(patches[0].id, fixture.id);
   assert.deepEqual(JSON.parse(JSON.stringify(patches[0].changes)), { style_prompt: 'artist:example' });
+  assert.equal(detail.selection.text, '');
+  detail.listeners.selectionchange();
+  assert.equal(button(detail.render(), 'gallery.saveSelectedStyle') ?? null, null);
+  detail.selection.text = 'sunset';
+  detail.listeners.selectionchange();
+  findNode(detail.render(), (node) => node.type === 'IconButton' && node.props['aria-label'] === 'gallery.clearSelection').props.onClick();
+  assert.equal(detail.selection.text, '');
+  detail.listeners.selectionchange();
+  assert.equal(button(detail.render(), 'gallery.saveSelectedStyle') ?? null, null);
 });
 
 test('批量编辑元数据只提交填写的字段，清除模式不带编辑参数', () => {
@@ -154,12 +174,49 @@ test('批量编辑元数据只提交填写的字段，清除模式不带编辑�
   assert.deepEqual(JSON.parse(JSON.stringify(requests[1])), { mode: 'strip' });
 });
 
-test('高级参数 JSON 错误时保留编辑框并阻止另存', () => {
+test('元数据树修改保留未知数组与空值，单图另存不提交未改参数', () => {
   const requests = [];
-  const dialog = renderComponent('GalleryMetadataDialog.js', { count: 1, onSubmit: (request) => requests.push(request) });
-  findNode(dialog.render(), (node) => node.type === 'Accordion').props.onChange(null, true);
-  findNode(dialog.render(), (node) => node.type === 'TextField' && node.props.label === 'gallery.parametersJson').props.onChange({ target: { value: '{broken' } });
+  const original = { png: { Comment: { prompt: 'old', unknown: [{ active: true, value: null }] } }, exif: {}, stealth: {} };
+  const dialog = renderComponent('GalleryMetadataDialog.js', { count: 1, initialParameters: { seed: 42, positivePrompt: 'old' }, initialDocument: original, onSubmit: (request) => requests.push(request) });
+  const fields = findNode(dialog.render(), (node) => node.type === 'GalleryMetadataFields' && node.props.value === original);
+  const edited = { ...original, png: { Comment: { unknown: [{ active: false, value: null }] } } };
+  fields.props.onChange(edited, ['png', 'Comment', 'prompt']);
   button(dialog.render(), 'gallery.saveCopy').props.onClick();
-  assert.equal(requests.length, 0);
-  assert.ok(findNode(dialog.render(), (node) => node.type === 'Alert' && node.props.children === 'gallery.invalidParameters'));
+  assert.deepEqual(JSON.parse(JSON.stringify(requests[0])), { mode: 'edit', parameters: {}, metadata_document: edited });
+  assert.equal(original.png.Comment.prompt, 'old');
+  assert.equal(findNode(dialog.render(), (node) => node.type === 'TextField' && node.props.label === 'gallery.parametersJson') ?? null, null);
+});
+
+test('递归字段按精确路径隐藏重复值，未知字段可编辑且保留合法特殊键', () => {
+  const changes = [];
+  const value = JSON.parse('{"prompt":"merged","customPrompt":"separate","__proto__":"valid key","enabled":true,"empty":null}');
+  const fields = renderComponent('GalleryMetadataFields.js', { value, path: ['png', 'Comment'], hiddenPaths: [['png', 'Comment', 'prompt']], onChange: (next, path) => changes.push({ next, path }) });
+  const tree = fields.render();
+  assert.equal(findNode(tree, (node) => node.type === 'TextField' && node.props.label === 'gallery.prompt') ?? null, null);
+  findNode(tree, (node) => node.type === 'TextField' && node.props.label === '__proto__').props.onChange({ target: { value: 'updated' } });
+  assert.equal(Object.hasOwn(changes[0].next, '__proto__'), true);
+  assert.equal(changes[0].next.__proto__, 'updated');
+  assert.equal(changes[0].next.prompt, 'merged');
+  assert.equal(changes[0].next.empty, null);
+  findNode(tree, (node) => node.type === 'Switch').props.onChange(null, false);
+  assert.equal(changes[1].next.enabled, false);
+  assert.ok(findNode(tree, (node) => node.type === 'TextField' && node.props.label === 'customPrompt'));
+});
+
+test('主提示词与同一角色重复字段合并，其他角色属性不被隐藏', () => {
+  const parameters = { positivePrompt: 'main', characterTabs: [{ prompt: 'girl', center: { x: 0.2, y: 0.8 } }], v4_prompt: { caption: { base_caption: 'main', char_captions: [{ char_caption: 'girl', centers: [{ x: 0.2, y: 0.8 }], custom: 'keep' }] } } };
+  const fields = renderComponent('GalleryMetadataFields.js', { value: parameters });
+  const hidden = fields.exports.getParameterSharedPaths(parameters).map((path) => JSON.stringify(path));
+  assert.ok(hidden.includes(JSON.stringify(['v4_prompt', 'caption', 'base_caption'])));
+  assert.ok(hidden.includes(JSON.stringify(['v4_prompt', 'caption', 'char_captions', 0, 'char_caption'])));
+  assert.equal(hidden.includes(JSON.stringify(['v4_prompt', 'caption', 'char_captions', 0, 'custom'])), false);
+});
+
+test('合并角色优先显示提示词与坐标，原始元数据保持字段和顺序', () => {
+  const character = { colorId: 2, center: { x: 0.2, y: 0.8 }, custom: 'keep', position: 'B4', name: '', uc: 'lowres', prompt: 'girl' };
+  const canonical = renderComponent('GalleryMetadataFields.js', { value: character, path: ['characterTabs', 0] });
+  assert.deepEqual(Array.from(canonical.render().props.children[0], (node) => node.key), ['prompt', 'uc', 'center', 'position', 'custom']);
+  const original = renderComponent('GalleryMetadataFields.js', { value: character, path: ['png', 'Comment', 'characterTabs', 0] });
+  assert.deepEqual(Array.from(original.render().props.children[0], (node) => node.key), Object.keys(character));
+  assert.equal(character.colorId, 2);
 });

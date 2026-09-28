@@ -7,6 +7,21 @@ import pytest
 from api_utils.local_store import LocalJsonStore, LocalStoreError
 
 
+def test_read_recreates_data_directory_after_it_is_moved(tmp_path):
+    """移走合成数据目录后，原实例可重新读默认值并保存新设置。"""
+    data_dir = tmp_path / "data"
+    store = LocalJsonStore(data_dir)
+    store.write("settings", {"locale": "zh-CN"})
+    backup = tmp_path / "moved-data"
+    assert data_dir.resolve().parent == backup.resolve().parent == tmp_path.resolve()
+    data_dir.rename(backup)
+    assert store.read("settings") == {}
+    assert data_dir.is_dir()
+    store.write("settings", {"locale": "en-US"})
+    assert store.read("settings") == {"locale": "en-US"}
+    assert (backup / "settings.json").is_file()
+
+
 def test_store_enforces_schema_and_uses_independent_locks(tmp_path):
     store = LocalJsonStore(tmp_path)
     assert store.read("settings") == {}

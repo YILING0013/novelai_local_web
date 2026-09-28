@@ -10,6 +10,28 @@ from PIL import Image, PngImagePlugin
 from conftest import ORIGIN, PNG_BASE64, login
 
 
+def test_gallery_routes_recover_when_running_data_directory_is_moved(client, app, tmp_path, metadata_png):
+    """模拟运行中工作目录被移走，两类图库重建并能再次导入图片。"""
+    csrf = login(client)
+    data_dir = Path(app.config["DATA_DIR"])
+    backup = tmp_path / "moved-data"
+    assert data_dir.resolve().parent == backup.resolve().parent == tmp_path.resolve()
+    data_dir.rename(backup)
+    for source in ("outputs", "references"):
+        response = client.get(f"/api/local/gallery?source={source}")
+        assert response.status_code == 200
+        assert response.get_json()["items"] == []
+        groups = client.get(f"/api/local/gallery/groups?source={source}")
+        assert groups.status_code == 200
+        assert groups.get_json()["groups"] == []
+    uploaded = upload_images(client, csrf, [("recovered.png", metadata_png)]).get_json()
+    assert uploaded["errors"] == []
+    thumbnail = client.get(uploaded["items"][0]["thumbnail_url"])
+    assert thumbnail.status_code == 200
+    thumbnail.close()
+    assert backup.is_dir()
+
+
 @pytest.fixture
 def metadata_png():
     """生成带 NovelAI 参数的合成图片，不读取个人文件。"""

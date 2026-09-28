@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import gzip
 import io
 import json
 import math
@@ -16,54 +15,16 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from PIL import ExifTags, Image, ImageOps, PngImagePlugin
+from PIL import Image, ImageOps, PngImagePlugin
 
 from .custom_errors import ExposableError
+from .image_metadata import (read_metadata_document, metadata_parameters,
+                             metadata_bindings, edit_metadata_document, write_metadata_png)
 
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 FORMAT_SUFFIXES = {"PNG": ".png", "JPEG": ".jpg", "WEBP": ".webp", "BMP": ".bmp"}
 MAX_IMAGE_BYTES = 30 * 1024 * 1024
-MAX_METADATA_BYTES = 4 * 1024 * 1024
-
-
-def _stealth_metadata(image):
-    if "A" not in image.getbands() or image.width * image.height < 152:
-        return None
-    alpha = image.getchannel("A")
-    pixels = alpha.load()
-    position = 0
-
-    def read_bytes(length):
-        nonlocal position
-        if position + length * 8 > image.width * image.height:
-            raise ValueError("The embedded NovelAI metadata is incomplete.")
-        result = bytearray(length)
-        for index in range(length):
-            value = 0
-            for _ in range(8):
-                x, y = divmod(position, image.height)
-                value = (value << 1) | (pixels[x, y] & 1)
-                position += 1
-            result[index] = value
-        return bytes(result)
-
-    magic = read_bytes(len(b"stealth_pngcomp"))
-    if magic not in {b"stealth_pngcomp", b"stealth_pnginfo"}:
-        return None
-    bit_length = int.from_bytes(read_bytes(4), "big")
-    if bit_length % 8 or bit_length <= 0 or bit_length // 8 > MAX_METADATA_BYTES:
-        raise ValueError("The embedded NovelAI metadata length is invalid.")
-    content = read_bytes(bit_length // 8)
-    if magic == b"stealth_pngcomp":
-        with gzip.GzipFile(fileobj=io.BytesIO(content)) as compressed:
-            content = compressed.read(MAX_METADATA_BYTES + 1)
-    if len(content) > MAX_METADATA_BYTES:
-        raise ValueError("The embedded NovelAI metadata is too large.")
-    value = json.loads(content.decode("utf-8"))
-    if not isinstance(value, dict):
-        raise ValueError("The embedded NovelAI metadata must be an object.")
-    return value
 
 
 def normalize_image_parameters(values):
@@ -120,6 +81,20 @@ def normalize_image_parameters(values):
                 result[target] = caption["base_caption"]
     positive_container = source.get("v4_prompt") or {}
     negative_container = source.get("v4_negative_prompt") or {}
+    if "characterTabs" not in result and isinstance(source.get("characterPrompts"), list):
+        result["characterTabs"] = []
+        for index, character in enumerate(source["characterPrompts"]):
+            if not isinstance(character, dict):
+                character = {}
+            center = character.get("center")
+            if center is None and isinstance(character.get("centers"), list) and character["centers"]:
+                center = character["centers"][0]
+            tab = {"name": character.get("name", ""), "prompt": character.get("prompt", character.get("positivePrompt", "")),
+                   "uc": character.get("uc", character.get("negativePrompt", character.get("negative_prompt", ""))),
+                   "position": character.get("position", "C3"), "colorId": index % 6}
+            if isinstance(center, dict):
+                tab["center"] = center
+            result["characterTabs"].append(tab)
     if "use_coords" not in result and isinstance(positive_container, dict) and "use_coords" in positive_container:
         result["use_coords"] = positive_container["use_coords"]
     # 绘画工作台的角色入口接收 characterTabs，不能只保存官方 caption 而丢掉角色。
@@ -133,13 +108,11 @@ def normalize_image_parameters(values):
             for index in range(max(len(positive_characters), len(negative_characters))):
                 positive = positive_characters[index] if index < len(positive_characters) else {}
                 negative = negative_characters[index] if index < len(negative_characters) else {}
-                if not isinstance(positive, dict) or not isinstance(negative, dict):
-                    continue
+                positive = positive if isinstance(positive, dict) else {}
+                negative = negative if isinstance(negative, dict) else {}
                 prompt = positive.get("char_caption", positive.get("prompt", ""))
                 uc = negative.get("char_caption", negative.get("uc", ""))
-                if not prompt and not uc:
-                    continue
-                tab = {"name": "", "prompt": prompt, "uc": uc, "position": "C3", "colorId": index % 6}
+                tab = {"name": positive.get("name", ""), "prompt": prompt, "uc": uc, "position": "C3", "colorId": index % 6}
                 centers = positive.get("centers")
                 center = centers[0] if isinstance(centers, list) and centers else positive.get("center")
                 if isinstance(center, dict):
@@ -175,35 +148,17 @@ def _inspect_image(file):
             raise ExposableError("The image exceeds 64 million pixels.", code="LIBRARY_IMAGE_TOO_LARGE")
         image.load()
         image_format = image.format
+        document, warnings = read_metadata_document(image)
         raw = {key: value for key, value in image.info.items() if isinstance(value, str)}
-        exif = image.getexif()
-        exif_items = dict(exif)
-        if 34665 in exif:
-            exif_items.update(exif.get_ifd(34665))
-        for key, value in exif_items.items():
-            name = ExifTags.TAGS.get(key, str(key))
-            if isinstance(value, bytes):
-                if value.startswith(b"UNICODE\x00"):
-                    value = value[8:].decode("utf-16", errors="replace").rstrip("\x00")
-                else:
-                    value = value.removeprefix(b"ASCII\x00\x00\x00").decode("utf-8", errors="replace").rstrip("\x00")
-            if isinstance(value, (str, int, float)):
-                raw[name] = value
-        parameters = normalize_image_parameters(raw)
-        for key in ("UserComment", "ImageDescription"):
-            if isinstance(raw.get(key), str):
-                try:
-                    parameters.update(normalize_image_parameters(json.loads(raw[key])))
-                except json.JSONDecodeError:
-                    pass  # 普通照片的描述也允许是文字，不把非 JSON 当损坏图像。
-        try:
-            stealth = _stealth_metadata(image)
-        except (ValueError, OSError, EOFError) as exc:
-            raw["metadata_warning"] = str(exc)
-            stealth = None
-        if stealth is not None:
-            raw["stealth"] = stealth
-            parameters.update(normalize_image_parameters(stealth))
+        for entry in document.get("exif", {}).values():
+            value = entry["value"]
+            raw[entry["name"]] = json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else value
+        for key in ("stealth", "stealth_rgb"):
+            if key in document:
+                raw[key] = document[key]
+        if warnings:
+            raw["metadata_warning"] = "; ".join(warnings)
+        parameters = normalize_image_parameters(metadata_parameters(document))
         oriented = ImageOps.exif_transpose(image)
         width, height = oriented.size
         parameters.setdefault("width", width)
@@ -214,7 +169,7 @@ def _inspect_image(file):
         thumb.save(encoded_thumbnail, "PNG")
     return {
         "width": width, "height": height, "format": image_format,
-        "parameters": parameters, "metadata": raw,
+        "parameters": parameters, "metadata": raw, "metadata_document": document,
         "thumbnail": encoded_thumbnail.getvalue(),
     }
 
@@ -242,8 +197,11 @@ class LocalImageLibrary:
         self.lock = threading.RLock()
         self.configure_output_dir(image_dir)
         self.path = self.data_dir / "image-library.db"
-        with self._connect() as db:
-            db.executescript("""
+        with self._connect():
+            pass
+
+    def _initialize_schema(self, db):
+        db.executescript("""
                 CREATE TABLE IF NOT EXISTS library_groups(
                     id TEXT PRIMARY KEY, source TEXT NOT NULL, name TEXT NOT NULL,
                     UNIQUE(source,name));
@@ -252,7 +210,7 @@ class LocalImageLibrary:
                     relative_path TEXT NOT NULL, filename TEXT NOT NULL, title TEXT NOT NULL,
                     prompt TEXT NOT NULL DEFAULT '', negative_prompt TEXT NOT NULL DEFAULT '',
                     style_prompt TEXT NOT NULL DEFAULT '', parameters_json TEXT NOT NULL,
-                    metadata_json TEXT NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL,
+                    metadata_json TEXT NOT NULL, metadata_document_json TEXT NOT NULL DEFAULT '{}', width INTEGER NOT NULL, height INTEGER NOT NULL,
                     created_at TEXT NOT NULL, mtime_ns INTEGER NOT NULL, byte_size INTEGER NOT NULL,
                     group_id TEXT REFERENCES library_groups(id) ON DELETE SET NULL,
                     trashed_at TEXT, trash_path TEXT, missing INTEGER NOT NULL DEFAULT 0);
@@ -261,13 +219,21 @@ class LocalImageLibrary:
                 CREATE INDEX IF NOT EXISTS library_image_list ON library_images(source,root,trashed_at,created_at DESC);
                 CREATE TABLE IF NOT EXISTS library_migrations(name TEXT PRIMARY KEY);
             """)
+        columns = {row[1] for row in db.execute("PRAGMA table_info(library_images)")}
+        if "metadata_document_json" not in columns:
+            db.execute("ALTER TABLE library_images ADD COLUMN metadata_document_json TEXT NOT NULL DEFAULT '{}'")
 
     @contextmanager
     def _connect(self):
+        # 桌面应用持续运行时，用户可能移走整个 data 或单独数据库。
+        # 每次访问先恢复目录和建表，外部输出目录仍按原配置扫描。
+        for directory in (self.data_dir, self.thumbnail_dir, *self.roots.values()):
+            directory.mkdir(parents=True, exist_ok=True)
         db = sqlite3.connect(self.path, timeout=15)
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA foreign_keys=ON")
         try:
+            self._initialize_schema(db)
             with db:
                 yield db
         finally:
@@ -294,8 +260,24 @@ class LocalImageLibrary:
         result = dict(row)
         result["parameters"] = json.loads(result.pop("parameters_json"))
         raw = result.pop("metadata_json")
+        document = json.loads(result.pop("metadata_document_json"))
         if detail:
             result["metadata"] = json.loads(raw)
+            if not document and result["metadata"]:
+                path = self._contained(self._root(row["source"]), row["trash_path"] if row["trashed_at"] else row["relative_path"])
+                if path.is_file():
+                    document = _inspect_image(path)["metadata_document"]
+            result["metadata_document"] = document
+            result["metadata_bindings"] = metadata_bindings(document)
+            result["metadata_shared_paths"] = []
+            for item in result["metadata_bindings"]:
+                value = result["parameters"]
+                try:
+                    for key in item["parameter_path"]:
+                        value = value[key]
+                except (KeyError, IndexError, TypeError):
+                    continue
+                result["metadata_shared_paths"].append(item["path"])
         result["url"] = f"/api/local/gallery/{row['id']}/file"
         result["thumbnail_url"] = f"/api/local/gallery/{row['id']}/thumbnail"
         result.pop("trash_path")
@@ -336,20 +318,20 @@ class LocalImageLibrary:
         (self.thumbnail_dir / f"{image_id}.png").write_bytes(inspected["thumbnail"])
         if existing:
             db.execute("""UPDATE library_images SET prompt=?,negative_prompt=?,parameters_json=?,
-                metadata_json=?,width=?,height=?,mtime_ns=?,byte_size=?,missing=0 WHERE id=?""", (
+                metadata_json=?,metadata_document_json=?,width=?,height=?,mtime_ns=?,byte_size=?,missing=0 WHERE id=?""", (
                 values["prompt"], values["negative_prompt"], json.dumps(parameters, ensure_ascii=False),
-                json.dumps(inspected["metadata"], ensure_ascii=False), inspected["width"], inspected["height"],
+                json.dumps(inspected["metadata"], ensure_ascii=False), json.dumps(inspected["metadata_document"], ensure_ascii=False), inspected["width"], inspected["height"],
                 stat.st_mtime_ns, stat.st_size, image_id,
             ))
             return self._record(self._row(db, image_id))
         db.execute("""INSERT INTO library_images
             (id,source,root,relative_path,filename,title,prompt,negative_prompt,style_prompt,
-             parameters_json,metadata_json,width,height,created_at,mtime_ns,byte_size,group_id)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
+             parameters_json,metadata_json,metadata_document_json,width,height,created_at,mtime_ns,byte_size,group_id)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
             image_id, source, str(root), relative_path, path.name, values["title"],
             values["prompt"], values["negative_prompt"], values["style_prompt"],
             json.dumps(parameters, ensure_ascii=False), json.dumps(inspected["metadata"], ensure_ascii=False),
-            inspected["width"], inspected["height"],
+            json.dumps(inspected["metadata_document"], ensure_ascii=False), inspected["width"], inspected["height"],
             datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
             stat.st_mtime_ns, stat.st_size, values["group_id"],
         ))
@@ -625,93 +607,42 @@ class LocalImageLibrary:
             ))
             return self._record(self._row(db, image_id))
 
-    def save_metadata_copy(self, image_id, parameters=None, clear=False):
+    def save_metadata_copy(self, image_id, parameters=None, clear=False, metadata_document=None):
         """
-        改写或清除元数据后另存 PNG；新文件写入生成目录，原图保持不变。
+        改写或清除多载体元数据后另存 PNG，原始文件保持不变。
 
         Args:
             image_id: 来源图片 ID。
-            parameters: 要覆盖的 UI 或官方参数，省略时使用图库当前参数。
+            parameters: 仅本次修改的 UI 或官方参数；只编辑文档时可省略。
             clear: 清除文本、EXIF 与 NovelAI alpha 隐写信息。
+            metadata_document: 用户编辑后的完整元数据树；删除字段不从旧索引补回。
 
         Returns:
             另存 PNG 的详情。
         """
+        if parameters is not None and not isinstance(parameters, dict):
+            raise ExposableError("The image parameters must be a JSON object.", code="LIBRARY_EDIT_INVALID")
+        if metadata_document is not None and not isinstance(metadata_document, dict):
+            raise ExposableError("The metadata document must be a JSON object.", code="LIBRARY_EDIT_INVALID")
         with self.lock:
             record = self.get_image(image_id)
             with Image.open(self.image_path(image_id)) as original:
-                pixels = ImageOps.exif_transpose(original).convert("RGBA")
-                # 官方隐写只改变 alpha 的最低位；恢复近乎不透明像素并清掉其余最低位，
-                # 保留 RGB、全透明像素和实际透明度，不把旧隐写带入另存文件。
-                pixels.putalpha(pixels.getchannel("A").point(lambda value: 255 if value >= 254 else value & 254))
-                pixels.info.clear()
-                pnginfo = PngImagePlugin.PngInfo()
-                if not clear:
-                    if parameters is not None and not isinstance(parameters, dict):
-                        raise ExposableError("The image parameters must be a JSON object.", code="LIBRARY_EDIT_INVALID")
-                    overrides = parameters or {}
-                    raw_metadata = record["metadata"]
-                    original_comment = raw_metadata.get("Comment", raw_metadata.get("UserComment", {}))
-                    stealth = raw_metadata.get("stealth")
-                    if isinstance(stealth, dict):
-                        original_comment = stealth.get("Comment", original_comment)
-                    if isinstance(original_comment, str):
-                        try:
-                            original_comment = json.loads(original_comment)
-                        except json.JSONDecodeError:
-                            original_comment = {}
-                    # 保存官方 Comment 内的真实参数；不把 EXIF、Source、图库路径等容器字段
-                    # 整体塞进 Comment。高级 JSON 的非 UI 参数也参与覆盖与往返保存。
-                    comment = dict(original_comment) if isinstance(original_comment, dict) else {}
-                    comment.update(overrides)
-                    selected = {**record["parameters"], **normalize_image_parameters(overrides)}
-                    selected["width"], selected["height"] = pixels.size
-                    comment.update(selected)
-                    comment["prompt"] = selected.get("positivePrompt", "")
-                    comment["uc"] = selected.get("negativePrompt", "")
-                    for ui, official in (("guidanceScale", "scale"), ("noiseSchedule", "noise_schedule"), ("promptGuidanceRescale", "cfg_rescale"), ("smea", "sm"), ("dyn", "sm_dyn")):
-                        if ui in selected:
-                            comment[official] = selected[ui]
-                    if "input" in comment:
-                        comment["input"] = comment["prompt"]
-                    if "negative_prompt" in comment:
-                        comment["negative_prompt"] = comment["uc"]
-                    if "model_name" in comment and "model" in selected:
-                        comment["model_name"] = selected["model"]
-                    tabs = selected.get("characterTabs")
-                    for key, prompt_key, tab_key in (("v4_prompt", "prompt", "prompt"), ("v4_negative_prompt", "uc", "uc")):
-                        current = comment.get(key)
-                        if not isinstance(current, dict) and not isinstance(tabs, list):
-                            continue
-                        container = dict(current) if isinstance(current, dict) else {}
-                        caption = dict(container.get("caption") or {})
-                        caption["base_caption"] = comment[prompt_key]
-                        if isinstance(tabs, list):
-                            characters = []
-                            for tab in tabs:
-                                if not isinstance(tab, dict):
-                                    raise ExposableError("Each character parameter must be an object.", code="LIBRARY_EDIT_INVALID")
-                                if tab.get("enabled", True) is False:
-                                    continue
-                                center = tab.get("center")
-                                if not isinstance(center, dict):
-                                    position = str(tab.get("position", "C3"))
-                                    if re.fullmatch(r"[A-E][1-5]", position):
-                                        center = {"x": ("ABCDE".index(position[0]) + 0.5) / 5, "y": (int(position[1]) - 0.5) / 5}
-                                    else:
-                                        center = {"x": 0.5, "y": 0.5}
-                                characters.append({"char_caption": tab.get(tab_key, ""), "centers": [center]})
-                            caption["char_captions"] = characters
-                        container["caption"] = caption
-                        if key == "v4_prompt" and "use_coords" in selected:
-                            container["use_coords"] = selected["use_coords"]
-                        comment[key] = container
-                    pnginfo.add_itxt("Comment", json.dumps(comment, ensure_ascii=False))
-                    pnginfo.add_itxt("Description", str(comment["prompt"]))
-                output = io.BytesIO()
-                pixels.save(output, "PNG", pnginfo=pnginfo)
+                pixels = ImageOps.exif_transpose(original)
+                if clear:
+                    document = {}
+                else:
+                    overrides = parameters if parameters is not None else ({} if metadata_document is not None else record["parameters"])
+                    # 未知参数留在原 Comment，已知别名统一使用同一语义值写回全部载体。
+                    changes = {**overrides, **normalize_image_parameters(overrides)}
+                    for canonical, aliases in (("positivePrompt", ("prompt", "input", "Description")), ("negativePrompt", ("uc", "negative_prompt")), ("guidanceScale", ("scale",)), ("noiseSchedule", ("noise_schedule",)), ("promptGuidanceRescale", ("cfg_rescale",)), ("smea", ("sm",)), ("dyn", ("sm_dyn",)), ("model", ("model_name",))):
+                        if canonical in changes:
+                            for alias in aliases:
+                                changes.pop(alias, None)
+                    document = edit_metadata_document(record["metadata_document"], metadata_document, changes,
+                                                      pixels_changed=original.getexif().get(274, 1) != 1 or "stealth_rgb" in record["metadata_document"])
+                encoded = write_metadata_png(pixels, document, clear_rgb="stealth_rgb" in record["metadata_document"])
             suffix = "clean" if clear else "edited"
-            return self.import_image(output.getvalue(), f"{Path(record['filename']).stem}-{suffix}.png", source="outputs")
+            return self.import_image(encoded, f"{Path(record['filename']).stem}-{suffix}.png", source="outputs")
 
     def trash_image(self, image_id):
         """

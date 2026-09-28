@@ -1877,7 +1877,10 @@ def create_app(
                 elif action == "restore":
                     result = library.restore_image(image_id)
                 else:
-                    result = library.save_metadata_copy(image_id, parameters=body.get("parameters"), clear=body["mode"] == "strip")
+                    result = library.save_metadata_copy(
+                        image_id, parameters=body.get("parameters"), clear=body["mode"] == "strip",
+                        metadata_document=body.get("metadata_document"),
+                    )
                 if result is not None:
                     items.append(result)
                 succeeded.append(image_id)
