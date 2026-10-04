@@ -6,11 +6,9 @@ import {
   Box,
   Tabs,
   Tab,
-  TextField,
   Typography,
   IconButton,
   Tooltip,
-  Chip,
   CircularProgress,
   Button,
   Snackbar,
@@ -19,8 +17,6 @@ import {
 import {
   ContentCopy as CopyIcon,
   Delete as ClearIcon,
-  Lightbulb as LightbulbIcon,
-  Add as AddIcon,
   Book as BookIcon,
   Save as SaveIcon,
   OpenInFull as OpenInFullIcon,
@@ -48,6 +44,11 @@ import RandomPromptConfig from './RandomPromptConfig/RandomPromptConfig';
 import { forwardPaintingPanelError } from './Generation/errorRecords.mjs';
 import { getEnabledNovelAICharacterPromptTexts } from './PromptEditor/novelAIImageTokenizer.mjs';
 import { getPublicToolErrorMessageKey } from '@/utils/publicToolErrors.mjs';
+import usePromptSuggestions from './PromptEditor/usePromptSuggestions';
+import PromptSuggestions from './PromptEditor/PromptSuggestions';
+import InlinePromptInput from './PromptEditor/InlinePromptInput';
+import PromptEditorSettings from './PromptEditor/PromptEditorSettings';
+import usePromptEditorSettings from './PromptEditor/usePromptEditorSettings';
 
 const PromptPanel = ({
   positivePrompt,
@@ -63,9 +64,6 @@ const PromptPanel = ({
   const { t } = useI18n();
   const [tabValue, setTabValue] = useState(0);
   const effectiveTabValue = tabValue;
-  const [suggestedTags, setSuggestedTags] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [currentInput, setCurrentInput] = useState('');
   const [cursorPosition, setCursorPosition] = useState(0);
 
   const [notesDialogOpen, setNotesDialogOpen] = useState(false);
@@ -88,12 +86,19 @@ const PromptPanel = ({
   const [randomPromptConfig, setRandomPromptConfig] = useState(null);
 
   const [expandedPromptDialogOpen, setExpandedPromptDialogOpen] = useState(false);
+  const { inlinePreview: inlinePreviewEnabled, suggestionsEnabled, setSetting } = usePromptEditorSettings();
   const [activeTabForDialog, setActiveTabForDialog] = useState(0);
 
   const [lastCursorPosition, setLastCursorPosition] = useState(null);
 
   const textFieldRef = useRef(null);
-  const debounceTimerRef = useRef(null);
+  const promptInputRef = useRef(null);
+  const suggestions = usePromptSuggestions({
+    value: effectiveTabValue === 0 ? positivePrompt : negativePrompt,
+    onChange: effectiveTabValue === 0 ? onPositivePromptChange : onNegativePromptChange,
+    inputRef: promptInputRef,
+    enabled: suggestionsEnabled && effectiveTabValue < 2 && !expandedPromptDialogOpen,
+  });
 
   // Define checkRandomPromptStatus using useCallback
   const checkRandomPromptStatus = useCallback(async () => {
@@ -121,7 +126,7 @@ const PromptPanel = ({
 
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
-    setSuggestedTags([]);
+    suggestions.close();
   };
 
   // 处理打开随机提示词配置对话框
@@ -133,18 +138,6 @@ const PromptPanel = ({
   const handleCloseRandomPromptDialog = () => {
     setRandomPromptDialogOpen(false);
     checkRandomPromptStatus(); // Re-fetch config when dialog closes
-  };
-
-  // 提取当前标签
-  const extractCurrentTag = (text, position) => {
-    if (!text || position === undefined || position === null) return '';
-    const safePosition = Math.min(Math.max(0, position), text.length);
-    const textBeforeCursor = text.substring(0, safePosition);
-    const lastCommaIndex = Math.max(
-      textBeforeCursor.lastIndexOf(','),
-      textBeforeCursor.lastIndexOf('，')
-    );
-    return textBeforeCursor.substring(lastCommaIndex + 1).trim();
   };
 
   // 处理插入随机提示词标记
@@ -176,127 +169,17 @@ const PromptPanel = ({
     }, 0);
   };
 
-  // 处理输入变化
-  const handleTextFieldChange = (e, updateFn) => {
-    const newValue = e.target.value;
-    if (typeof updateFn === 'function') {
-      updateFn(newValue);
-    }
-
-    const cursorPos = e.target.selectionStart !== null ? e.target.selectionStart : 0;
-    setCursorPosition(cursorPos);
-    setLastCursorPosition(cursorPos);
-
-    try {
-      if (newValue) {
-        const currentTag = extractCurrentTag(newValue, cursorPos);
-        if (currentTag !== currentInput) {
-          setCurrentInput(currentTag);
-        }
-        if (debounceTimerRef.current) {
-          clearTimeout(debounceTimerRef.current);
-          debounceTimerRef.current = null;
-        }
-        if (currentTag && currentTag.trim()) {
-          debounceTimerRef.current = setTimeout(() => {
-            fetchSuggestedTags(currentTag.trim());
-          }, 1000);
-        } else {
-          setSuggestedTags([]);
-        }
-      } else {
-        setCurrentInput('');
-        setSuggestedTags([]);
-        if (debounceTimerRef.current) {
-          clearTimeout(debounceTimerRef.current);
-          debounceTimerRef.current = null;
-        }
-      }
-    } catch (error) {
-      console.error('Error in handleTextFieldChange:', error);
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-        debounceTimerRef.current = null;
-      }
-    }
+  const handleTextFieldChange = (event, updateFn) => {
+    updateFn(event.target.value);
+    setCursorPosition(event.target.selectionStart);
+    setLastCursorPosition(event.target.selectionStart);
+    suggestions.updateFromInput(event.currentTarget, event.nativeEvent);
   };
 
-  const handleTextFieldClick = (e) => {
-    const cursorPos = e.target.selectionStart !== null ? e.target.selectionStart : 0;
-    setCursorPosition(cursorPos);
-    setLastCursorPosition(cursorPos);
-  };
-
-  const fetchSuggestedTags = async (tagText) => {
-    if (!tagText) return;
-    setIsLoading(true);
-    try {
-      const data = await apiClient.getPrompt(tagText, model);
-      if (data && data.tags && Array.isArray(data.tags)) {
-        const topEightTags = data.tags.slice(0, 8).map(item => ({
-          name: item.tag_name || item.tag,
-          category: item.d_category || item.category || 'general'
-        })).filter(item => item.name);
-        setSuggestedTags(topEightTags);
-      }
-    } catch (error) {
-      console.error("Error fetching tags:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleReplaceSuggestion = (suggestion) => {
-    const isPositive = effectiveTabValue === 0;
-    const prompt = isPositive ? positivePrompt : negativePrompt;
-    const updateFn = isPositive ? onPositivePromptChange : onNegativePromptChange;
-    if (typeof updateFn !== 'function') return;
-
-    if (!prompt) {
-      updateFn(suggestion + ', ');
-      setTimeout(() => {
-        if (textFieldRef.current) {
-          const inputElement = textFieldRef.current.querySelector('textarea');
-          if (inputElement) {
-            inputElement.focus();
-            inputElement.selectionStart = suggestion.length + 2;
-            inputElement.selectionEnd = suggestion.length + 2;
-          }
-        }
-      }, 0);
-      return;
-    }
-
-    const textBeforeCursor = prompt.substring(0, cursorPosition);
-    const textAfterCursor = prompt.substring(cursorPosition);
-
-    const lastCommaIndex = Math.max(
-      textBeforeCursor.lastIndexOf(','),
-      textBeforeCursor.lastIndexOf('，')
-    );
-
-    let newText;
-    if (lastCommaIndex === -1) {
-      newText = suggestion + ', ' + textAfterCursor;
-    } else {
-      const textBeforeTag = prompt.substring(0, lastCommaIndex + 1);
-      newText = textBeforeTag + ' ' + suggestion + ', ' + textAfterCursor;
-    }
-
-    updateFn(newText);
-    setSuggestedTags([]);
-
-    const newCursorPos = newText.length - textAfterCursor.length;
-    setTimeout(() => {
-      if (textFieldRef.current) {
-        const inputElement = textFieldRef.current.querySelector('textarea');
-        if (inputElement) {
-          inputElement.focus();
-          inputElement.selectionStart = newCursorPos;
-          inputElement.selectionEnd = newCursorPos;
-        }
-      }
-    }, 0);
+  const handleTextFieldSelect = (event) => {
+    setCursorPosition(event.target.selectionStart);
+    setLastCursorPosition(event.target.selectionStart);
+    suggestions.inputProps.onSelect(event);
   };
 
   const handleClearPrompt = () => {
@@ -310,7 +193,7 @@ const PromptPanel = ({
       }
     } else if (effectiveTabValue === 2) {
     }
-    setSuggestedTags([]);
+    suggestions.close();
   };
 
   const handleOpenExpandedDialog = (tabIndex) => {
@@ -628,6 +511,12 @@ const PromptPanel = ({
                 </Tooltip>
               </>
             )}
+            <PromptEditorSettings
+                previewEnabled={inlinePreviewEnabled}
+                onPreviewChange={(enabled) => setSetting('inlinePreview', enabled)}
+                suggestionsEnabled={suggestionsEnabled}
+                onSuggestionsChange={(enabled) => setSetting('suggestionsEnabled', enabled)}
+            />
           </Box>
 
           <Box sx={{ pt: 1.5 }}>
@@ -636,27 +525,14 @@ const PromptPanel = ({
                 {
                   !expandedPromptDialogOpen && (
                     <Box sx={{ position: 'relative' }} ref={textFieldRef}>
-                      <TextField
-                        multiline
-                        fullWidth
-                        minRows={5}
-                        maxRows={8}
+                      <InlinePromptInput
                         placeholder={t('painting.workspace.prompt.positivePlaceholder')}
                         value={positivePrompt}
+                        inputRef={promptInputRef}
+                        inputProps={{ ...suggestions.inputProps, onSelect: handleTextFieldSelect }}
                         onChange={(e) => handleTextFieldChange(e, onPositivePromptChange)}
-                        onClick={handleTextFieldClick}
-                        onSelect={(e) => handleTextFieldChange(e, onPositivePromptChange)} // Corrected to ensure cursor updates
-                        sx={{
-                          '& .MuiOutlinedInput-root': {
-                            borderRadius: 1.5,
-                            p: 1.5,
-                          },
-                          '& .MuiInputBase-input': {
-                            fontFamily: '"Roboto Mono", monospace',
-                            fontSize: '1rem',
-                            lineHeight: 1.65,
-                          }
-                        }}
+                        previewEnabled={inlinePreviewEnabled}
+                        randomPromptConfig={randomPromptConfig}
                       />
                       <Box
                         sx={{
@@ -707,70 +583,20 @@ const PromptPanel = ({
                   )
                 }
 
-                {
-                  (!expandedPromptDialogOpen && (suggestedTags.length > 0 || isLoading) && currentInput) ? (
-                    <Box sx={{ mt: 1 }}>
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}
-                      >
-                        <LightbulbIcon fontSize="small" sx={{ mr: 0.5, fontSize: 16 }} />
-                        {t('painting.workspace.prompt.matchingTagSuggestions')}
-                      </Typography>
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, minHeight: 32 }}>
-                        {isLoading ? (
-                          <CircularProgress size={20} />
-                        ) : (
-                          suggestedTags.map((tag, index) => (
-                            <Chip
-                              key={index}
-                              label={tag.name}
-                              size="small"
-                              onClick={() => handleReplaceSuggestion(tag.name)}
-                              icon={<AddIcon fontSize="small" />}
-                              variant="outlined"
-                              sx={{
-                                cursor: 'pointer',
-                                '&:hover': {
-                                  bgcolor: 'action.hover',
-                                  borderColor: 'primary.main',
-                                },
-                              }}
-                            />
-                          ))
-                        )}
-                      </Box>
-                    </Box>
-                  ) : null
-                }
               </>
             ) : effectiveTabValue === 1 ? (
               <>
                 {
                   !expandedPromptDialogOpen && (
                     <Box sx={{ position: 'relative' }} ref={textFieldRef}>
-                      <TextField
-                        multiline
-                        fullWidth
-                        minRows={5}
-                        maxRows={8}
+                      <InlinePromptInput
                         placeholder={t('painting.workspace.prompt.negativePlaceholder')}
                         value={negativePrompt}
+                        inputRef={promptInputRef}
+                        inputProps={{ ...suggestions.inputProps, onSelect: handleTextFieldSelect }}
                         onChange={(e) => handleTextFieldChange(e, onNegativePromptChange)}
-                        onClick={handleTextFieldClick} // Added for consistency
-                        onSelect={(e) => handleTextFieldChange(e, onNegativePromptChange)} // Added for consistency
-                        sx={{
-                          '& .MuiOutlinedInput-root': {
-                            borderRadius: 1.5,
-                            p: 1.5,
-                          },
-                          '& .MuiInputBase-input': {
-                            fontFamily: '"Roboto Mono", monospace',
-                            fontSize: '1rem',
-                            lineHeight: 1.65,
-                          }
-                        }}
+                        previewEnabled={inlinePreviewEnabled}
+                        randomPromptConfig={randomPromptConfig}
                       />
                       <Box
                         sx={{
@@ -821,47 +647,11 @@ const PromptPanel = ({
                   )
                 }
 
-                {
-                  (!expandedPromptDialogOpen && (suggestedTags.length > 0 || isLoading) && currentInput) ? (
-                    <Box sx={{ mt: 1 }}>
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}
-                      >
-                        <LightbulbIcon fontSize="small" sx={{ mr: 0.5, fontSize: 16 }} />
-                        {t('painting.workspace.prompt.matchingTagSuggestions')}
-                      </Typography>
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, minHeight: 32 }}>
-                        {isLoading ? (
-                          <CircularProgress size={20} />
-                        ) : (
-                          suggestedTags.map((tag, index) => (
-                            <Chip
-                              key={index}
-                              label={tag.name}
-                              size="small"
-                              onClick={() => handleReplaceSuggestion(tag.name)}
-                              icon={<AddIcon fontSize="small" />}
-                              variant="outlined"
-                              color="error"
-                              sx={{
-                                cursor: 'pointer',
-                                '&:hover': {
-                                  bgcolor: 'rgba(244, 67, 54, 0.1)',
-                                  borderColor: 'error.main',
-                                },
-                              }}
-                            />
-                          ))
-                        )}
-                      </Box>
-                    </Box>
-                  ) : null
-                }
               </>
             ) : null}
           </Box>
+
+      <PromptSuggestions suggestions={suggestions} />
 
       <ExpandedPromptDialog
         open={expandedPromptDialogOpen}

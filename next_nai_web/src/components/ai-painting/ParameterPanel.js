@@ -1600,12 +1600,9 @@ const ParameterPanel = ({
               handleInputBlur={handleInputBlur}
               handleSizePresetClick={handleSizePresetClick}
               handleClearSeed={handleClearSeed}
-              handleRefreshSeed={handleRefreshSeed}
               expandedPanels={expandedPanels}
               onExpandedPanelsChange={onExpandedPanelsChange}
-              onReferenceImageChange={handleReferenceImageChange}
               isV5Model={isNovelAIV5Model(params.model)}
-              imageReferenceDisabled={hasActiveVibes}
           />
         </Box>
       </Box>

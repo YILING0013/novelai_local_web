@@ -1,19 +1,18 @@
 // ExpandedPromptDialog.js
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { alpha } from '@mui/material/styles';
 import {
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
   Button,
-  TextField,
   Box,
   IconButton,
   Tooltip,
   Typography,
   Divider,
   Paper,
-  Grid,
   useMediaQuery,
   useTheme,
   Snackbar,
@@ -26,21 +25,23 @@ import {
   FormatSize as FormatSizeIcon,
   Code as CodeIcon,
   FormatClear as FormatClearIcon,
-  Visibility as VisibilityIcon,
-  VisibilityOff as VisibilityOffIcon,
-  Casino as CasinoIcon
+  Casino as CasinoIcon,
 } from '@mui/icons-material';
 import {
   weightUpText,
   weightDownText,
   commentText,
   uncommentText,
-  autoFormatText,
   extractActiveContent
 } from './promptUtils';
 
 // 引入增强的预览组件
 import EnhancedPreview from './EnhancedPreview';
+import { PROMPT_TEXT_STYLE } from './previewTags.mjs';
+import usePromptSuggestions from './usePromptSuggestions';
+import PromptSuggestions from './PromptSuggestions';
+import PromptEditorSettings from './PromptEditorSettings';
+import usePromptEditorSettings from './usePromptEditorSettings';
 // 引入随机提示词控件
 import RandomPromptConfig from '../RandomPromptConfig/RandomPromptConfig';
 import apiClient from '@/utils/ApiClient';
@@ -52,282 +53,7 @@ import {
 } from './novelAIImageTokenizer.mjs';
 import { useI18n } from '@/i18n/I18nProvider';
 
-const HighlightedTextarea = ({
-  value,
-  onChange,
-  onSelect,
-  inputRef,
-  isDesktop,
-  tokenCount,
-  totalTokenCount,
-  tokenLimit,
-  tokenizerStatus,
-  isPositive,
-}) => {
-  const { t } = useI18n();
-  const [cursorPosition, setCursorPosition] = useState({ start: 0, end: 0 });
-  // 新增状态：跟踪输入法是否正在组字
-  const [isComposing, setIsComposing] = useState(false);
-  const theme = useTheme(); // 获取当前主题
-
-  // UI修复：计算高对比度的选中背景色
-  // 浅色模式下使用深色半透明背景，深色模式下使用浅色半透明背景
-  const selectionBackgroundColor = theme.palette.mode === 'dark'
-    ? 'rgba(255, 255, 255, 0.25)'
-    : 'rgba(0, 0, 0, 0.20)';
-
-  // 跟踪光标位置
-  const handleSelect = (e) => {
-    setCursorPosition({
-      start: e.target.selectionStart,
-      end: e.target.selectionEnd
-    });
-    if (onSelect) {
-      onSelect(e);
-    }
-  };
-
-  // 处理输入法组字开始事件
-  const handleCompositionStart = useCallback(() => {
-    setIsComposing(true);
-  }, []);
-
-  // 处理输入法组字结束事件
-  const handleCompositionEnd = useCallback((e) => {
-    setIsComposing(false);
-    // 在组字结束后应用格式化
-    const finalValue = e.target.value;
-    const formattedValue = autoFormatText(finalValue);
-    const cursorPos = e.target.selectionStart;
-
-    // 只有当格式化确实改变了文本时才进行处理
-    if (formattedValue !== finalValue) {
-      if (onChange) {
-        // 创建一个模拟事件对象，以符合 onChange 的预期
-        const event = { target: { ...e.target, value: formattedValue } };
-        onChange(event); // 将格式化后的值传递给父组件
-
-        // 异步恢复光标位置
-        setTimeout(() => {
-          if (inputRef && inputRef.current) {
-            // 根据格式化前后光标之前文本的差异来调整光标位置
-            const textBeforeCursor = finalValue.substring(0, cursorPos);
-            const formattedBeforeCursor = autoFormatText(textBeforeCursor);
-            const adjustedCursorPos = formattedBeforeCursor.length;
-            inputRef.current.selectionStart = adjustedCursorPos;
-            inputRef.current.selectionEnd = adjustedCursorPos;
-          }
-        }, 0);
-      }
-    } else {
-      // 如果格式化未改变文本，但组字过程中值可能已变，仍需通知父组件
-      if (onChange && finalValue !== value) {
-        const event = { target: { ...e.target, value: finalValue } };
-        onChange(event);
-      }
-    }
-  }, [onChange, inputRef, value]); // 添加依赖项
-
-  // 处理文本变化事件
-  const handleChange = (e) => {
-    const newValue = e.target.value;
-
-    // 如果不在组字过程中，或者需要立即处理（例如非IME输入）
-    if (!isComposing && onChange) {
-      // 对非输入法输入或组字后的最终输入应用格式化
-      const formattedValue = autoFormatText(newValue);
-      const cursorPos = e.target.selectionStart;
-
-      // 如果格式化改变了文本
-      if (formattedValue !== newValue) {
-        const event = { ...e };
-        event.target = { ...e.target, value: formattedValue };
-        onChange(event); // 传递格式化后的值
-
-        // 异步恢复光标位置
-        setTimeout(() => {
-          if (inputRef && inputRef.current) {
-            const textBeforeCursor = newValue.substring(0, cursorPos);
-            const formattedBeforeCursor = autoFormatText(textBeforeCursor);
-            const adjustedCursorPos = formattedBeforeCursor.length;
-            inputRef.current.selectionStart = adjustedCursorPos;
-            inputRef.current.selectionEnd = adjustedCursorPos;
-          }
-        }, 0);
-      } else {
-        // 如果格式化未改变文本，直接传递原始事件
-        onChange(e);
-      }
-    } else if (isComposing && onChange) {
-      // 如果正在组字，传递原始未格式化的值，让输入法正常工作
-      // 格式化将在 handleCompositionEnd 中进行
-      const event = { target: { ...e.target, value: newValue } };
-      onChange(event);
-    }
-  };
-
-  return (
-    <Box sx={{
-      position: 'relative',
-      width: '100%',
-      height: '100%' // (修改: 98% -> 100%)
-    }}>
-      {/* 文本输入区域 */}
-      <TextField
-        inputRef={inputRef}
-        multiline
-        fullWidth
-        value={value}
-        onChange={handleChange} // 使用更新后的 handleChange
-        onSelect={handleSelect}
-        // 添加输入法组字事件处理器
-        onCompositionStart={handleCompositionStart}
-        onCompositionEnd={handleCompositionEnd}
-        variant="outlined"
-        sx={{
-          height: '100%',
-          '& .MuiOutlinedInput-root': {
-            fontFamily: '"Roboto Mono", monospace',
-            fontSize: '14px',
-            lineHeight: 1.5,
-            borderRadius: 2,
-            height: '100%',
-            alignItems: 'flex-start', // 确保内容从顶部对齐
-            overflow: 'hidden', // 问题修复：防止内容溢出边框
-          },
-          '& .MuiInputBase-input': {
-            height: '100% !important', // 问题修复：强制高度以支持内部滚动
-            overflowY: 'auto !important', // 问题修复：启用垂直滚动
-            overflowX: 'hidden',
-            // 使用主题的主色调作为真实的光标颜色
-            caretColor: theme.palette.primary.main,
-            caretWidth: '2px', // (新增: 加宽光标)
-            '&::selection': {
-              backgroundColor: selectionBackgroundColor, // UI修复：应用自定义选择背景色
-            },
-            verticalAlign: 'top', // 文本从顶部开始
-            paddingTop: '12px', // 添加一些顶部内边距
-            paddingBottom: '30px', // (新增: 为状态栏腾出空间)
-            boxSizing: 'border-box', // 确保 padding 计算在高度内
-          },
-        }}
-      />
-
-      {/* 状态栏 (修改: 调整定位和内容) */}
-      <Box
-        sx={{
-          position: 'absolute',
-          bottom: 8, // (修改: 1 -> 8px)
-          right: 14, // (修改: 1 -> 14px)
-          zIndex: 1, // (新增: 确保在 padding 区域可见)
-          width: 'calc(100% - 28px)', // 确保宽度在 padding 内
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1,
-          fontSize: '0.75rem',
-          pointerEvents: 'none', // 允许点击穿透（如果遮挡了滚动条）
-        }}
-      >
-        {/* “编辑中”指示器 */}
-        <Typography
-          variant="caption"
-          sx={{
-            color: 'text.secondary',
-            fontSize: '0.75rem',
-            display: 'flex',
-            alignItems: 'center',
-            mr: 'auto', // (新增: 推到左侧)
-          }}
-        >
-          {/* 模拟光标的 Span 元素 (样式已存在) */}
-          <span style={{
-            width: '2px', // 光标宽度调整为 2px
-            height: '16px',
-            // 根据主题模式设置背景色，暗色模式使用主文本色，亮色模式使用主色调
-            backgroundColor: theme.palette.mode === 'dark' ? theme.palette.text.primary : theme.palette.primary.main,
-            opacity: 1, // 保证初始不透明
-            display: 'inline-block',
-            marginRight: '4px',
-            animation: 'blink 1s step-end infinite', // 闪烁动画
-          }}></span>
-          {t('painting.tools.promptEditor.editing')}
-        </Typography>
-
-        {/* (新增: Token 计数显示) */}
-        <Typography
-          variant="caption"
-          sx={{
-            color: tokenizerStatus === 'loaded'
-              ? (tokenLimit && totalTokenCount > tokenLimit ? 'error.main' : 'text.secondary')
-              : (tokenizerStatus === 'error' ? 'error.main' : 'text.disabled'),
-            backgroundColor: 'rgba(0, 0, 0, 0.05)',
-            padding: '2px 6px',
-            borderRadius: '4px',
-            fontSize: '0.7rem',
-            flexShrink: 0, // 防止收缩
-          }}
-        >
-          {tokenizerStatus === 'loading' && t('painting.tools.promptEditor.tokensLoading')}
-          {tokenizerStatus === 'loaded' && (tokenLimit
-            ? t('painting.tools.promptEditor.tokenCountWithTotalAndLimit', {
-              count: tokenCount,
-              direction: t(isPositive
-                ? 'painting.tools.promptEditor.positiveDirection'
-                : 'painting.tools.promptEditor.negativeDirection'),
-              total: totalTokenCount,
-              limit: tokenLimit,
-            })
-            : t('painting.tools.promptEditor.tokenCount', { count: tokenCount }))}
-          {tokenizerStatus === 'error' && t('painting.tools.promptEditor.tokenizerError')}
-          {tokenizerStatus === 'unloaded' && t('painting.tools.promptEditor.tokensUnavailable')}
-        </Typography>
-
-        {/* 显示光标位置或选择范围 */}
-        {cursorPosition.start === cursorPosition.end ? (
-          <Typography
-            variant="caption"
-            sx={{
-              color: 'text.secondary',
-              backgroundColor: 'rgba(0, 0, 0, 0.05)',
-              padding: '2px 6px',
-              borderRadius: '4px',
-              fontSize: '0.7rem',
-              flexShrink: 0, // 防止收缩
-            }}
-          >
-            {t('painting.tools.promptEditor.cursor')}: {cursorPosition.start}
-          </Typography>
-        ) : (
-          <Typography
-            variant="caption"
-            sx={{
-              color: 'primary.main',
-              backgroundColor: 'rgba(124, 77, 255, 0.1)', // 紫色背景高亮选择范围
-              padding: '2px 6px',
-              borderRadius: '4px',
-              fontSize: '0.7rem',
-              flexShrink: 0, // 防止收缩
-            }}
-          >
-            {t('painting.tools.promptEditor.selectedCharacters', { count: cursorPosition.end - cursorPosition.start })}
-          </Typography>
-        )}
-      </Box>
-
-      {/* 光标闪烁动画的 CSS 定义 */}
-      <style>
-        {`
-          @keyframes blink {
-            0% { opacity: 1; }
-            50% { opacity: 0; }
-            100% { opacity: 1; }
-          }
-        `}
-      </style>
-    </Box>
-  );
-};
-
+/** 展开编辑提示词，保留原生光标、输入法和选择行为，并同步预览与联想菜单。 */
 const ExpandedPromptDialog = ({
   open,
   onClose,
@@ -344,11 +70,17 @@ const ExpandedPromptDialog = ({
   const [text, setText] = useState(initialText || '');
   const [selection, setSelection] = useState({ start: 0, end: 0 });
   const textFieldRef = useRef(null);
+  const previewRef = useRef(null);
+  const syncScrollRef = useRef(null);
+  const { expandedPreview, overlayPreview, suggestionsEnabled, setSetting } = usePromptEditorSettings();
+  const suggestions = usePromptSuggestions({ value: text, onChange: setText, inputRef: textFieldRef, enabled: open && suggestionsEnabled });
   const theme = useTheme();
   const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
 
   // 移动端默认不显示预览，桌面端默认显示，但可以关闭
-  const [showPreview, setShowPreview] = useState(isDesktop);
+  const showPreview = expandedPreview ?? isDesktop;
+  const [isComposing, setIsComposing] = useState(false);
+  const previewIsOverlay = showPreview && overlayPreview;
 
   // 添加随机提示词配置状态
   const [randomPromptConfig, setRandomPromptConfig] = useState(null);
@@ -365,14 +97,8 @@ const ExpandedPromptDialog = ({
   const [tokenLimit, setTokenLimit] = useState(null);
   const [tokenizerStatus, setTokenizerStatus] = useState('unloaded');
 
-  // UI修复：计算预览区域的选择背景色
-  const selectionBackgroundColor = theme.palette.mode === 'dark'
-    ? 'rgba(255, 255, 255, 0.25)'
-    : 'rgba(0, 0, 0, 0.20)';
+  const selectionBackgroundColor = theme.palette.primary.main;
 
-  useEffect(() => {
-    // 只在组件初始化时根据设备类型设置默认预览状态
-  }, []); // 空依赖数组，只在组件挂载时执行一次
 
   // 对话框打开时只请求一次随机提示词配置，避免 Tokenizer 状态变化重复记录同一失败。
   useEffect(() => {
@@ -465,10 +191,37 @@ const ExpandedPromptDialog = ({
   ]);
 
   const handleTextChange = (e) => {
-    setText(e.target.value);
+    // 输入期间不格式化整段文本；否则中文组字和已有光标位置会被异步改写。
+    setText(e.currentTarget.value);
+    suggestions.updateFromInput(e.currentTarget, e.nativeEvent);
   };
 
+  const syncScroll = (source, target) => {
+    if (!target) return;
+    if (syncScrollRef.current?.element === source && Math.abs(syncScrollRef.current.top - source.scrollTop) < 1) {
+      syncScrollRef.current = null;
+      return;
+    }
+    // 等宽时逐像素同步；移动端上下布局可能高度不同，按阅读进度同步到相应位置。
+    const sameSize = Math.abs(source.clientWidth - target.clientWidth) < 2 && Math.abs(source.clientHeight - target.clientHeight) < 2;
+    const top = sameSize ? source.scrollTop : source.scrollTop / Math.max(1, source.scrollHeight - source.clientHeight) * (target.scrollHeight - target.clientHeight);
+    if (Math.abs(target.scrollTop - top) >= 1) {
+      target.scrollTop = top;
+      syncScrollRef.current = { element: target, top: target.scrollTop };
+    }
+  };
+
+  useLayoutEffect(() => {
+    const input = textFieldRef.current;
+    const preview = previewRef.current;
+    if (input && preview && Math.abs(input.scrollTop - preview.scrollTop) >= 1) {
+      preview.scrollTop = input.scrollTop;
+      syncScrollRef.current = { element: preview, top: preview.scrollTop };
+    }
+  }, [text, showPreview, previewIsOverlay, open]);
+
   const handleSelectText = (e) => {
+    suggestions.inputProps.onSelect(e);
     setSelection({
       start: e.target.selectionStart,
       end: e.target.selectionEnd,
@@ -509,10 +262,10 @@ const ExpandedPromptDialog = ({
     if (!textFieldRef.current) return;
 
     const textarea = textFieldRef.current;
-    const { selectionStart } = textarea;
+    const { selectionStart, selectionEnd } = textarea;
 
     // 在光标位置插入语法
-    const newText = text.substring(0, selectionStart) + syntax + text.substring(selectionStart);
+    const newText = text.substring(0, selectionStart) + syntax + text.substring(selectionEnd);
     setText(newText);
 
     // 更新光标位置
@@ -547,7 +300,7 @@ const ExpandedPromptDialog = ({
       fullScreen={!isDesktop} // 移动端全屏显示
       PaperProps={{
         sx: {
-          minHeight: isDesktop ? '80vh' : '90vh',
+          height: isDesktop ? '85vh' : '100dvh',
           maxHeight: isDesktop ? '90vh' : '100vh',
           // 移动端时取消圆角和边距
           borderRadius: isDesktop ? undefined : 0,
@@ -568,28 +321,40 @@ const ExpandedPromptDialog = ({
               ? 'painting.tools.promptEditor.editPositivePrompt'
               : 'painting.tools.promptEditor.editNegativePrompt')}
           </Typography>
-          <IconButton
-            aria-label={t('painting.tools.common.close')}
-            onClick={onClose}
-            size={isDesktop ? "small" : "medium"}
-            sx={{
-              // 移动端调整关闭按钮大小
-              '& .MuiSvgIcon-root': {
-                fontSize: isDesktop ? undefined : '1.2rem'
-              }
-            }}
-          >
-            <CloseIcon />
-          </IconButton>
+          <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+            <PromptEditorSettings
+              previewEnabled={showPreview}
+              onPreviewChange={(enabled) => setSetting('expandedPreview', enabled)}
+              suggestionsEnabled={suggestionsEnabled}
+              onSuggestionsChange={(enabled) => setSetting('suggestionsEnabled', enabled)}
+              overlayPreview={overlayPreview}
+              onOverlayChange={(enabled) => setSetting('overlayPreview', enabled)}
+            />
+            <IconButton
+              aria-label={t('painting.tools.common.close')}
+              onClick={onClose}
+              size={isDesktop ? "small" : "medium"}
+              sx={{
+                // 移动端调整关闭按钮大小
+                '& .MuiSvgIcon-root': {
+                  fontSize: isDesktop ? undefined : '1.2rem'
+                }
+              }}
+            >
+              <CloseIcon />
+            </IconButton>
+          </Box>
         </Box>
       </DialogTitle>
 
       <Divider />
 
       <DialogContent sx={{
-        height: isDesktop ? 'calc(80vh - 130px)' : 'calc(100vh - 120px)',
-        // 移动端减少内边距
-        p: isDesktop ? undefined : 1
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: 0,
+        overflow: 'hidden',
+        p: isDesktop ? 2 : 1
       }}>
         {/* 工具栏 */}
         <Paper
@@ -707,79 +472,102 @@ const ExpandedPromptDialog = ({
             </Tooltip>
           )}
 
-          {/* 修复：预览按钮改为眼睛图标，并且可以自由切换 */}
-          <Tooltip title={showPreview
-            ? t('painting.tools.promptEditor.hidePreview')
-            : t('painting.tools.promptEditor.showPreview')} arrow>
-            <IconButton
-              aria-label={showPreview
-                ? t('painting.tools.promptEditor.hidePreview')
-                : t('painting.tools.promptEditor.showPreview')}
-              size={isDesktop ? "small" : "medium"}
-              color={showPreview ? "primary" : "default"}
-              onClick={() => setShowPreview(!showPreview)}
-              sx={{
-                '& .MuiSvgIcon-root': {
-                  fontSize: isDesktop ? undefined : '1.1rem'
-                }
-              }}
-            >
-              {showPreview ? <VisibilityIcon /> : <VisibilityOffIcon />}
-            </IconButton>
-          </Tooltip>
         </Paper>
 
-        {/* 布局：桌面端左右结构，移动端上下结构 */}
-        <Grid container spacing={isDesktop ? 2 : 1} sx={{ height: `calc(100% - ${isDesktop ? 50 : 30}px)` }}>
-          {/* 编辑器区域 */}
-          <Grid item xs={12} md={showPreview ? 6 : 12} sx={{ height: '100%' }}>
-            <HighlightedTextarea
-              value={text}
-              onChange={handleTextChange}
-              onSelect={handleSelectText}
-              inputRef={textFieldRef}
-              isDesktop={isDesktop}
-              tokenCount={tokenCount}
-              totalTokenCount={totalTokenCount}
-              tokenLimit={tokenLimit}
-              tokenizerStatus={tokenizerStatus}
-              isPositive={isPositive}
-            />
-          </Grid>
-
-          {/* 预览区域 - 桌面端在右侧，移动端在下方 */}
-          {showPreview && (
-            <Grid item xs={12} md={6} sx={{
-              mt: isDesktop ? 0 : 1, // 移动端减少顶部间距
-              height: isDesktop ? '100%' : '250px' // 移动端减少预览高度
-            }}>
-              {/* 修复：为预览区域添加文本换行样式 */}
-              <Box sx={{
-                height: '100%',
-                overflow: 'auto',
-                border: '1px solid',
-                borderColor: 'divider',
-                borderRadius: 1,
-                p: 1,
-                backgroundColor: 'background.paper',
-                // 确保文本可以自动换行
-                wordWrap: 'break-word',
-                wordBreak: 'break-word',
-                whiteSpace: 'pre-wrap', // 保持换行符并允许自动换行
-                // UI修复：在预览区域也应用高对比度选择背景色
-                '& ::selection': {
-                  backgroundColor: selectionBackgroundColor
-                }
-              }}>
-                {/* 使用增强的预览组件替换原来的CommentPreview */}
-                <EnhancedPreview
-                  text={text}
-                  randomPromptConfig={randomPromptConfig}
+        <Box sx={{
+          display: 'grid',
+          gridTemplateColumns: isDesktop && showPreview && !previewIsOverlay ? 'minmax(0, 1fr) minmax(0, 1fr)' : 'minmax(0, 1fr)',
+          gridTemplateRows: !isDesktop && showPreview && !previewIsOverlay ? 'minmax(0, 1fr) minmax(0, 1fr)' : 'minmax(0, 1fr)',
+          gap: 2,
+          flex: 1,
+          minHeight: 0,
+        }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
+            <Typography component="label" htmlFor={`${suggestions.listId}-input`} variant="caption" color="text.secondary" sx={{ height: 28, flexShrink: 0 }}>
+              {t(previewIsOverlay ? 'painting.tools.promptEditor.overlayPreview' : 'painting.tools.promptEditor.editing')}
+            </Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, border: '1px solid', borderColor: 'divider', borderRadius: 2, overflow: 'hidden', '&:focus-within': { borderColor: 'primary.main' } }}>
+              <Box sx={{ position: 'relative', flex: 1, minHeight: 0 }}>
+                {previewIsOverlay && (
+                  <Box sx={{ position: 'absolute', inset: 0, visibility: isComposing ? 'hidden' : 'visible' }}>
+                    <EnhancedPreview text={text} randomPromptConfig={randomPromptConfig} scrollRef={previewRef} overlay enabled={open} />
+                  </Box>
+                )}
+                <Box
+                  component="textarea"
+                  {...suggestions.inputProps}
+                  id={`${suggestions.listId}-input`}
+                  ref={textFieldRef}
+                  value={text}
+                  aria-label={t('painting.tools.promptEditor.editing')}
+                  spellCheck={false}
+                  onChange={handleTextChange}
+                  onSelect={handleSelectText}
+                  onScroll={(event) => { syncScroll(event.currentTarget, previewRef.current); suggestions.inputProps.onScroll(event); }}
+                  onCompositionStart={(event) => { setIsComposing(true); suggestions.inputProps.onCompositionStart(event); }}
+                  onCompositionEnd={(event) => { setIsComposing(false); suggestions.inputProps.onCompositionEnd(event); }}
+                  onMouseMove={(event) => {
+                    if (!previewIsOverlay || isComposing) return;
+                    // 上层 textarea 始终接收输入；通过下层文本的真实矩形查找悬浮释义，不拦截点击和拖选。
+                    const hit = [...previewRef.current.querySelectorAll('[data-preview-translation]')].find((tag) => (
+                      [...tag.getClientRects()].some((rect) => event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom)
+                    ));
+                    event.currentTarget.title = hit?.dataset.previewTranslation || '';
+                  }}
+                  onMouseLeave={(event) => { event.currentTarget.title = ''; }}
+                  sx={{
+                    ...PROMPT_TEXT_STYLE,
+                    display: 'block',
+                    position: 'relative',
+                    resize: 'none',
+                    overscrollBehaviorY: 'contain',
+                    outline: 'none',
+                    background: 'transparent',
+                    color: previewIsOverlay && !isComposing ? 'transparent' : 'text.primary',
+                    // caretColor 不解析 MUI 调色板别名，叠加时也必须保持原生光标不透明。
+                    caretColor: theme.palette.text.primary,
+                    '&::selection': {
+                      // 叠加时文字只由预览绘制；组字时预览已隐藏，恢复正常文字选区。
+                      backgroundColor: previewIsOverlay && !isComposing ? alpha(selectionBackgroundColor, 0.32) : selectionBackgroundColor,
+                      color: previewIsOverlay && !isComposing ? 'transparent' : theme.palette.primary.contrastText,
+                    },
+                  }}
                 />
+                <PromptSuggestions suggestions={suggestions} />
               </Box>
-            </Grid>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, height: 32, flexShrink: 0, borderTop: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
+                <Typography variant="caption" sx={{ flex: 1, whiteSpace: 'nowrap', color: tokenizerStatus === 'error' || (tokenLimit && totalTokenCount > tokenLimit) ? 'error.main' : 'text.secondary' }}>
+                  {tokenizerStatus === 'loading' && t('painting.tools.promptEditor.tokensLoading')}
+                  {tokenizerStatus === 'loaded' && (tokenLimit
+                    ? t('painting.tools.promptEditor.tokenCountWithTotalAndLimit', { count: tokenCount, direction: t(isPositive ? 'painting.tools.promptEditor.positiveDirection' : 'painting.tools.promptEditor.negativeDirection'), total: totalTokenCount, limit: tokenLimit })
+                    : t('painting.tools.promptEditor.tokenCount', { count: tokenCount }))}
+                  {tokenizerStatus === 'error' && t('painting.tools.promptEditor.tokenizerError')}
+                  {tokenizerStatus === 'unloaded' && t('painting.tools.promptEditor.tokensUnavailable')}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
+                  {selection.start === selection.end
+                    ? `${t('painting.tools.promptEditor.cursor')}: ${selection.start}`
+                    : t('painting.tools.promptEditor.selectedCharacters', { count: selection.end - selection.start })}
+                </Typography>
+              </Box>
+            </Box>
+          </Box>
+          {showPreview && !previewIsOverlay && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ height: 28, flexShrink: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+                {t('painting.tools.promptEditor.preview.title')}
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, border: '1px solid', borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
+                <Box sx={{ flex: 1, minHeight: 0, '& ::selection': { backgroundColor: selectionBackgroundColor, color: theme.palette.primary.contrastText } }}>
+                  <EnhancedPreview text={text} randomPromptConfig={randomPromptConfig} scrollRef={previewRef} onScroll={(event) => syncScroll(event.currentTarget, textFieldRef.current)} enabled={open} />
+                </Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', px: 1.5, height: 32, flexShrink: 0, borderTop: '1px solid', borderColor: 'divider' }}>
+                  {t('painting.tools.promptEditor.translationHelp')}
+                </Typography>
+              </Box>
+            </Box>
           )}
-        </Grid>
+        </Box>
       </DialogContent>
 
       <Divider />

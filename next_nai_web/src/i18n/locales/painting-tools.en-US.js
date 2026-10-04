@@ -209,7 +209,8 @@ const paintingToolsenUS = {
         "invalidImageUrlShort": "Invalid image URL",
         "imagePreviewArea": "Image preview",
         "imagePreviewEmpty": "Add an image URL to preview it here",
-        "confirmSave": "Save note"
+        "confirmSave": "Save note",
+        "transferDialog": {}
       },
       "randomPrompt": {
         "errors": {
@@ -394,7 +395,15 @@ const paintingToolsenUS = {
         "showPreview": "Show preview",
         "randomPreviewHelp": "Comments (/* */) are ignored; random category and collection tags appear in the preview.",
         "commentHelp": "Comments (/* */) are ignored during generation.",
-        "applyChanges": "Apply changes"
+        "applyChanges": "Apply changes",
+        "settings": "Prompt settings",
+        "previewEnabled": "Show preview",
+        "suggestionsEnabled": "Tag suggestions",
+        "suggestionsHelp": "Suggestions appear after typing at least 2 English letters or digits, or 1 Chinese character. Clicking, selecting, and copying do not trigger them.",
+        "overlayPreview": "Overlay preview",
+        "sideBySidePreview": "Separate preview",
+        "translationHelp": "Hover over an underlined tag to see its Chinese meaning",
+        "translationFailed": "Tag meanings failed to load. Edit the text to retry."
       },
       "batch": {
         "errors": {
@@ -427,7 +436,14 @@ const paintingToolsenUS = {
         "recentErrors": "Recent errors ({count})",
         "latest": "latest",
         "cancelGeneration": "Cancel generation",
-        "title": "Batch generation status"
+        "title": "Batch generation status",
+        "analysis": {
+          "verification": {},
+          "network": {},
+          "server": {},
+          "parameter": {},
+          "other": {}
+        }
       },
       "metadata": {
         "none": "(none)",
@@ -490,7 +506,9 @@ const paintingToolsenUS = {
         "unlock": "Unlock slider",
         "lock": "Lock slider",
         "tapToUnlock": "Tap to unlock"
-      }
+      },
+      "parameterEvents": {},
+      "clientErrors": {}
     }
   }
 };

@@ -1,5 +1,5 @@
 // EnhancedPreview.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Box, Typography, Tooltip, Paper, Chip } from '@mui/material';
 // formatPromptWithHighlighting from promptUtils is not used here directly for main formatting,
 // but enhancedFormatPromptWithHighlighting is defined and used within this file.
@@ -12,8 +12,10 @@ import {
   Shuffle as ShuffleIcon // 新增图标
 } from '@mui/icons-material';
 import { useI18n } from '@/i18n/I18nProvider';
+import apiClient from '@/utils/ApiClient';
+import { getPreviewTagRanges, PROMPT_TEXT_STYLE } from './previewTags.mjs';
 
-// 扩展formatPromptWithHighlighting函数以识别随机标签和集合
+/** 保留原始字符并识别注释、权重和随机标签，返回可逐段渲染的高亮信息。 */
 export const enhancedFormatPromptWithHighlighting = (text, randomPromptConfig = null) => {
   if (!text) return [{ text: '', type: 'normal' }];
   
@@ -462,31 +464,31 @@ const getRandomCollectionPreview = (collectionInfo, randomPromptConfig, t) => {
 };
 
 // 自定义段落渲染组件
-const SegmentRenderer = ({ segment, randomPromptConfig, t }) => {
+const SegmentRenderer = ({ segment, randomPromptConfig, t, children }) => {
   // ... (保持 SegmentRenderer 的其他 type 处理不变)
   if (segment.type === 'comment') {
     return (
-      <Typography component="span" sx={{ color: 'grey.500', backgroundColor: 'rgba(0, 0, 0, 0.05)', textDecoration: 'line-through', borderRadius: '2px', padding: '1px 0', fontFamily: 'inherit', fontSize: 'inherit' }}>
-        {segment.text}
-      </Typography>
+      <Box component="span" sx={{ color: 'grey.500', backgroundColor: 'rgba(0, 0, 0, 0.05)', textDecoration: 'line-through', borderRadius: '2px' }}>
+        {children}
+      </Box>
     );
   } else if (segment.type === 'weight-up') {
     return (
-      <Typography component="span" sx={{ backgroundColor: 'rgba(255, 0, 0, 0.2)', borderRadius: '2px', padding: '1px 2px', fontFamily: 'inherit', fontSize: 'inherit' }}>
-        {segment.text}
-      </Typography>
+      <Box component="span" sx={{ backgroundColor: 'rgba(255, 0, 0, 0.2)', borderRadius: '2px' }}>
+        {children}
+      </Box>
     );
   } else if (segment.type === 'weight-down') {
     return (
-      <Typography component="span" sx={{ backgroundColor: 'rgba(0, 60, 255, 0.2)', borderRadius: '2px', padding: '1px 2px', fontFamily: 'inherit', fontSize: 'inherit' }}>
-        {segment.text}
-      </Typography>
+      <Box component="span" sx={{ backgroundColor: 'rgba(0, 60, 255, 0.2)', borderRadius: '2px' }}>
+        {children}
+      </Box>
     );
   } else if (segment.type === 'weight-negative') {
     return (
-      <Typography component="span" sx={{ backgroundColor: 'rgba(0, 20, 255, 0.2)', color: 'error.dark', borderRadius: '2px', padding: '1px 2px', fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'bold', border: '1px dashed rgba(25, 0, 255, 0.5)'}}>
-        {segment.text}
-      </Typography>
+      <Box component="span" sx={{ backgroundColor: 'rgba(0, 20, 255, 0.2)', color: 'error.main', borderRadius: '2px', textDecoration: 'underline dashed' }}>
+        {children}
+      </Box>
     );
   } else if (segment.type === 'random-tag') {
     return (
@@ -495,9 +497,9 @@ const SegmentRenderer = ({ segment, randomPromptConfig, t }) => {
         arrow placement="top"
         componentsProps={{ tooltip: { sx: { bgcolor: 'background.paper', color: 'text.primary', boxShadow: 3, '& .MuiTooltip-arrow': { color: 'background.paper' } } } }}
       >
-        <Typography component="span" sx={{ borderBottom: '1px dashed purple', cursor: 'help', fontFamily: 'inherit', fontSize: 'inherit', position: 'relative', '&::after': { content: '"ⓡ"', fontSize: '0.7em', verticalAlign: 'super', color: 'purple', ml: 0.5 }}}>
-          {segment.categoryName}
-        </Typography>
+        <Box component="span" sx={{ textDecoration: 'underline dashed purple', cursor: 'help' }}>
+          {segment.text}
+        </Box>
       </Tooltip>
     );
   } else if (segment.type === 'random-collection') {
@@ -507,13 +509,13 @@ const SegmentRenderer = ({ segment, randomPromptConfig, t }) => {
         arrow placement="top"
         componentsProps={{ tooltip: { sx: { bgcolor: 'background.paper', color: 'text.primary', boxShadow: 3, '& .MuiTooltip-arrow': { color: 'background.paper' } } } }}
       >
-        <Typography component="span" sx={{ borderBottom: '1px dashed teal', cursor: 'help', fontFamily: 'inherit', fontSize: 'inherit', position: 'relative', '&::after': { content: '"ⓒ"', fontSize: '0.7em', verticalAlign: 'super', color: 'teal', ml: 0.5 }}}>
-          {segment.collectionName}
-        </Typography>
+        <Box component="span" sx={{ textDecoration: 'underline dashed teal', cursor: 'help' }}>
+          {segment.text}
+        </Box>
       </Tooltip>
     );
   } else {
-    return segment.text;
+    return children;
   }
 };
 
@@ -550,41 +552,81 @@ const processBionicText = (text) => {
   return parts;
 };
 
-const EnhancedPreview = ({ text, randomPromptConfig }) => {
+/** 渲染不改变字符位置的提示词预览，并向 CSV 词库批量查询标签的中文释义。 */
+const EnhancedPreview = ({ text, randomPromptConfig, scrollRef, onScroll, overlay = false, enabled = true, textStyle }) => {
   const { t } = useI18n();
-  const [segments, setSegments] = useState([]);
-  
+  const [translations, setTranslations] = useState({});
+  const [translationError, setTranslationError] = useState(false);
+  const segments = useMemo(() => (
+    enhancedFormatPromptWithHighlighting(text, randomPromptConfig).map((segment) => ({
+      ...segment,
+      tags: ['normal', 'weight-up', 'weight-down', 'weight-negative'].includes(segment.type)
+        ? getPreviewTagRanges(segment.text)
+        : [],
+    }))
+  ), [text, randomPromptConfig]);
+  const tagQuery = JSON.stringify([...new Set(segments.flatMap((segment) => segment.tags.map((tag) => tag.key)))]);
+
   useEffect(() => {
-    if (text) {
-      const formattedSegments = enhancedFormatPromptWithHighlighting(text, randomPromptConfig);
-      setSegments(formattedSegments);
-    } else {
-      setSegments([]);
-    }
-  }, [text, randomPromptConfig]);
-  
-  if (!text) return null;
-  
+    const tags = JSON.parse(tagQuery);
+    setTranslationError(false);
+    if (!enabled || tags.length === 0) return;
+    const controller = new AbortController();
+    // 连续输入只发最后一次查询；关闭编辑器或继续输入后，过时响应不能覆盖当前预览。
+    const timer = setTimeout(async () => {
+      try {
+        const results = [];
+        for (let offset = 0; offset < tags.length; offset += 1000) {
+          results.push(await apiClient.translatePromptTags(tags.slice(offset, offset + 1000), { signal: controller.signal }));
+        }
+        if (!controller.signal.aborted) {
+          setTranslations(Object.assign({}, ...results.map((result) => result.translations)));
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) setTranslationError(true);
+      }
+    }, 300);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [tagQuery, enabled]);
+
   return (
-    <Paper 
-      elevation={0} 
-      sx={{ p: 2, height: '100%', overflowY: 'auto', bgcolor: 'rgba(0, 0, 0, 0.02)', borderRadius: 2, border: '1px dashed rgba(0, 0, 0, 0.1)'}}
-    >
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-        {t('painting.tools.promptEditor.preview.title')}:
-      </Typography>
-      <Box sx={{ fontFamily: '"Roboto Mono", monospace', fontSize: '13px', lineHeight: 1.5 }}>
-        {segments.map((segment, index) => (
-          <React.Fragment key={index}>
-            {segment.type === 'normal' ? (
-              processBionicText(segment.text)
-            ) : (
-              <SegmentRenderer segment={segment} randomPromptConfig={randomPromptConfig} t={t} />
-            )}
-          </React.Fragment>
-        ))}
+    <Box sx={{ position: 'relative', height: '100%', minHeight: 0, pointerEvents: overlay ? 'none' : undefined }}>
+      <Box ref={scrollRef} onScroll={onScroll} aria-hidden={overlay || undefined} data-prompt-preview="true" sx={{
+        ...PROMPT_TEXT_STYLE, ...textStyle, color: 'text.primary',
+        // 叠加预览必须与 textarea 保持同一字重，避免回退字体的粗体字宽影响光标位置。
+        '& b': overlay ? { fontWeight: 'inherit' } : undefined,
+      }}>
+        {segments.map((segment, index) => {
+          const content = [];
+          let cursor = 0;
+          for (const tag of segment.tags) {
+            content.push(<React.Fragment key={`before-${tag.start}`}>{processBionicText(segment.text.slice(cursor, tag.start))}</React.Fragment>);
+            const original = segment.text.slice(tag.start, tag.end);
+            const translated = translations[tag.key];
+            content.push(translated ? (
+              <Tooltip key={tag.start} title={`${original} · ${translated}`} arrow placement="top" disableInteractive>
+                <Box component="span" data-preview-translation={`${original} · ${translated}`} sx={{ textDecoration: 'underline dotted', textUnderlineOffset: '3px', cursor: 'help' }}>
+                  {processBionicText(original)}
+                </Box>
+              </Tooltip>
+            ) : <React.Fragment key={tag.start}>{processBionicText(original)}</React.Fragment>);
+            cursor = tag.end;
+          }
+          content.push(<React.Fragment key="tail">{processBionicText(segment.text.slice(cursor))}</React.Fragment>);
+          return <SegmentRenderer key={index} segment={segment} randomPromptConfig={randomPromptConfig} t={t}>{content}</SegmentRenderer>;
+        })}
+        {/* textarea 会为末尾换行保留新一行，预览也必须保留相同的行高。 */}
+        {text.endsWith('\n') ? <span>{'\u200b'}</span> : null}
       </Box>
-    </Paper>
+      {translationError && (
+        <Typography role="status" variant="caption" color="error" sx={{ position: 'absolute', bottom: 4, right: 8, bgcolor: 'background.paper' }}>
+          {t('painting.tools.promptEditor.translationFailed')}
+        </Typography>
+      )}
+    </Box>
   );
 };
 

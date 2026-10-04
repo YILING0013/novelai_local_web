@@ -1,0 +1,250 @@
+semi-realistic,通用,,,半写实
+anime,通用,,,动漫风
+manga,通用,,,漫画风
+cartoon,通用,,,卡通
+watercolor,通用,,,水彩
+gouache,通用,,,水粉
+acrylic,通用,,,丙烯颜料
+oil painting,通用,,,油画
+pastel,通用,,,粉彩
+colored pencil,通用,,,彩铅
+pencil sketch,通用,,,铅笔素描
+charcoal drawing,通用,,,炭笔画
+ink wash,通用,,,水墨画
+ink drawing,通用,,,墨线画
+digital painting,通用,,,数字绘画
+concept art,通用,,,概念设计
+matte painting,通用,,,背景绘景
+3d render,通用,,,三维渲染
+3d art,通用,,,三维艺术
+clay render,通用,,,粘土质感渲染
+sculptural,通用,,,雕塑感
+pixel art,通用,,,像素画
+voxel art,通用,,,体素艺术
+sticker art,通用,,,贴纸风
+flat design,通用,,,扁平设计
+minimalist art,通用,,,极简艺术
+line art,通用,,,线稿
+clean lineart,通用,,,干净线稿
+cel shading,通用,,,赛璐璐上色
+toon shading,通用,,,卡通着色
+glazing,通用,,,罩染画法
+stippling,通用,,,点画法
+splash art,通用,,,宣传插画
+key visual,通用,,,主视觉图
+wallpaper art,通用,,,壁纸画
+poster art,通用,,,海报插画
+turnaround sheet,通用,,,转面设定图
+expression sheet,通用,,,表情表
+reference sheet,通用,,,角色设定图
+charcoal sketch,通用,,,炭笔速写
+gouache painting,通用,,,水粉画
+traditional art,通用,,,传统手绘
+hand drawn,通用,,,手绘
+street art,通用,,,街头艺术
+paper cutting,通用,,,剪纸艺术
+mosaic,通用,,,马赛克镶嵌
+stained glass,通用,,,彩色玻璃
+photo collage,通用,,,照片拼贴
+mixed media,通用,,,综合材料
+textile art,通用,,,织物艺术
+bust shot,通用,,,胸像
+half body,通用,,,半身像
+full body,通用,,,全身像
+upper body,通用,,,上半身
+extreme close-up,通用,,,大特写
+wide shot,通用,,,全景
+long shot,通用,,,远景
+medium shot,通用,,,中景
+low angle,通用,,,仰角视角
+high angle,通用,,,俯角视角
+bird's-eye view,通用,,,鸟瞰视角
+dutch angle,通用,,,倾斜镜头
+over-the-shoulder,通用,,,过肩视角
+face closeup,通用,,,面部特写
+side view,通用,,,侧面视角
+back view,通用,,,背面视角
+three-quarter view,通用,,,四分之三侧面
+looking at viewer,通用,,,直视镜头
+looking away,通用,,,看向别处
+dynamic angle,通用,,,动感机位
+natural lighting,通用,,,自然光
+soft lighting,通用,,,柔光
+hard lighting,通用,,,硬光
+rim light,通用,,,轮廓光
+golden hour,通用,,,黄金时刻
+blue hour,通用,,,蓝调时刻
+neon lighting,通用,,,霓虹灯光
+studio lighting,通用,,,棚拍布光
+dramatic lighting,通用,,,戏剧性光效
+moody lighting,通用,,,氛围光
+volumetric lighting,通用,,,体积光
+god rays,通用,,,上帝光效
+firelight,通用,,,火光
+overcast lighting,通用,,,阴天柔光
+colorful lighting,通用,,,彩色灯光
+lens flare,通用,,,镜头光晕
+bloom effect,通用,,,泛光效果
+glowing effect,通用,,,辉光
+sparkles,通用,,,闪闪星光
+shimmering,通用,,,微光闪烁
+light rays,通用,,,光束
+sunbeams,通用,,,阳光光束
+rule of thirds,通用,,,三分法构图
+golden ratio,通用,,,黄金分割
+symmetrical composition,通用,,,对称构图
+centered composition,通用,,,居中构图
+diagonal composition,通用,,,对角线构图
+frame within frame,通用,,,框中框构图
+leading lines,通用,,,引导线构图
+negative space,通用,,,留白空间
+dynamic pose,通用,,,动态姿势
+action pose,通用,,,动作姿势
+one-point perspective,通用,,,一点透视
+two-point perspective,通用,,,两点透视
+three-point perspective,通用,,,三点透视
+forced perspective,通用,,,强迫透视
+fisheye lens,通用,,,鱼眼镜头
+telephoto shot,通用,,,长焦镜头
+macro shot,通用,,,微距拍摄
+wide angle,通用,,,广角
+depth of field,通用,,,景深
+shallow depth of field,通用,,,浅景深
+out of focus,通用,,,虚焦
+motion blur,通用,,,动态模糊
+long exposure,通用,,,长曝光
+double exposure,通用,,,双重曝光
+split view,通用,,,分割画面
+masterpiece,通用,,,杰作水准
+best quality,通用,,,最佳质量
+high quality,通用,,,高质量
+ultra detailed,通用,,,超精细细节
+highly detailed,通用,,,高细节
+intricate details,通用,,,繁复细节
+sharp focus,通用,,,清晰对焦
+high resolution,通用,,,高分辨率
+4k,通用,,,4K超清
+8k,通用,,,8K超清
+cinematic,通用,,,电影感
+film grain,通用,,,胶片颗粒
+professional artwork,通用,,,专业级作品
+award winning,通用,,,获奖级作品
+ethereal,通用,,,空灵梦幻
+dreamy,通用,,,梦幻感
+whimsical,通用,,,奇幻俏皮
+mysterious atmosphere,通用,,,神秘氛围
+melancholic,通用,,,忧郁氛围
+serene,通用,,,宁静安详
+romantic mood,通用,,,浪漫氛围
+nostalgic,通用,,,怀旧感
+vibrant colors,通用,,,鲜艳色彩
+muted colors,通用,,,低饱和素雅
+pastel tones,通用,,,粉彩柔和色调
+warm tones,通用,,,暖色调
+cool tones,通用,,,冷色调
+earthy tones,通用,,,大地色系
+duotone,通用,,,双色调
+grayscale,通用,,,灰度
+high contrast,通用,,,高对比度
+soft focus,通用,,,柔焦
+cozy atmosphere,通用,,,温馨氛围
+art nouveau,通用,,,新艺术运动风
+art deco,通用,,,装饰艺术风
+baroque,通用,,,巴洛克风
+rococo,通用,,,洛可可风
+victorian era,通用,,,维多利亚风
+medieval art,通用,,,中世纪艺术
+expressionism,通用,,,表现主义
+surrealism,通用,,,超现实主义
+pop art,通用,,,波普艺术
+psychedelic art,通用,,,迷幻艺术
+romanticism,通用,,,浪漫主义
+neoclassicism,通用,,,新古典主义
+gothic art,通用,,,哥特艺术
+celtic art,通用,,,凯尔特艺术
+japanese ukiyo-e,通用,,,日本浮世绘
+chinese ink painting,通用,,,中国水墨画
+persian miniature,通用,,,波斯细密画
+islamic geometric art,通用,,,伊斯兰几何纹样
+cottagecore,通用,,,田园乡村美学
+dark academia,通用,,,暗黑学院风
+light academia,通用,,,明亮学院风
+fairycore,通用,,,精灵童话美学
+royalcore,通用,,,宫廷美学
+goblincore,通用,,,森系自然美学
+boho style,通用,,,波西米亚风
+wabi-sabi,通用,,,侘寂美学
+zen aesthetic,通用,,,禅意美学
+scandinavian style,通用,,,北欧风
+japandi,通用,,,日式北欧风
+mid-century modern,通用,,,中古现代风
+retro vintage,通用,,,复古怀旧风
+y2k aesthetic,通用,,,Y2K千禧风
+grunge aesthetic,通用,,,垃圾摇滚美学
+punk style,通用,,,朋克风
+gothic fashion,通用,,,哥特时尚
+kawaii aesthetic,通用,,,可爱风
+soft girl aesthetic,通用,,,软妹风
+emo aesthetic,通用,,,情绪美学
+streetwear aesthetic,通用,,,街头潮流风
+aesthetic decor,通用,,,氛围感装饰
+wall collage,通用,,,照片墙拼贴
+vision board,通用,,,愿景板
+mood board,通用,,,灵感情绪板
+aesthetic wallpaper,通用,,,氛围感壁纸
+art print,通用,,,艺术海报印刷
+poster design,通用,,,海报设计
+album cover art,通用,,,专辑封面设计
+book cover art,通用,,,书籍封面设计
+tarot card art,通用,,,塔罗牌插画
+sticker design,通用,,,贴纸设计
+planner art,通用,,,手账插画
+journaling,通用,,,手账拼贴
+diary art,通用,,,日记手绘
+bullet journal,通用,,,子弹笔记
+zine art,通用,,,独立小志插画
+indie art,通用,,,独立插画风
+fanart,通用,,,同人插画
+oc art,通用,,,原创角色插画
+character design,通用,,,角色设计
+creature design,通用,,,生物设计
+costume design,通用,,,服装设计
+fashion illustration,通用,,,时尚插画
+haute couture,通用,,,高级定制风
+lingerie art,通用,,,内衣时尚插画
+street fashion,通用,,,街头时尚
+editorial illustration,通用,,,杂志编辑插画
+children's book illustration,通用,,,童书插画
+storybook style,通用,,,绘本风
+fantasy landscape,通用,,,奇幻风景
+fairytale art,通用,,,童话插画
+mythical creatures,通用,,,神话生物
+dragon art,通用,,,龙主题插画
+mermaid art,通用,,,人鱼主题
+angel art,通用,,,天使主题
+botanical illustration,通用,,,植物博物插画
+floral art,通用,,,花卉插画
+flower aesthetic,通用,,,花卉氛围
+butterfly aesthetic,通用,,,蝴蝶元素
+mushroom art,通用,,,蘑菇主题
+crystal aesthetic,通用,,,水晶矿石美学
+celestial art,通用,,,星月天体插画
+moon phases art,通用,,,月相插画
+starry night,通用,,,星空夜色
+galaxy aesthetic,通用,,,银河星系风
+ocean art,通用,,,海洋主题插画
+underwater art,通用,,,水下世界插画
+nature aesthetic,通用,,,自然美学
+forest aesthetic,通用,,,森林氛围
+cozy autumn,通用,,,暖秋氛围
+winter aesthetic,通用,,,冬日氛围
+spring aesthetic,通用,,,春日氛围
+beach aesthetic,通用,,,夏日海滩风
+rainy day aesthetic,通用,,,雨天氛围
+sunset aesthetic,通用,,,日落氛围
+cityscape art,通用,,,城市景观插画
+architecture sketch,通用,,,建筑速写
+interior design art,通用,,,室内设计插画
+room aesthetic,通用,,,房间氛围
+cozy corner,通用,,,温馨角落
+desk setup aesthetic,通用,,,桌面布置美学

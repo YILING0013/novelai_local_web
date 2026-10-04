@@ -177,7 +177,7 @@ const paintingWorkspaceenUS = {
         "noEditEffects": "No edit effects applied",
         "modelAndBasic": "Model and basic parameters",
         "aiModel": "AI model",
-        "modelV5Limitations": "V5 supports text-to-image, image-to-image, and character control. Full also supports inpainting; Curated does not. Character Reference and Vibe are unavailable.",
+        "modelV5Limitations": "V5 supports text-to-image, image-to-image, inpainting, and character control. Precise Reference and Vibe Transfer are unavailable.",
         "logParameters": "Log parameters to console",
         "resetConfirmationTitle": "Reset all parameters?",
         "resetConfirmationDescription": "This resets every generation parameter for the current model and cannot be undone.",
@@ -211,7 +211,7 @@ const paintingWorkspaceenUS = {
         "sampler": "Sampler",
         "samplingSteps": "Sampling steps",
         "samplingStepsHelp": "More steps can add detail but increase generation time.",
-        "cfgScale": "CFG Scale",
+        "cfgScale": "Prompt guidance (CFG Scale)",
         "cfgScaleCreativityHelp": "Higher values follow the prompt more closely; lower values allow more freedom.",
         "promptGuidanceRescale": "Prompt Guidance Rescale",
         "promptGuidanceRescaleHelp": "Reduce overexposure and color shift at high CFG values.",
@@ -244,8 +244,8 @@ const paintingWorkspaceenUS = {
         "referenceImageLimit": "You can add up to {max} reference images.",
         "referenceImageSizeLimit": "Each reference image must be no larger than {size}.",
         "removeVibesFirst": "Remove the existing Vibes first.",
-        "characterReferences": "Character references ({count}/{max})",
-        "characterReferencesHelp": "Reference images help the model preserve the character’s appearance.",
+        "characterReferences": "Precise Reference ({count}/{max})",
+        "characterReferencesHelp": "Guide character appearance, overall visual style, or both with an image. Choose Character, Style, or Character and Style. Available on NovelAI V4.5 only; cannot be combined with Vibe Transfer.",
         "disabled": "Disabled",
         "enabled": "Enabled",
         "referenceTypeCharacter": "Character",
@@ -314,7 +314,7 @@ const paintingWorkspaceenUS = {
         "referenceStrength": "Reference strength",
         "informationExtracted": "Information extracted",
         "vibeTransfer": "Vibe Transfer",
-        "vibeBlockedByReferences": "Vibe Transfer cannot be used with character reference images.",
+        "vibeBlockedByReferences": "Vibe Transfer cannot be used together with Precise Reference.",
         "vibeV4Description": "V4 models use reference images directly to control style.",
         "vibeV3Description": "V3 models use encoded Vibe files to control style.",
         "releaseToUploadFile": "Release to upload file",
@@ -323,7 +323,11 @@ const paintingWorkspaceenUS = {
         "clickOrDropMultipleImages": "Click or drop multiple images",
         "downloadBundle": "Download bundle",
         "downloadZip": "Download ZIP",
-        "vibeBlockedByInpaint": "Vibe is paused during inpainting and resumes when you exit inpainting."
+        "vibeBlockedByInpaint": "Vibe is paused during inpainting and resumes when you exit inpainting.",
+        "disableReferenceImage": "Disable reference image",
+        "enableReferenceImage": "Enable reference image",
+        "otherSettings": "Other settings",
+        "referenceType": "Reference type"
       },
       "batch": {
         "statusTitle": "Batch generation status"
@@ -500,8 +504,45 @@ const paintingWorkspaceenUS = {
         "clearNegative": "Clear negative prompt",
         "copyNegative": "Copy negative prompt",
         "editPositive": "Edit positive prompt",
-        "editNegative": "Edit negative prompt"
-      }
+        "editNegative": "Edit negative prompt",
+        "suggestionsLoading": "Searching tags…",
+        "suggestionsFailed": "Tag suggestions failed to load. Keep typing to retry.",
+        "localSuggestionsOnly": "Online tags are unavailable. Showing local matches only.",
+        "noTagTranslation": "No Chinese translation"
+      },
+      "imageTools": {
+        "upscale": "Upscale 2×",
+        "upscaleCost": "Upscale 2× · {cost} credits",
+        "enhance": "Enhance",
+        "processing": "Processing…",
+        "upscaleTooLarge": "The source exceeds 3,145,728 pixels and cannot use official upscaling.",
+        "sourceDimensionsUnavailable": "Could not read the source dimensions. Select the image again.",
+        "title": "Enhance image",
+        "model": "Current model: {model}",
+        "promptHelp": "Enhances the selected image using your current workspace prompts. Image details may change.",
+        "upscaleAmount": "Upscale amount",
+        "magnitude": "Magnitude {value}",
+        "custom": "Custom",
+        "showAdvanced": "Show advanced settings",
+        "hideAdvanced": "Hide advanced settings",
+        "strength": "Strength",
+        "noise": "Noise",
+        "steps": "Sampling steps",
+        "strengthHelp": "Higher strength allows greater changes. Noise helps the model add detail.",
+        "outputSize": "Output size",
+        "estimatedCost": "Estimated Anlas",
+        "estimating": "Estimating credits",
+        "cost": "{cost} credits",
+        "balance": "Available Anlas: {credits}",
+        "submitCost": "Enhance · {cost} credits",
+        "balanceUnknown": "Anlas balance is unavailable. NovelAI determines the final charge.",
+        "insufficientBalance": "Insufficient Anlas. Add funds and try again."
+      },
+      "v5Recovery": {
+        "states": {}
+      },
+      "upload": {},
+      "verification": {}
     }
   }
 };

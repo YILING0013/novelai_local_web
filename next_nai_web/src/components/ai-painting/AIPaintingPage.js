@@ -46,6 +46,7 @@ import {
   MonetizationOn as MonetizationOnIcon,
 } from '@mui/icons-material';
 import ItemDisplay from './ItemDisplay';
+import ImageEnhanceDialog from './ImageEnhanceDialog';
 import ItemPreview from './ItemPreview';
 import PromptPanel from './PromptPanel';
 import ParameterPanel from './ParameterPanel';
@@ -57,7 +58,7 @@ import MetadataDialog from './tools/ImageTools/MetadataDialog';
 import { resizeImage } from './tools/ImageTools/ImageResizer';
 import apiClient from '@/utils/ApiClient';
 import { copyTextToClipboard, createClientId } from '@/utils/browserCapabilities.mjs';
-import { createBlobFromBase64, createObjectUrlFromBlob, revokeObjectUrl } from '@/utils/mediaAssets';
+import { createObjectUrlFromBlob, revokeObjectUrl, fetchUrlAsBlob } from '@/utils/mediaAssets';
 import { extractActiveContent } from './PromptEditor';
 import { applyImageParametersToUI } from './utils/parameterMapping';
 import { extractMetadataFromFile, extractMetadataFromImageSrc } from './utils/metadataUtils';
@@ -330,10 +331,12 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
   // 状态管理
   const hasInitializedRef = useRef(false);
   const getAllParametersRef = useRef(null);
+  const imageToolBusyRef = useRef(false);
+  const [imageToolBusy, setImageToolBusy] = useState(false);
+  const [enhanceSource, setEnhanceSource] = useState(null);
   const inpaintWorkspaceRef = useRef(null);
   const fileInputRef = useRef(null);
   const vibeFileInputRef = useRef(null);
-  const upscaleInFlightRef = useRef(false);
   const [inpaintPreviewBatch, setInpaintPreviewBatch] = useState({ active: false, current: 0, total: 0 });
   const [characterTabsFromNote, setCharacterTabsFromNote] = useState(null);
   const [characterTabsForPromptTokens, setCharacterTabsForPromptTokens] = useState([]);
@@ -343,7 +346,6 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
   const [errorRecordsHydrated, setErrorRecordsHydrated] = useState(false);
   const [errorRecordsOwnerKey, setErrorRecordsOwnerKey] = useState('');
   const [vibeImages, setVibeImages] = useState([]);
-  const [isUpscaling, setIsUpscaling] = useState(false);
   const [vibeCacheHydrated, setVibeCacheHydrated] = useState(false);
   const [pageMetadataDialog, setPageMetadataDialog] = useState({ open: false, metadata: null });
   const [liveAccountSnapshot, setLiveAccountSnapshot] = useState(accountSnapshot);
@@ -491,8 +493,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
   // 添加面板展开状态
   const [expandedPanels, setExpandedPanels] = useState({
     basic: true,
+    otherSettings: false,
     img2img: false,
     vibe: false,
+    reference: false,
     character: false
   });
 
@@ -793,7 +797,8 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
       };
     }
 
-    if (isGenerating) {
+    // 正在进行单次生成
+    if (isGenerating || imageToolBusy) {
       return {
         text: isInpaintMode
           ? t('painting.workspace.actions.inpaintingProgress', {
@@ -1295,8 +1300,88 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
     return () => window.removeEventListener('novelai:image-save-failed', onSaveFailure);
   }, [showNotification, t]);
 
+  // 源图和参数在打开弹窗时固定，切换历史图或修改侧栏不会悄悄改变本次增强。
+  const handleImageTool = async (tool, settings = null) => {
+    if (imageToolBusyRef.current || isGenerating || batchStatus.active || inpaintPreviewBatch.active) return;
+    imageToolBusyRef.current = true;
+    setImageToolBusy(true);
+    try {
+      let source = enhanceSource;
+      if (!settings) {
+        const sourceUrl = currentItem.isComposited
+          ? currentItem.src
+          : (currentItem.downloadSrc || currentItem.originalSrc || currentItem.src);
+        const blob = currentItem.cachedBlob || await fetchUrlAsBlob(sourceUrl);
+        const bitmap = await createImageBitmap(blob);
+        const { width, height } = bitmap;
+        bitmap.close();
+        const image = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(createWorkspaceError('INVALID_GENERATED_FILE'));
+          reader.readAsDataURL(blob);
+        });
+        source = {
+          width, height, image, src: currentItem.src,
+          params: getAllParametersRef.current
+            ? getAllParametersRef.current()
+            : { ...generationParams, positivePrompt, negativePrompt },
+        };
+        if (tool === 'enhance') {
+          setEnhanceSource(source);
+          return;
+        }
+      }
+
+      const model = tool === 'upscale' ? 'nai-diffusion-5-curated' : source.params.model;
+      const toolParams = {
+        image_tool: tool,
+        model,
+        source_width: source.width,
+        source_height: source.height,
+        ...(settings ? {
+          upscale_amount: settings.upscale_amount,
+          strength: settings.strength,
+          noise: settings.noise,
+          steps: settings.steps,
+        } : {}),
+      };
+      // 提交时刷新官方 Anlas 估价；最终扣费以 NovelAI 实际执行结果为准。
+      const estimate = await apiClient.estimateImageTool(toolParams);
+      if (estimate.affordable === false) throw createWorkspaceError('NOVELAI_INSUFFICIENT_ANLAS');
+      const params = {
+        ...source.params,
+        ...toolParams,
+        width: estimate.width,
+        height: estimate.height,
+        batchSize: 1,
+        imageToImage: { image: source.image, strength: settings?.strength ?? 0.5, noise: settings?.noise ?? 0 },
+        // 工具只使用当前文本和角色提示，避免侧栏参考图增加未预估的费用。
+        vibeTransfer: null,
+        smea: false,
+        dyn: false,
+        autoSmea: false,
+      };
+      for (const key of NOVELAI_DIRECTOR_REFERENCE_PARAM_KEYS) delete params[key];
+      setEnhanceSource(null);
+      const newItem = await generate(params);
+      if (!newItem) throw createWorkspaceError('GENERATION_FAILED');
+      showNotification(t('painting.workspace.notifications.imageGenerated'), 'success');
+    } catch (error) {
+      showNotification(getWorkspaceErrorMessage(t, error, 'painting.workspace.errors.generationFailed'), 'error', true, [], {
+        error,
+        source: `image-tool-${tool}`,
+        messageKey: WORKSPACE_ERROR_KEYS[error?.code] || 'painting.workspace.errors.generationFailed',
+      });
+    } finally {
+      imageToolBusyRef.current = false;
+      setImageToolBusy(false);
+    }
+  };
+
   // 图像/视频生成请求
   const handleGenerate = async () => {
+    if (imageToolBusyRef.current) return;
     let requestedModel = generationParams.model;
 
     try {
@@ -1639,71 +1724,6 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
     };
 
     switch (action) {
-      case 'official-upscale':
-        if (upscaleInFlightRef.current) return false;
-        upscaleInFlightRef.current = true;
-        setIsUpscaling(true);
-        try {
-          const sourceToUpscale = currentItem.isComposited
-            ? currentItem.src
-            : (currentItem.downloadSrc || currentItem.originalSrc || currentItem.src);
-          const sourceResponse = await fetch(sourceToUpscale);
-          if (!sourceResponse.ok) {
-            throw createWorkspaceError('MEDIA_ASSET_DOWNLOAD_FAILED', {
-              statusCode: sourceResponse.status,
-            });
-          }
-          const imageDataUrl = await convertBlobToDataURL(await sourceResponse.blob());
-          const response = await apiClient.upscaleImage({
-            image: imageDataUrl,
-            model: currentItem.model || generationParams.model,
-          });
-          const upscaledImage = response?.images?.[0];
-          if (!upscaledImage?.data) throw createWorkspaceError('INVALID_GENERATED_FILE');
-
-          const cachedBlob = createBlobFromBase64(
-            upscaledImage.data,
-            upscaledImage.mime_type || 'image/png',
-          );
-          const displayUrl = createObjectUrlFromBlob(cachedBlob);
-          if (!cachedBlob || !displayUrl) throw createWorkspaceError('INVALID_GENERATED_FILE');
-
-          appendGeneratedItem({
-            type: 'image',
-            src: displayUrl,
-            originalSrc: displayUrl,
-            downloadSrc: displayUrl,
-            cachedBlob,
-            objectUrlToRevoke: displayUrl,
-            seed: upscaledImage.seed ?? currentItem.seed ?? '',
-            prompt: currentItem.prompt || '',
-            width: currentItem.width,
-            height: currentItem.height,
-            isComposited: false,
-            model: currentItem.model || generationParams.model,
-          });
-          if (response.account_snapshot) {
-            window.dispatchEvent(new CustomEvent('novelai:account-updated', {
-              detail: response.account_snapshot,
-            }));
-          }
-          notify(t('painting.workspace.notifications.officialUpscaleComplete'), 'success');
-          return true;
-        } catch (error) {
-          console.error('官方 Upscale 失败:', error);
-          notify(
-            getWorkspaceErrorMessage(t, error, 'painting.workspace.errors.officialUpscaleFailed'),
-            'error',
-            true,
-            [],
-            { error, source: 'official-upscale', messageKey: 'painting.workspace.errors.officialUpscaleFailed' },
-          );
-          return false;
-        } finally {
-          upscaleInFlightRef.current = false;
-          setIsUpscaling(false);
-        }
-
       case 'use-as-input':
         try {
           const response = await fetch(currentItem.src);
@@ -1793,8 +1813,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
       if (isExpanded) {
         const newExpandedState = {
           basic: false,
+          otherSettings: false,
           img2img: false,
           vibe: false,
+          reference: false,
           character: false
         };
         newExpandedState[panel] = true;
@@ -2173,7 +2195,8 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                   onApplyImageParameters={handleApplyImageParameters}
                   onError={reportWorkspaceFailure}
                   disableVibeAction={isV5Model}
-                  isUpscaling={isUpscaling}
+                  onImageTool={handleImageTool}
+                  imageToolsDisabled={imageToolBusy || batchStatus.active || inpaintPreviewBatch.active}
                 />
               </Paper>
 
@@ -2531,7 +2554,8 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
             }}
             sx={{
               '& .MuiDrawer-paper': {
-                height: '100vh',
+                height: '100dvh',
+                overflow: 'hidden',
                 borderTopLeftRadius: 4,
                 borderTopRightRadius: 4,
                 backgroundColor: themeColors.drawerBg,
@@ -2545,6 +2569,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
+                flexShrink: 0,
                 borderBottom: `1px solid ${theme.palette.divider}`,
                 pt: 1,
                 pl: 1.5,
@@ -2571,10 +2596,14 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
 
             {/* 抽屉内容区域 */}
             <Box
+              // 内容中的滑动和长按交给浏览器，只允许从标题栏开始拖动折叠抽屉。
+              onTouchStart={(event) => event.stopPropagation()}
               sx={{
                 p: 2,
+                flex: 1,
+                minHeight: 0,
                 overflowY: 'auto',
-                height: '100vh',
+                overscrollBehaviorY: 'contain',
                 backgroundColor: theme.palette.background.paper,
                 // 滚动条样式使用主题色
                 '&::-webkit-scrollbar': {
@@ -2898,6 +2927,18 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
             )}
           </Box>
         </Drawer>
+
+        {enhanceSource && (
+          <ImageEnhanceDialog
+            open
+            onClose={() => setEnhanceSource(null)}
+            onSubmit={(settings) => handleImageTool('enhance', settings)}
+            source={enhanceSource}
+            model={enhanceSource.params.model}
+            initialSteps={enhanceSource.params.steps}
+            disabled={imageToolBusy || isGenerating || batchStatus.active}
+          />
+        )}
 
         {/* 错误汇总对话框 */}
         <ErrorSummaryDialog

@@ -55,6 +55,19 @@ def test_generate_and_upscale_require_json_and_never_follow_redirects():
         assert kwargs["allow_redirects"] is False
 
 
+def test_tag_suggestions_use_short_timeout_without_changing_generation_timeout():
+    timeouts = []
+
+    def request_func(method, url, **kwargs):
+        timeouts.append(kwargs["timeout"])
+        return FakeResponse(200, {"images": [{"image": PNG_BASE64}], "tags": []})
+
+    client = NovelAIClient(timeout_seconds=90, request_func=request_func)
+    client.suggest_tags("test-token", {"prompt": "long hair"})
+    client.generate_image("test-token", {"parameters": {}}, "test-timeout")
+    assert timeouts == [(2.0, 3.0), (10.0, 90.0)]
+
+
 def test_redirect_and_unauthorized_are_fail_closed():
     redirect_client = NovelAIClient(
         request_func=lambda *args, **kwargs: FakeResponse(307, headers={"Location": "https://attacker.example"})
@@ -69,6 +82,22 @@ def test_redirect_and_unauthorized_are_fail_closed():
     with pytest.raises(NovelAIUpstreamError) as unauthorized:
         unauthorized_client.account_snapshot("pst-test")
     assert unauthorized.value.status_code == 401
+
+
+@pytest.mark.parametrize("payload,expected_code", [
+    ({"message": "Not enough Anlas. Required: 28, Available: 16"}, "NOVELAI_INSUFFICIENT_ANLAS"),
+    ({"message": "Account has been suspended"}, "NOVELAI_REQUEST_REJECTED"),
+    (None, "NOVELAI_REQUEST_REJECTED"),
+])
+def test_only_explicit_anlas_shortage_gets_balance_error(payload, expected_code, caplog):
+    client = NovelAIClient(request_func=lambda *args, **kwargs: FakeResponse(402, payload))
+    with pytest.raises(NovelAIUpstreamError) as rejected:
+        client.generate_image("test-token", {"parameters": {}}, "test-anlas")
+    assert rejected.value.status_code == 402
+    assert rejected.value.code == expected_code
+    assert "Available: 16" not in str(rejected.value)
+    assert "Available: 16" not in caplog.text
+    assert "test-token" not in caplog.text
 
 
 def test_augment_accepts_official_binary_archive():

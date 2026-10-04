@@ -71,7 +71,7 @@ function buildGenerationRequest(params) {
 
   if (params.imageToImage) {
     requestBody.image = extractBase64FromDataUrl(params.imageToImage.image);
-    requestBody.noise = params.imageToImage.noise || 0;
+    requestBody.noise = params.imageToImage.noise ?? 0;
     requestBody.strength = params.imageToImage.strength ?? 0.7;
     requestBody.action = true;
 

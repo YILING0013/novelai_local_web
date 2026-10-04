@@ -66,6 +66,19 @@ class CredentialChangeRejected(CredentialChangeError):
 class NovelAIAccountClient(Protocol):
     """账号变更流程所需的最小官方客户端契约。"""
 
+    def inherit_tls_profile(self, source_identity: str, target_identity: str) -> None:
+        """
+        让尚未绑定的目标凭据继承源凭据的 TLS 配置，保留目标已有绑定。
+
+        Args:
+            source_identity: 已保存 TLS 绑定的源 access key。
+            target_identity: 恢复流程已核对的目标 access key。
+
+        Returns:
+            None: 绑定保存成功后才允许继续请求官方接口。
+        """
+        ...
+
     def login(self, access_key: str) -> str:
         """
         使用派生 access key 登录。
@@ -863,6 +876,8 @@ class AccountChangeCoordinator:
             record["target_digest"],
         ):
             raise CredentialChangeError("输入的旧/新凭据与恢复记录不匹配")
+        # 官方变更可能已生效，但进程在保存新凭据绑定前退出；先恢复原账号指纹再探测登录。
+        self.client.inherit_tls_profile(source_access_key, target_access_key)
         target_token = self.client.try_login(target_access_key)
 
         if target_token:

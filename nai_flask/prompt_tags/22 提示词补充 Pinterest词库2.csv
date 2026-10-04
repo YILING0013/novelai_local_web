@@ -1,0 +1,362 @@
+portrait photography,通用,,,人像摄影
+landscape photography,通用,,,风光摄影
+street photography,通用,,,街头摄影
+fashion photography,通用,,,时尚摄影
+product photography,通用,,,产品摄影
+food photography,通用,,,美食摄影
+travel photography,通用,,,旅行摄影
+architecture photography,通用,,,建筑摄影
+nature photography,通用,,,自然摄影
+wildlife photography,通用,,,野生动物摄影
+macro photography,通用,,,微距摄影
+night photography,通用,,,夜景摄影
+astrophotography,通用,,,星空天体摄影
+black and white photography,通用,,,黑白摄影
+film photography,通用,,,胶片摄影
+instant film,通用,,,拍立得胶片
+polaroid style,通用,,,宝丽来风格
+lomography,通用,,,LOMO摄影风
+candid shot,通用,,,抓拍自然瞬间
+snapshot aesthetic,通用,,,生活快照感
+drone shot,通用,,,航拍视角
+aerial view,通用,,,鸟瞰航拍
+light painting,通用,,,光绘摄影
+chromatic aberration,通用,,,色差光晕特效
+vignette,通用,,,暗角效果
+tilt shift,通用,,,移轴微缩效果
+anamorphic lens,通用,,,变形宽银幕镜头
+low-key lighting,通用,,,低调暗调布光
+high-key lighting,通用,,,高调亮调布光
+dolly zoom,通用,,,眩晕推拉镜头
+panning shot,通用,,,摇摄
+tracking shot,通用,,,跟拍镜头
+cinematography,通用,,,电影摄影手法
+asymmetric composition,通用,,,不对称构图
+vertical composition,通用,,,竖构图
+horizontal composition,通用,,,横构图
+circular composition,通用,,,环形构图
+triangular composition,通用,,,三角构图
+vanishing point,通用,,,消失点
+atmospheric perspective,通用,,,空气透视
+curved lines,通用,,,曲线线条
+velvet,通用,,,天鹅绒
+silk fabric,通用,,,丝绸
+cashmere,通用,,,羊绒
+tulle,通用,,,薄纱
+chiffon,通用,,,雪纺
+organza,通用,,,欧根纱
+linen fabric,通用,,,亚麻布
+corduroy,通用,,,灯芯绒
+tweed,通用,,,粗花呢
+brocade,通用,,,织锦缎
+glitter fabric,通用,,,闪粉面料
+iridescent fabric,通用,,,幻彩面料
+cheongsam,通用,,,旗袍
+lolita fashion,通用,,,洛丽塔洋装
+gothic lolita,通用,,,哥特洛丽塔
+sweet lolita,通用,,,甜系洛丽塔
+punk lolita,通用,,,朋克洛丽塔
+ball gown,通用,,,舞会礼服
+wedding dress,通用,,,婚纱
+prom dress,通用,,,毕业舞会礼服
+cocktail dress,通用,,,鸡尾酒裙
+evening gown,通用,,,晚礼服
+trench coat,通用,,,风衣
+bomber jacket,通用,,,飞行员夹克
+leather jacket,通用,,,皮夹克
+denim jacket,通用,,,牛仔外套
+crop top,通用,,,短上衣
+pleated skirt,通用,,,百褶裙
+a-line skirt,通用,,,A字裙
+cargo pants,通用,,,工装裤
+stockings,通用,,,长筒袜
+knee socks,通用,,,及膝袜
+mary janes,通用,,,玛丽珍鞋
+high heels,通用,,,高跟鞋
+platform shoes,通用,,,厚底鞋
+combat boots,通用,,,军靴
+top hat,通用,,,礼帽
+sun hat,通用,,,遮阳帽
+pearl necklace,通用,,,珍珠项链
+school uniform,通用,,,校服
+sailor uniform,通用,,,水手服
+maid outfit,通用,,,女仆装
+nurse outfit,通用,,,护士装
+suit and tie,通用,,,西装领带
+swimwear,通用,,,泳装
+skater style,通用,,,滑板少年风
+preppy style,通用,,,学院预科风
+old money style,通用,,,老钱静奢风
+quiet luxury,通用,,,低调奢华风
+y2k fashion,通用,,,千禧复古时尚
+glossy finish,通用,,,亮面光泽
+matte finish,通用,,,哑光质感
+metallic sheen,通用,,,金属光泽
+pearlescent,通用,,,珠光
+holographic,通用,,,全息幻彩
+fur texture,通用,,,毛绒质感
+feather texture,通用,,,羽毛质感
+scales texture,通用,,,鳞片质感
+wood grain,通用,,,木纹
+marble texture,通用,,,大理石纹
+stone texture,通用,,,石材纹理
+concrete texture,通用,,,水泥肌理
+brick texture,通用,,,砖墙纹理
+tile pattern,通用,,,瓷砖花纹
+woven texture,通用,,,编织纹理
+knitted texture,通用,,,针织纹理
+crocheted,通用,,,钩编质感
+quilted texture,通用,,,绗缝纹理
+pleated fabric,通用,,,褶裥面料
+smoke texture,通用,,,烟雾质感
+water texture,通用,,,水波质感
+glassy texture,通用,,,玻璃质感
+frosted glass,通用,,,磨砂玻璃
+crystal texture,通用,,,水晶质感
+molten metal,通用,,,熔融金属
+rust texture,通用,,,锈蚀质感
+aged texture,通用,,,做旧肌理
+weathered look,通用,,,风化做旧感
+stucco texture,通用,,,灰泥墙面
+plaster texture,通用,,,石膏肌理
+sand texture,通用,,,沙粒质感
+snow texture,通用,,,雪面质感
+ice texture,通用,,,冰面质感
+sunny day,通用,,,晴天
+cloudy sky,通用,,,多云天空
+overcast day,通用,,,阴天
+rainy day,通用,,,雨天
+heavy rain,通用,,,大雨
+light drizzle,通用,,,细雨蒙蒙
+thunderstorm,通用,,,雷雨
+snowfall,通用,,,飘雪
+hail,通用,,,冰雹
+foggy morning,通用,,,晨雾
+misty forest,通用,,,雾林
+stormy sky,通用,,,风暴云天空
+clear sky,通用,,,晴空
+sunset sky,通用,,,日落天空
+night sky,通用,,,夜空
+full moon,通用,,,满月
+crescent moon,通用,,,新月
+meteor shower,通用,,,流星雨
+rainy window,通用,,,雨打窗棂
+frosted window,通用,,,结霜窗面
+warm sunlight,通用,,,暖阳
+harsh midday sun,通用,,,正午烈日
+autumn leaves,通用,,,秋叶
+cherry blossom,通用,,,樱花
+plum blossom,通用,,,梅花
+falling leaves,通用,,,落叶
+petals falling,通用,,,花瓣飘落
+dried flowers,通用,,,干花
+wildflowers,通用,,,野花
+lavender field,通用,,,薰衣草田
+sunflower field,通用,,,向日葵田
+wheat field,通用,,,麦田
+rice terrace,通用,,,梯田
+tea plantation,通用,,,茶园
+vineyard,通用,,,葡萄园
+bamboo forest,通用,,,竹林
+red maple forest,通用,,,红枫林
+mossy stones,通用,,,苔藓石头
+ocean waves,通用,,,海浪
+sea foam,通用,,,海浪泡沫
+riverside,通用,,,河畔
+calm lake,通用,,,静谧湖泊
+mountain lake,通用,,,山间湖泊
+desert dunes,通用,,,沙漠沙丘
+rocky mountains,通用,,,岩石山脉
+snowy peaks,通用,,,雪峰
+tropical island,通用,,,热带海岛
+mangrove,通用,,,红树林
+prairie,通用,,,大草原
+marshland,通用,,,湿地沼泽
+savanna,通用,,,热带稀树草原
+farmland,通用,,,农田
+orchard,通用,,,果园
+countryside,通用,,,田园乡村
+coastal town,通用,,,海边小镇
+old town street,通用,,,老城街道
+alleyway,通用,,,小巷
+rooftop view,通用,,,屋顶视角
+balcony view,通用,,,阳台视角
+city skyline,通用,,,城市天际线
+night city,通用,,,城市夜景
+neon street,通用,,,霓虹街道
+railway crossing,通用,,,铁路道口
+train platform,通用,,,站台
+rose garden,通用,,,玫瑰园
+japanese garden,通用,,,日式庭院
+zen garden,通用,,,枯山水庭院
+secret garden,通用,,,秘密花园
+flower market,通用,,,花市
+night market,通用,,,夜市
+street cafe,通用,,,街边咖啡馆
+library hall,通用,,,图书馆大厅
+antique shop,通用,,,古董店
+art gallery,通用,,,美术馆
+museum hall,通用,,,博物馆大厅
+art studio,通用,,,画室
+atelier,通用,,,艺术家工作室
+craftsman workshop,通用,,,手工作坊
+warehouse loft,通用,,,仓库改造loft
+vintage room,通用,,,复古房间
+attic room,通用,,,阁楼房间
+sunroom,通用,,,阳光房
+farmhouse kitchen,通用,,,田园厨房
+traditional kitchen,通用,,,传统厨房
+paisley pattern,通用,,,佩斯利纹
+damask pattern,通用,,,大马士革纹
+tartan pattern,通用,,,苏格兰格纹
+plaid pattern,通用,,,格子纹
+polka dots,通用,,,波点
+striped pattern,通用,,,条纹
+geometric pattern,通用,,,几何纹样
+arabesque pattern,通用,,,阿拉伯藤蔓纹
+greek key pattern,通用,,,希腊回纹
+chevron pattern,通用,,,人字纹
+argyle pattern,通用,,,菱格纹
+ikat pattern,通用,,,伊卡特染织纹
+batik pattern,通用,,,蜡染纹样
+patchwork,通用,,,拼布
+macrame,通用,,,绳编结艺
+knitting art,通用,,,编织艺术
+crochet art,通用,,,钩织艺术
+embroidery hoop,通用,,,绣绷刺绣
+cross-stitch,通用,,,十字绣
+pottery wheel,通用,,,陶轮拉坯
+ceramics,通用,,,陶瓷器
+handblown glass,通用,,,手工吹制玻璃
+stained glass window,通用,,,彩绘玻璃窗
+woodcarving,通用,,,木雕
+linocut print,通用,,,麻胶版画
+screen print,通用,,,丝网印刷
+risograph,通用,,,孔版印刷风
+letterpress,通用,,,活版印刷
+zentangle,通用,,,禅绕画
+mandala art,通用,,,曼陀罗
+dotwork art,通用,,,点绘艺术
+splatter art,通用,,,泼溅画
+drip painting,通用,,,滴彩画
+action painting,通用,,,行动绘画
+abstract art,通用,,,抽象艺术
+geometric abstraction,通用,,,几何抽象
+color field painting,通用,,,色域绘画
+op art,通用,,,欧普艺术
+kinetic art,通用,,,动态艺术
+land art,通用,,,大地艺术
+found object art,通用,,,现成物艺术
+assemblage,通用,,,综合装置拼贴
+shadow box,通用,,,立体相框摆件
+papercraft,通用,,,纸艺
+resin art,通用,,,树脂艺术
+nail art,通用,,,美甲艺术
+henna art,通用,,,海娜手绘
+face painting,通用,,,面部彩绘
+makeup art,通用,,,妆容艺术
+body paint,通用,,,人体彩绘
+glitch art,通用,,,故障艺术
+vhs aesthetic,通用,,,VHS录像带风
+retro tv,通用,,,复古电视画面
+scanlines effect,通用,,,扫描线效果
+halftone effect,通用,,,半色调网点
+film scratches,通用,,,胶片划痕
+dusty film,通用,,,胶片落尘感
+light leak,通用,,,胶片漏光
+grainy photo,通用,,,颗粒照片
+soft glow effect,通用,,,柔光特效
+dreamy bokeh,通用,,,梦幻散景
+bloom light,通用,,,泛光柔辉
+neon glow,通用,,,霓虹辉光
+aurora glow,通用,,,极光辉光
+prism light,通用,,,棱镜折射光
+light streaks,通用,,,光线拖影
+star filter,通用,,,星芒滤镜
+diamond dust effect,通用,,,钻石尘特效
+floating particles,通用,,,漂浮粒子
+dust motes,通用,,,尘埃光束微粒
+lens dirt,通用,,,镜头尘点
+prosthetic effects,通用,,,特效化妆
+practical effects,通用,,,实体特效
+cel animation,通用,,,赛璐珞动画
+stop motion,通用,,,定格动画
+clay animation,通用,,,黏土动画
+puppet animation,通用,,,木偶动画
+comic panel,通用,,,漫画分格
+webtoon style,通用,,,条漫风
+manhwa style,通用,,,韩漫风
+manhua style,通用,,,国漫风
+doujinshi cover,通用,,,同人志封面
+novel cover art,通用,,,小说封面插画
+game key art,通用,,,游戏主视觉
+game ui concept,通用,,,游戏界面设计
+sprite sheet,通用,,,精灵图
+background art,通用,,,背景美术
+character sprite,通用,,,角色立绘
+loading screen art,通用,,,加载画面插画
+menu screen art,通用,,,菜单画面
+badge design,通用,,,徽章设计
+logo design,通用,,,标志设计
+icon set design,通用,,,图标组设计
+pattern design,通用,,,纹样设计
+sci-fi concept,通用,,,科幻概念设计
+fantasy concept,通用,,,奇幻概念设计
+mecha design,通用,,,机甲设计
+creature concept,通用,,,生物概念设计
+hygge,通用,,,北欧温馨风
+cozy winter,通用,,,暖冬氛围
+warm autumn,通用,,,暖秋氛围
+spring bloom,通用,,,春意盎然
+summer breeze,通用,,,夏日微风感
+fresh morning,通用,,,清爽清晨
+rainy city night,通用,,,雨夜城市
+neon noir,通用,,,霓虹黑色电影感
+noir aesthetic,通用,,,黑白电影美学
+film noir style,通用,,,黑色电影风格
+classic hollywood,通用,,,经典好莱坞风
+grunge texture,通用,,,垃圾摇滚做旧
+raw aesthetic,通用,,,原生粗粝感
+everyday aesthetic,通用,,,日常氛围美学
+authentic vibe,通用,,,真实生活感
+coquette aesthetic,通用,,,娇俏蝴蝶结风
+angelcore,通用,,,天使风
+dollcore,通用,,,娃娃风
+whimsigoth,通用,,,俏皮哥特风
+cowboycore,通用,,,西部牛仔风
+westerncore,通用,,,西部美学
+desertcore,通用,,,沙漠复古风
+medievalcore,通用,,,中世纪美学
+fantasycore,通用,,,奇幻风
+piratecore,通用,,,海盗风
+nautical aesthetic,通用,,,航海水手风
+summercore,通用,,,夏日风
+cottage garden,通用,,,田园花园
+english garden,通用,,,英式花园
+french country style,通用,,,法式乡村风
+italian villa,通用,,,意式别墅风
+greek island style,通用,,,希腊海岛风
+moroccan style,通用,,,摩洛哥风
+bali style,通用,,,巴厘岛风
+zen interior,通用,,,禅意家居
+warm minimalism,通用,,,温暖极简
+organic modern,通用,,,有机现代风
+lived-in look,通用,,,生活气息感
+handmade charm,通用,,,手作温度感
+secondhand style,通用,,,二手旧物风
+thrifted aesthetic,通用,,,淘货复古风
+grandmillennial,通用,,,祖辈洋气混搭风
+statement wall,通用,,,主题背景墙
+gallery wall,通用,,,挂画墙
+shelf styling,通用,,,摆架陈列
+tray styling,通用,,,托盘陈列
+table setting,通用,,,餐桌布置
+tablescape,通用,,,桌面造景
+party decor,通用,,,派对布置
+seasonal decor,通用,,,应季装饰
+holiday decor,通用,,,节日装饰
+christmas aesthetic,通用,,,圣诞氛围
+halloween aesthetic,通用,,,万圣节氛围
+valentine aesthetic,通用,,,情人节氛围
+spooky season,通用,,,惊悚季节氛围
+cozy autumn decor,通用,,,暖秋家居装饰

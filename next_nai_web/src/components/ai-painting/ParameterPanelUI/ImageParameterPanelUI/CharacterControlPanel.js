@@ -22,6 +22,7 @@ import {
   ToggleButtonGroup,
   Typography,
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import {
   Add as AddIcon,
   ArrowDownward as ArrowDownwardIcon,
@@ -61,10 +62,10 @@ const characterColors = [
 ];
 
 const compactTabSx = {
-  minHeight: 40,
-  px: 1,
-  py: 1,
-  fontSize: '0.875rem',
+  minHeight: 32,
+  px: 0.5,
+  py: 0.5,
+  fontSize: '0.75rem',
   minWidth: 0,
   textTransform: 'none',
 };
@@ -292,7 +293,7 @@ const CharacterControlTab = ({
           justifyContent: 'space-between',
           alignItems: 'center',
           gap: 0.75,
-          bgcolor: 'transparent',
+          bgcolor: (theme) => alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.16 : 0.04),
           borderBottom: expanded ? '1px solid' : 0,
           borderColor: 'divider',
         }}
@@ -414,14 +415,15 @@ const CharacterControlTab = ({
       </Box>
 
       {expanded && (
-        <Box sx={{ p: 2, opacity: isTemporarilyDisabled ? 0.74 : 1, transition: 'opacity 0.2s ease' }}>
+        <Box sx={{ p: 1.25, opacity: isTemporarilyDisabled ? 0.74 : 1, transition: 'opacity 0.2s ease' }}>
           <Tabs
             value={activeTab}
             onChange={(_, newValue) => setActiveTab(newValue)}
-            variant="fullWidth"
+            variant="scrollable"
+            scrollButtons="auto"
             sx={{
-              mb: 1.5,
-              minHeight: 40,
+              mb: 1,
+              minHeight: 32,
               '& .MuiTab-root': {
                 ...compactTabSx,
                 color: 'text.secondary',

@@ -5,16 +5,22 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import io
 import json
 import logging
+import os
+import ssl
+import threading
 import time
 import zipfile
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
 import requests
+from requests.adapters import HTTPAdapter
 from PIL import Image, UnidentifiedImageError
 
 from .image_validation import (
@@ -24,6 +30,7 @@ from .image_validation import (
 )
 
 from . import tools
+from .novelai_tls_profiles import create_tls_context, profile_ids, validate_tls_profile_id
 from .account_change import (
     CredentialChangeRejected,
     CredentialChangeUncertain,
@@ -108,6 +115,71 @@ def derive_access_key(email: str, password: str) -> str:
     return get_access_key(email, password)
 
 
+class _NovelAITLSAdapter(HTTPAdapter):
+    """让直连和代理连接池使用当前身份的独立 TLS 上下文。"""
+
+    def __init__(self, profile_id: str) -> None:
+        self._tls_context = create_tls_context(profile_id)
+        super().__init__(pool_connections=1, pool_maxsize=1, max_retries=0, pool_block=True)
+
+    def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
+        """建立带身份 TLS 上下文的连接池。
+
+        Args:
+            connections: 缓存的池数量。
+            maxsize: 每个池的连接上限。
+            block: 池满时是否等待。
+            **pool_kwargs: 其余连接池参数。
+
+        Returns:
+            None: 连接池保存到当前适配器。
+        """
+        pool_kwargs["ssl_context"] = self._tls_context
+        return super().init_poolmanager(connections, maxsize, block=block, **pool_kwargs)
+
+    def proxy_manager_for(self, proxy, **proxy_kwargs):
+        """把同一指纹应用到代理隧道中的官方 HTTPS 连接。
+
+        Args:
+            proxy: Requests 解析的代理地址。
+            **proxy_kwargs: 其余代理池参数。
+
+        Returns:
+            urllib3.ProxyManager: 当前请求使用的代理池。
+        """
+        proxy_kwargs["ssl_context"] = self._tls_context
+        return super().proxy_manager_for(proxy, **proxy_kwargs)
+
+    def build_connection_pool_key_attributes(self, request, verify, cert=None):
+        """保留证书选项，防止 Requests 默认上下文覆盖身份指纹。
+
+        Args:
+            request: 已准备的 HTTP 请求。
+            verify: 证书校验参数。
+            cert: 客户端证书参数。
+
+        Returns:
+            tuple: 主机与使用身份上下文的连接池参数。
+        """
+        host, kwargs = super().build_connection_pool_key_attributes(request, verify, cert)
+        kwargs["ssl_context"] = self._tls_context
+        return host, kwargs
+
+    def cert_verify(self, conn, url, verify, cert):
+        """显式加载默认 CA，兼容假定默认上下文已装载 CA 的 Requests 版本。
+
+        Args:
+            conn: 当前 HTTPS 连接池。
+            url: 官方请求 URL。
+            verify: 证书校验参数。
+            cert: 客户端证书参数。
+
+        Returns:
+            None: 由 Requests 为连接池设置证书校验。
+        """
+        return super().cert_verify(conn, url, requests.certs.where() if verify is True else verify, cert)
+
+
 class NovelAIClient:
     """固定连接 NovelAI 官方图像主机，不接受运行时上游地址。"""
 
@@ -115,6 +187,8 @@ class NovelAIClient:
         self,
         timeout_seconds: float = 120.0,
         request_func: Callable[..., Any] | None = None,
+        *,
+        tls_bindings_path: str | os.PathLike[str] | None = None,
     ) -> None:
         """
         初始化官方客户端。
@@ -122,10 +196,125 @@ class NovelAIClient:
         Args:
             timeout_seconds: 单次上游请求的读取超时秒数。
             request_func: 测试时可注入的 requests 兼容调用函数。
+            tls_bindings_path: 本地指纹绑定文件；应用必须提供，省略时仅供隔离测试使用内存。
         """
 
         self.timeout_seconds = float(timeout_seconds)
-        self._request_func = request_func or requests.request
+        self._request_func = request_func
+        # 文件只保存凭据摘要和配置编号；原始 Token、access key 和密码不落盘。
+        self._tls_bindings: dict[bytes, str] = {}
+        self._tls_bindings_path = Path(tls_bindings_path).expanduser().resolve() if tls_bindings_path is not None else None
+        self._tls_lock = threading.Lock()
+        if self._tls_bindings_path is not None:
+            try:
+                content = self._tls_bindings_path.read_text(encoding="utf-8")
+            except FileNotFoundError:
+                content = None
+            except (OSError, UnicodeError) as exc:
+                raise RuntimeError("无法读取本地 TLS 绑定文件，请检查数据目录权限。") from exc
+            if content is not None:
+                try:
+                    saved = json.loads(content)
+                    if (
+                        not isinstance(saved, dict)
+                        or saved.get("schema_version") != 1
+                        or not isinstance(saved.get("bindings"), dict)
+                    ):
+                        raise ValueError("TLS 绑定文件结构或版本无效")
+                    for digest, profile in saved["bindings"].items():
+                        if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+                            raise ValueError("TLS 绑定摘要无效")
+                        self._tls_bindings[bytes.fromhex(digest)] = validate_tls_profile_id(profile)
+                except (ValueError, TypeError) as exc:
+                    # 损坏时禁止重新分配，否则同一个账号会在用户不知情时换指纹。
+                    raise RuntimeError("本地 TLS 绑定文件损坏或版本不受支持，请从备份恢复；原文件未修改。") from exc
+        self._used_tls_profiles = set(self._tls_bindings.values())
+
+    def _save_tls_bindings(self, bindings: dict[bytes, str]) -> None:
+        """在调用方持锁时先原子保存，再更新内存，写入失败不接受新绑定。"""
+        if bindings == self._tls_bindings:
+            return
+        if self._tls_bindings_path is not None:
+            path = self._tls_bindings_path
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                # Waitress 为单进程；同一把锁串行写入同目录临时文件后替换正式文件。
+                temp_path = path.with_name(path.name + ".tmp")
+                with temp_path.open("w", encoding="utf-8") as handle:
+                    json.dump({
+                        "schema_version": 1,
+                        "bindings": {digest.hex(): profile for digest, profile in bindings.items()},
+                    }, handle, indent=2, sort_keys=True)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(temp_path, path)
+            except OSError as exc:
+                raise NovelAIUpstreamError(
+                    "Unable to save local TLS bindings. Check data directory permissions and free disk space.",
+                    503,
+                    "LOCAL_TLS_BINDINGS_WRITE_FAILED",
+                ) from exc
+        self._tls_bindings = bindings
+        self._used_tls_profiles = set(bindings.values())
+
+    def _tls_profile(self, credential: str) -> str:
+        """按凭据摘要固定分配指纹；碰撞时选择空位，不让不同身份共用配置。"""
+        digest = hashlib.sha256(credential.encode("utf-8")).digest()
+        with self._tls_lock:
+            if digest in self._tls_bindings:
+                return self._tls_bindings[digest]
+            profiles = profile_ids()
+            start = int.from_bytes(digest[:4], "big") % len(profiles)
+            for offset in range(len(profiles)):
+                profile = profiles[(start + offset) % len(profiles)]
+                if profile not in self._used_tls_profiles:
+                    self._save_tls_bindings({**self._tls_bindings, digest: profile})
+                    return profile
+        raise NovelAIUpstreamError(
+            "The local TLS profile capacity is exhausted. Existing identities remain available; new identities cannot be assigned.",
+            503,
+            "NOVELAI_TLS_PROFILES_EXHAUSTED",
+        )
+
+    def inherit_tls_profile(self, source_identity: str, target_identity: str) -> None:
+        """
+        为登录、凭据变更及中断恢复保存同一账号的身份关联，保留目标的已有绑定。
+
+        Args:
+            source_identity: 已知源账号的 Token 或 access key。
+            target_identity: 同一账号新增的 Token 或 access key。
+
+        Returns:
+            None: 绑定持久化成功后返回。
+        """
+        profile = self._tls_profile(source_identity)
+        digest = hashlib.sha256(target_identity.encode("utf-8")).digest()
+        with self._tls_lock:
+            if digest not in self._tls_bindings:
+                self._save_tls_bindings({**self._tls_bindings, digest: profile})
+
+    def _send_request(self, method: str, url: str, *, identity: str, **kwargs: Any) -> Any:
+        """普通请求与账户变更共用指纹入口，每次请求结束即关闭自己的连接池。"""
+        profile = self._tls_profile(identity)
+        if self._request_func is not None:
+            return self._request_func(method, url, **kwargs)
+        try:
+            adapter = _NovelAITLSAdapter(profile)
+        except (ValueError, ssl.SSLError) as exc:
+            raise NovelAIUpstreamError(
+                "The local OpenSSL does not support the assigned TLS profile.",
+                503,
+                "NOVELAI_TLS_UNSUPPORTED",
+            ) from exc
+        with requests.Session() as session:
+            # 保留用户现有系统/环境代理，但禁止 netrc 把 Bearer 替换成其它认证。
+            session.trust_env = False
+            session.mount("https://", adapter)
+            return session.request(
+                method, url, proxies=requests.utils.get_environ_proxies(url),
+                verify=os.environ.get("REQUESTS_CA_BUNDLE") or os.environ.get("CURL_CA_BUNDLE") or True,
+                **kwargs,
+            )
 
     def _request(
         self,
@@ -133,6 +322,7 @@ class NovelAIClient:
         path: str,
         *,
         token: str | None = None,
+        tls_identity: str | None = None,
         correlation_id: str | None = None,
         accepted_error_statuses: frozenset[int] = frozenset(),
         **kwargs: Any,
@@ -179,11 +369,12 @@ class NovelAIClient:
             safe_correlation_id,
         )
         try:
-            response = self._request_func(
+            response = self._send_request(
                 method,
                 url,
+                identity=token or tls_identity,
                 headers=headers,
-                timeout=(10.0, self.timeout_seconds),
+                timeout=kwargs.pop("timeout", (10.0, self.timeout_seconds)),
                 allow_redirects=False,
                 **kwargs,
             )
@@ -221,6 +412,14 @@ class NovelAIClient:
             ) from exc
 
         status_code = int(response.status_code)
+        insufficient_anlas = False
+        if status_code == 402:
+            try:
+                error_payload = response.json()
+            except ValueError:
+                error_payload = None
+            message = error_payload.get("message") if isinstance(error_payload, dict) else None
+            insufficient_anlas = isinstance(message, str) and message.startswith("Not enough Anlas")
         log_level = logging.ERROR if status_code >= 500 else (
             logging.WARNING if status_code >= 300 else logging.INFO
         )
@@ -232,6 +431,8 @@ class NovelAIClient:
             error_code = "NOVELAI_UNAUTHORIZED"
         elif status_code == 429:
             error_code = "NOVELAI_RATE_LIMITED"
+        elif insufficient_anlas:
+            error_code = "NOVELAI_INSUFFICIENT_ANLAS"
         else:
             error_code = "NOVELAI_REQUEST_REJECTED"
         logger.log(
@@ -272,6 +473,12 @@ class NovelAIClient:
                 "NOVELAI_RATE_LIMITED",
             )
         if status_code >= 400:
+            if insufficient_anlas:
+                raise NovelAIUpstreamError(
+                    "The NovelAI account has insufficient Anlas for this request.",
+                    402,
+                    "NOVELAI_INSUFFICIENT_ANLAS",
+                )
             public_status = status_code if status_code in {400, 402, 403, 404, 409, 422} else 502
             raise NovelAIUpstreamError(
                 "NovelAI rejected the request.",
@@ -493,6 +700,7 @@ class NovelAIClient:
         response = self._request(
             "POST",
             "/user/login",
+            tls_identity=access_key,
             json={"key": access_key},
             headers={"Content-Type": "application/json", "Accept": "application/json"},
             accepted_error_statuses=frozenset({400, 403}),
@@ -544,7 +752,18 @@ class NovelAIClient:
                 502,
                 "NOVELAI_INVALID_LOGIN_RESPONSE",
             )
-        return token.strip()
+        token = token.strip()
+        profile = self._tls_profile(access_key)
+        with self._tls_lock:
+            # 已经通过 Token 登录的身份保留原指纹，后续密码登录跟随这一绑定。
+            token_digest = hashlib.sha256(token.encode("utf-8")).digest()
+            profile = self._tls_bindings.get(token_digest, profile)
+            self._save_tls_bindings({
+                **self._tls_bindings,
+                token_digest: profile,
+                hashlib.sha256(access_key.encode("utf-8")).digest(): profile,
+            })
+        return token
 
     def try_login(self, access_key: str) -> str | None:
         """
@@ -710,9 +929,10 @@ class NovelAIClient:
             safe_correlation_id,
         )
         try:
-            response = self._request_func(
+            response = self._send_request(
                 method,
                 url,
+                identity=token,
                 headers=headers,
                 json=payload,
                 timeout=(10.0, self.timeout_seconds),
@@ -800,21 +1020,34 @@ class NovelAIClient:
         }
         if new_email:
             payload["newEmail"] = new_email
-        response = self._mutation_request(
-            "POST",
-            "/user/change-access-key",
-            token=token,
-            payload=payload,
-        )
         try:
-            response_payload = response.json()
-        except (ValueError, json.JSONDecodeError) as exc:
-            raise CredentialChangeUncertain(
-                "官方账户变更成功响应无法确认"
-            ) from exc
-        new_token = response_payload.get("accessToken") if isinstance(response_payload, dict) else None
-        if not isinstance(new_token, str) or not new_token:
-            raise CredentialChangeUncertain("官方账户变更成功响应无法确认")
+            response = self._mutation_request(
+                "POST",
+                "/user/change-access-key",
+                token=token,
+                payload=payload,
+            )
+        except CredentialChangeUncertain:
+            # 官方可能已接受变更，恢复登录沿用源身份；不覆盖其他已知身份的绑定。
+            try:
+                self.inherit_tls_profile(token, new_access_key)
+            except NovelAIUpstreamError as exc:
+                raise CredentialChangeUncertain("官方变更结果不确定，且本地 TLS 绑定保存失败；请修复存储后恢复账户变更") from exc
+            raise
+        try:
+            # 明确拒绝的变更不会走到这里，避免改写目标邮箱已登录账号的指纹。
+            self.inherit_tls_profile(token, new_access_key)
+            try:
+                response_payload = response.json()
+            except (ValueError, json.JSONDecodeError) as exc:
+                raise CredentialChangeUncertain("官方账户变更成功响应无法确认") from exc
+            new_token = response_payload.get("accessToken") if isinstance(response_payload, dict) else None
+            if not isinstance(new_token, str) or not new_token:
+                raise CredentialChangeUncertain("官方账户变更成功响应无法确认")
+            self.inherit_tls_profile(token, new_token)
+        except NovelAIUpstreamError as exc:
+            # 远端操作已成功，保存失败属于待恢复状态，绝不能诱导重新提交改密/改邮。
+            raise CredentialChangeUncertain("官方凭据已变更，但本地 TLS 绑定保存失败；请修复存储后恢复账户变更") from exc
         return new_token
 
     def put_keystore(self, token: str, keystore: str) -> None:
@@ -933,6 +1166,8 @@ class NovelAIClient:
             "/ai/generate-image/suggest-tags",
             token=token,
             params=params,
+            # 联想失败可使用本地词库，不让多个过期输入长时间占满本地服务线程。
+            timeout=(2.0, 3.0),
         )
         try:
             return response.json()

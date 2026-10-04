@@ -59,6 +59,8 @@ def normalize_image_parameters(values):
         "noiseSchedule": ("noiseSchedule", "noise_schedule"),
         "promptGuidanceRescale": ("promptGuidanceRescale", "cfg_rescale"),
         "smea": ("smea", "sm"), "dyn": ("dyn", "sm_dyn"),
+        "strength": ("strength",), "noise": ("noise",),
+        "upscaled_enhance": ("upscaled_enhance",), "image_tool": ("image_tool",),
         "characterTabs": ("characterTabs",), "use_coords": ("use_coords",),
         "v4_prompt": ("v4_prompt",), "v4_negative_prompt": ("v4_negative_prompt",),
         "ucPresetId": ("ucPresetId",), "qualityPresetId": ("qualityPresetId",),
@@ -552,6 +554,8 @@ class LocalImageLibrary:
         inspected = _inspect_image(io.BytesIO(image_bytes))
         parameters = normalize_image_parameters(metadata)
         parameters.update(inspected["parameters"])
+        # 放大后的官方图片可能沿用原图元数据，应用参数应使用成图的真实尺寸。
+        parameters.update(width=inspected["width"], height=inspected["height"])
         # 官方原图已有生成参数时保留完整字节；工具返回的无参数图片补写可导入的 PNG 文本。
         embedded_keys = set(inspected["parameters"]) - {"width", "height"}
         if metadata and not embedded_keys:

@@ -151,7 +151,7 @@ export const sanitizeNovelAIV5GenerationParams = (params = {}) => {
   NOVELAI_V5_UNSUPPORTED_PARAM_KEYS.forEach((key) => delete sanitizedParams[key]);
   const steps = Number(params.steps);
   if (Number.isFinite(steps)) {
-    const maxSteps = params.use_upscale_credits
+    const maxSteps = params.image_tool === 'enhance' || params.use_upscale_credits
       ? NOVELAI_V5_LARGE_MAX_STEPS
       : NOVELAI_V5_STANDARD_MAX_STEPS;
     sanitizedParams.steps = Math.min(steps, maxSteps);

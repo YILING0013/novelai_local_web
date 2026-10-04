@@ -30,7 +30,8 @@ import {
   ChevronLeft as ChevronLeftIcon,
   ChevronRight as ChevronRightIcon,
   Refresh as RefreshIcon,
-  PhotoSizeSelectLarge as UpscaleIcon,
+  AutoAwesome as AutoAwesomeIcon,
+  OpenInFull as OpenInFullIcon,
 } from '@mui/icons-material';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import Image from 'next/image';
@@ -412,7 +413,9 @@ const ItemDisplay = ({
   onApplyImageParameters,
   onError = null,
   disableVibeAction = false,
-  isUpscaling = false,
+  onImageTool = null,
+  imageToolsDisabled = false,
+  enhanceDisabled = false,
 }) => {
   const { t } = useI18n();
   const theme = useTheme();
@@ -432,18 +435,35 @@ const ItemDisplay = ({
   const [hasMoreReferences, setHasMoreReferences] = useState(false);
   const referenceRequest = useRef(0);
 
+
+  const sourcePixels = Number(item?.width) * Number(item?.height);
+  const upscaleCost = sourcePixels > 0
+    ? [1048576, 1747627, 2446678, 3145728].findIndex((limit) => sourcePixels <= limit) + 1
+    : 0;
+  const upscaleLabel = t(upscaleCost ? 'painting.workspace.imageTools.upscaleCost' : 'painting.workspace.imageTools.upscale', { cost: upscaleCost });
+  const toolbarPaperSx = {
+    pointerEvents: 'auto',
+    p: 0.5,
+    backgroundColor: theme.palette.background.paper + '99',
+    backdropFilter: 'blur(5px)',
+    border: `1px solid ${theme.palette.divider}`,
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 0.5,
+    borderRadius: 2,
+  };
+  const toolbarButtonSx = {
+    color: theme.palette.text.primary,
+    '&:hover': { backgroundColor: theme.palette.action.hover },
+    '&.Mui-disabled': { color: theme.palette.action.disabled, pointerEvents: 'auto' },
+  };
+
   const toolbarButtons = useMemo(() => [
     { icon: <AddPhotoIcon />, tooltip: t('painting.workspace.gallery.useForImg2Img'), action: 'use-as-input' },
     { icon: <BrushIcon />, tooltip: t('painting.workspace.gallery.sendToInpaint'), action: 'use-as-inpaint' },
     { icon: <ImportExportIcon />, tooltip: disableVibeAction ? t('painting.workspace.errors.v5VibeUnsupported') : t('painting.workspace.gallery.useForVibe'), action: 'use-as-vibe', disabled: disableVibeAction },
-    {
-      icon: isUpscaling ? <CircularProgress size={18} color="inherit" /> : <UpscaleIcon />,
-      tooltip: t(isUpscaling ? 'painting.workspace.gallery.officialUpscaling' : 'painting.workspace.gallery.officialUpscale'),
-      action: 'official-upscale',
-      disabled: isUpscaling || isGenerating,
-    },
     { icon: <SaveIcon />, tooltip: t('painting.workspace.gallery.saveProject'), action: 'save', disabled: false },
-  ], [disableVibeAction, isGenerating, isUpscaling, t]);
+  ], [disableVibeAction, t]);
 
   const showNotification = useCallback((message, severity = 'success') => {
     setNotification({ open: true, message, severity });
@@ -606,7 +626,7 @@ const ItemDisplay = ({
   };
 
   const handleKeyDown = useCallback((event) => {
-    if (!item) return;
+    if (!item || event.defaultPrevented || event.target?.closest?.('[role="dialog"]')) return;
     const activeElement = document.activeElement;
     // 检查焦点是否在输入框内，如果是，则不响应导航键
     const isInputFocused = activeElement && (activeElement.tagName.toLowerCase() === 'input' || activeElement.tagName.toLowerCase() === 'textarea' || activeElement.isContentEditable);
@@ -721,23 +741,37 @@ const ItemDisplay = ({
                   </ButtonGroup>
                 </Fade>
 
-                <Fade in={hoverToolbar} timeout={200}>
-                  <Paper
-                    elevation={0}
-                    sx={{
-                      position: 'absolute',
-                      top: isGenerating ? 80 : 16,
-                      right: 16,
-                      zIndex: 100,
-                      p: 0.5,
-                      backgroundColor: theme.palette.background.paper + '99',
-                      backdropFilter: 'blur(5px)',
-                      border: `1px solid ${theme.palette.divider}40`,
-                      display: 'flex',
-                      gap: 0.5,
-                      borderRadius: 2
-                    }}
-                  >
+                <Box sx={{
+                  position: 'absolute', top: isGenerating ? 80 : 16, left: 16, right: 16,
+                  zIndex: 100, display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start',
+                  justifyContent: 'space-between', gap: 1, pointerEvents: 'none',
+                }}>
+                  {onImageTool && (
+                    <Paper elevation={0} sx={toolbarPaperSx}>
+                      <Tooltip title={!upscaleCost
+                        ? t(sourcePixels > 0 ? 'painting.workspace.imageTools.upscaleTooLarge' : 'painting.workspace.imageTools.sourceDimensionsUnavailable')
+                        : upscaleLabel} arrow placement="bottom">
+                        <span>
+                          <IconButton aria-label={upscaleLabel} size="small" sx={toolbarButtonSx}
+                            disabled={isGenerating || imageToolsDisabled || !upscaleCost}
+                            onClick={() => onImageTool('upscale')}>
+                            <OpenInFullIcon />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                      <Tooltip title={t('painting.workspace.imageTools.enhance')} arrow placement="bottom">
+                        <span>
+                          <IconButton aria-label={t('painting.workspace.imageTools.enhance')} size="small" sx={toolbarButtonSx}
+                            disabled={isGenerating || imageToolsDisabled || enhanceDisabled}
+                            onClick={() => onImageTool('enhance')}>
+                            <AutoAwesomeIcon />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    </Paper>
+                  )}
+                  <Fade in={hoverToolbar} timeout={200}>
+                    <Paper elevation={0} sx={{ ...toolbarPaperSx, ml: 'auto' }}>
                     {toolbarButtons.map((button) => (
                       <Tooltip key={button.action} title={button.tooltip} arrow placement="bottom">
                         <span>
@@ -746,19 +780,16 @@ const ItemDisplay = ({
                             size="small"
                             onClick={() => handleButtonClick(button.action)}
                             disabled={button.disabled}
-                            sx={{
-                              color: theme.palette.text.primary,
-                              '&:hover': { backgroundColor: theme.palette.action.hover },
-                              '&.Mui-disabled': { color: theme.palette.action.disabled, pointerEvents: 'auto' }
-                            }}
+                            sx={toolbarButtonSx}
                           >
                             {button.icon}
                           </IconButton>
                         </span>
                       </Tooltip>
                     ))}
-                  </Paper>
-                </Fade>
+                    </Paper>
+                  </Fade>
+                </Box>
 
                 {generatedItemsCount > 1 && (
                   <>

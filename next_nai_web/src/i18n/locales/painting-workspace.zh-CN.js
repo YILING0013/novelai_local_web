@@ -177,7 +177,7 @@ const paintingWorkspacezhCN = {
         "noEditEffects": "没有应用编辑效果",
         "modelAndBasic": "模型与基础参数",
         "aiModel": "AI 模型",
-        "modelV5Limitations": "V5 支持文生图、图生图和角色控制；Full 还支持局部重绘，Curated 暂不支持。角色参考与 Vibe 暂不可用。",
+        "modelV5Limitations": "V5 支持文生图、图生图、局部重绘和角色控制；Precise Reference 与 Vibe Transfer 暂不可用。",
         "logParameters": "在控制台记录参数",
         "resetConfirmationTitle": "重置所有参数？",
         "resetConfirmationDescription": "这会重置当前模型的全部生成参数，且无法撤销。",
@@ -211,7 +211,7 @@ const paintingWorkspacezhCN = {
         "sampler": "采样器",
         "samplingSteps": "采样步数",
         "samplingStepsHelp": "更多步数通常能增加细节，但会延长生成时间。",
-        "cfgScale": "CFG Scale",
+        "cfgScale": "提示词引导（CFG Scale）",
         "cfgScaleCreativityHelp": "数值越高越遵循提示词，数值越低越自由。",
         "promptGuidanceRescale": "提示词引导重缩放",
         "promptGuidanceRescaleHelp": "降低高 CFG 下的过曝和色彩偏移。",
@@ -244,8 +244,8 @@ const paintingWorkspacezhCN = {
         "referenceImageLimit": "最多可添加 {max} 张参考图。",
         "referenceImageSizeLimit": "单张参考图不得超过 {size}。",
         "removeVibesFirst": "请先移除现有 Vibe。",
-        "characterReferences": "角色参考图（{count}/{max}）",
-        "characterReferencesHelp": "参考图会帮助模型保持角色外观。",
+        "characterReferences": "Precise Reference（{count}/{max}）",
+        "characterReferencesHelp": "精准参考：使用图像引导角色外观、整体画风，或同时参考两者。参考类型可选角色、画风或角色与画风。仅支持 NovelAI V4.5，不能与 Vibe Transfer 同时使用。",
         "disabled": "已禁用",
         "enabled": "已启用",
         "referenceTypeCharacter": "角色",
@@ -314,7 +314,7 @@ const paintingWorkspacezhCN = {
         "referenceStrength": "参考强度",
         "informationExtracted": "信息提取强度",
         "vibeTransfer": "Vibe Transfer",
-        "vibeBlockedByReferences": "使用角色参考图时无法同时使用 Vibe Transfer。",
+        "vibeBlockedByReferences": "使用 Precise Reference 时无法同时使用 Vibe Transfer。",
         "vibeV4Description": "V4 模型直接使用参考图像控制画风。",
         "vibeV3Description": "V3 模型使用编码后的 Vibe 文件控制画风。",
         "releaseToUploadFile": "松开以上传文件",
@@ -323,7 +323,11 @@ const paintingWorkspacezhCN = {
         "clickOrDropMultipleImages": "点击或拖放多张图像",
         "downloadBundle": "下载文件包",
         "downloadZip": "下载 ZIP",
-        "vibeBlockedByInpaint": "局部重绘时暂不使用 Vibe，退出重绘后恢复。"
+        "vibeBlockedByInpaint": "局部重绘时暂不使用 Vibe，退出重绘后恢复。",
+        "disableReferenceImage": "停用参考图",
+        "enableReferenceImage": "启用参考图",
+        "otherSettings": "其它设置",
+        "referenceType": "参考类型"
       },
       "batch": {
         "statusTitle": "批量生成状态"
@@ -500,8 +504,45 @@ const paintingWorkspacezhCN = {
         "clearNegative": "清空负向提示词",
         "copyNegative": "复制负向提示词",
         "editPositive": "编辑正向提示词",
-        "editNegative": "编辑负向提示词"
-      }
+        "editNegative": "编辑负向提示词",
+        "suggestionsLoading": "正在匹配标签…",
+        "suggestionsFailed": "标签联想加载失败，请继续输入以重试。",
+        "localSuggestionsOnly": "在线词库暂不可用，当前仅显示本地匹配结果。",
+        "noTagTranslation": "暂无中文释义"
+      },
+      "imageTools": {
+        "upscale": "放大 2×",
+        "upscaleCost": "放大 2× · {cost} 点",
+        "enhance": "增强",
+        "processing": "处理中…",
+        "upscaleTooLarge": "原图超过 3,145,728 像素，无法使用官方放大。",
+        "sourceDimensionsUnavailable": "无法读取原图尺寸，请重新选择图片。",
+        "title": "增强图像",
+        "model": "当前模型：{model}",
+        "promptHelp": "使用当前工作区的提示词和所选图片进行增强，画面细节可能改变。",
+        "upscaleAmount": "放大倍率",
+        "magnitude": "增强程度 {value}",
+        "custom": "自定义",
+        "showAdvanced": "显示高级参数",
+        "hideAdvanced": "收起高级参数",
+        "strength": "重绘强度",
+        "noise": "噪声",
+        "steps": "采样步数",
+        "strengthHelp": "强度越高，画面变化越明显；增加噪声可帮助模型补充细节。",
+        "outputSize": "输出尺寸",
+        "estimatedCost": "预计消耗 Anlas",
+        "estimating": "正在估算点数",
+        "cost": "{cost} 点",
+        "balance": "可用 Anlas：{credits}",
+        "submitCost": "增强 · {cost} 点",
+        "balanceUnknown": "暂时无法读取 Anlas 余额，实际消耗以 NovelAI 为准。",
+        "insufficientBalance": "Anlas 余额不足，请充值后重试。"
+      },
+      "v5Recovery": {
+        "states": {}
+      },
+      "upload": {},
+      "verification": {}
     }
   }
 };

@@ -71,6 +71,12 @@ class _FakeClient:
         self.fail_change = fail_change
         self.change_calls = 0
         self.put_calls = 0
+        self.tls_profiles = {source_access_key: "source-tls-profile"}
+        self.login_profiles = []
+
+    def inherit_tls_profile(self, source_identity: str, target_identity: str) -> None:
+        """模拟恢复时只补缺失的目标 TLS 绑定。"""
+        self.tls_profiles.setdefault(target_identity, self.tls_profiles[source_identity])
 
     def login(self, access_key: str) -> str:
         """模拟只允许当前有效 access key 登录。"""
@@ -80,6 +86,7 @@ class _FakeClient:
 
     def try_login(self, access_key: str) -> str | None:
         """模拟明确的凭据有效性探测。"""
+        self.login_profiles.append((access_key, self.tls_profiles.get(access_key)))
         try:
             return self.login(access_key)
         except RuntimeError:
@@ -359,6 +366,70 @@ def test_recovery_with_target_login_only_rewraps_keystore(tmp_path: Path) -> Non
     ) == keystore_fingerprint(plaintext)
     assert journal.load()["stage"] == "recovery_verified"
     coordinator.finalize()
+
+
+def test_recovery_restores_tls_before_login_after_process_exit(tmp_path: Path) -> None:
+    """官方变更后进程退出，重建协调器恢复时首次目标登录必须仍使用源账号指纹。"""
+    coordinator, client, journal, email, old_password, new_password, _ = _build_coordinator(tmp_path)
+
+    def applied_then_process_exit(current_access_key, new_access_key, token, new_email):
+        client.change_calls += 1
+        client.valid_access_key = client.target_access_key
+        raise SystemExit("simulated process exit")
+
+    client.change_access_key = applied_then_process_exit
+    with pytest.raises(SystemExit):
+        coordinator.change(
+            operation="password",
+            source_email=email,
+            source_password=old_password,
+            target_email=email,
+            target_password=new_password,
+            correlation_id="TLS001",
+        )
+    assert journal.load()["stage"] == "change_requested"
+    assert client.target_access_key not in client.tls_profiles
+
+    restarted = AccountChangeCoordinator(client, RecoveryJournal(journal.path))
+    status, token = restarted.resolve(
+        source_email=email,
+        source_password=old_password,
+        target_email=email,
+        target_password=new_password,
+    )
+
+    assert (status, token) == ("completed", "token-target")
+    assert client.login_profiles[0] == (client.target_access_key, "source-tls-profile")
+    assert client.change_calls == 1
+    assert journal.load()["stage"] == "recovery_verified"
+
+
+@pytest.mark.parametrize("wrong_field", ["source_password", "target_password"])
+def test_recovery_rejects_mismatched_credentials_before_tls_binding(tmp_path: Path, wrong_field: str) -> None:
+    """恢复凭据未通过原日志校验时，不得修改 TLS 绑定或向官方探测登录。"""
+    coordinator, client, journal, email, old_password, new_password, _ = _build_coordinator(tmp_path, fail_change=True)
+    with pytest.raises(CredentialChangeUncertain):
+        coordinator.change(
+            operation="password",
+            source_email=email,
+            source_password=old_password,
+            target_email=email,
+            target_password=new_password,
+            correlation_id="TLS002",
+        )
+    original_bindings = dict(client.tls_profiles)
+    credentials = {
+        "source_email": email, "source_password": old_password,
+        "target_email": email, "target_password": new_password,
+        wrong_field: "Mismatched-password-789!",
+    }
+
+    with pytest.raises(CredentialChangeError, match="恢复记录不匹配"):
+        coordinator.resolve(**credentials)
+
+    assert client.tls_profiles == original_bindings
+    assert client.login_profiles == []
+    assert journal.load()["stage"] == "change_result_unknown"
 
 
 def test_recovery_with_target_login_and_confirmed_missing_creates_keystore(

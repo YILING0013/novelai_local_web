@@ -14,6 +14,12 @@ import {
   sanitizeNovelAIV5GenerationParams,
 } from './novelAIV5Params.mjs';
 
+test('V5 Enhance 保留弹窗中的 50 步，普通小图仍限制为 28 步', () => {
+  const params = { model: 'nai-diffusion-5-full', steps: 50, use_upscale_credits: false };
+  assert.equal(sanitizeNovelAIV5GenerationParams({ ...params, image_tool: 'enhance' }).steps, 50);
+  assert.equal(sanitizeNovelAIV5GenerationParams(params).steps, 28);
+});
+
 test('NovelAI V5 exposes both supported model IDs and the verified text-to-image defaults', () => {
   assert.deepEqual(NOVELAI_V5_MODEL_IDS, [
     'nai-diffusion-5-curated',

@@ -31,5 +31,11 @@ export const buildNovelAIImageRequestParams = (params, isSmeaSupported) => ({
   legacy_uc: params.legacy_uc || false,
   legacy_v3_extend: params.legacy_v3_extend || false,
   autoSmea: isSmeaSupported ? params.autoSmea || false : false,
-  use_upscale_credits: params.use_upscale_credits || false,
+  use_upscale_credits: Boolean(params.use_upscale_credits),
+  ...(params.image_tool ? {
+    image_tool: params.image_tool,
+    source_width: params.source_width,
+    source_height: params.source_height,
+    upscale_amount: params.upscale_amount,
+  } : {}),
 });

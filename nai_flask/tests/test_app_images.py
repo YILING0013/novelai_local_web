@@ -208,14 +208,20 @@ def test_vibe_director_upscale_and_tags_routes(client, fake_client, clock):
     upscale = client.post(
         "/api/images/upscale",
         json={
-            "image": PNG_BASE64,
+            "image": png_base64(64, 128),
             "model": "nai-diffusion-4-5-full",
             "declared_blur_sigma": 1.25,
+            "width": 4096,
+            "height": 4096,
+            "scale": 2,
         },
         headers=headers,
     )
     assert upscale.status_code == 200
     assert upscale.get_json()["images"][0]["mime_type"] == "image/png"
+    upscale_payload = next(call[2] for call in fake_client.calls if call[0] == "upscale")
+    assert (upscale_payload["width"], upscale_payload["height"], upscale_payload["scale"]) == (64, 128, 2)
+    assert upscale_payload["model"] == "nai-diffusion-5-curated"
 
     tags = client.get(
         "/api/images/tags?prompt=1gi&model=nai-diffusion-4-5-full"
@@ -224,7 +230,7 @@ def test_vibe_director_upscale_and_tags_routes(client, fake_client, clock):
     assert tags.get_json()["tags"][0]["tag"] == "1girl"
 
 
-def test_upscale_rejects_legacy_scale_and_invalid_upload(client):
+def test_upscale_rejects_unsupported_scale_and_invalid_upload(client):
     csrf = login(client)
     headers = {"Origin": ORIGIN, "X-CSRF-Token": csrf}
     legacy = client.post(
@@ -232,7 +238,7 @@ def test_upscale_rejects_legacy_scale_and_invalid_upload(client):
         json={
             "image": PNG_BASE64,
             "model": "nai-diffusion-4-5-full",
-            "scale": 2,
+            "scale": 4,
         },
         headers=headers,
     )

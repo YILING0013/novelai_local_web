@@ -1,5 +1,3 @@
-import { isPaintingModelAllowed } from '@/components/ai-painting/utils/modelUtils';
-
 const CSRF_STORAGE_KEY = 'novelai-local.csrf-token';
 
 function getApiBaseUrl() {
@@ -188,12 +186,20 @@ class ApiClient {
     return this.request('/images/augment', { method: 'POST', body });
   }
 
-  async getPrompt(prompt, model = null) {
-    const searchParams = new URLSearchParams({
-      prompt: String(prompt || '').trim(),
-    });
-    if (isPaintingModelAllowed(model)) searchParams.set('model', model);
-    return this.request(`/images/tags?${searchParams.toString()}`);
+  /** 查询当前输入片段的中英文标签联想，支持取消过期请求。 */
+  async getPrompt(prompt, { signal } = {}) {
+    const searchParams = new URLSearchParams({ prompt: String(prompt || '').trim() });
+    return this.request(`/suggest-tags?${searchParams.toString()}`, { signal });
+  }
+
+  /** 批量查询标签的中文释义，返回以规范化标签为键的 translations。 */
+  async translatePromptTags(tags, { signal } = {}) {
+    return this.request('/translate-tags', { method: 'POST', body: { tags }, signal });
+  }
+
+  /** 查询图片工具输出尺寸、预计 Anlas 和官方账户余额，不生成图片。 */
+  async estimateImageTool(params, { signal } = {}) {
+    return this.request('/image-tools/estimate', { method: 'POST', body: params, signal });
   }
 
   async getLocalSettings() {

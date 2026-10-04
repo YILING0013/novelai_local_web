@@ -209,7 +209,8 @@ const paintingToolszhCN = {
         "invalidImageUrlShort": "图片链接无效",
         "imagePreviewArea": "图像预览区",
         "imagePreviewEmpty": "添加图片链接后可在此预览",
-        "confirmSave": "确认保存"
+        "confirmSave": "确认保存",
+        "transferDialog": {}
       },
       "randomPrompt": {
         "errors": {
@@ -394,7 +395,15 @@ const paintingToolszhCN = {
         "showPreview": "显示预览",
         "randomPreviewHelp": "注释内容（/* */）会被忽略；随机类别和集合标签会显示预览。",
         "commentHelp": "注释内容（/* */）会在生成时被忽略。",
-        "applyChanges": "应用更改"
+        "applyChanges": "应用更改",
+        "settings": "提示词设置",
+        "previewEnabled": "显示预览",
+        "suggestionsEnabled": "提示词联想",
+        "suggestionsHelp": "输入至少 2 个英文字符（含数字）或 1 个中文字符后显示联想；点击、选中和复制不会触发。",
+        "overlayPreview": "叠加预览",
+        "sideBySidePreview": "分栏预览",
+        "translationHelp": "悬浮在带虚线的标签上查看中文释义",
+        "translationFailed": "标签释义加载失败，请稍后重新输入重试"
       },
       "batch": {
         "errors": {
@@ -427,7 +436,14 @@ const paintingToolszhCN = {
         "recentErrors": "最近错误（{count}）",
         "latest": "最新",
         "cancelGeneration": "取消绘制",
-        "title": "批量绘制状态"
+        "title": "批量绘制状态",
+        "analysis": {
+          "verification": {},
+          "network": {},
+          "server": {},
+          "parameter": {},
+          "other": {}
+        }
       },
       "metadata": {
         "none": "（无）",
@@ -490,7 +506,9 @@ const paintingToolszhCN = {
         "unlock": "解锁滑块",
         "lock": "锁定滑块",
         "tapToUnlock": "点击解锁"
-      }
+      },
+      "parameterEvents": {},
+      "clientErrors": {}
     }
   }
 };

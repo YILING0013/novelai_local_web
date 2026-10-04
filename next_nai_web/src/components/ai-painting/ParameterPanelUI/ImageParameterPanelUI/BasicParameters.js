@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import LockableSlider from '@/components/muiWrappers/LockableSlider';
 import {
   Box,
@@ -29,16 +29,13 @@ import {
   Info as InfoIcon,
   Clear as ClearIcon,
   AspectRatio as AspectRatioIcon,
+  Tune as TuneIcon,
   KeyboardArrowUp as ArrowUpIcon,
   KeyboardArrowDown as ArrowDownIcon,
 } from '@mui/icons-material';
 import { useMediaQuery, useTheme } from '@mui/material';
-import ImageReferenceControl from './BasicParametersUI/ImageReferenceControl';
 import { setLargeImageMode, findClosestAllowedResolution } from '../../utils/parameterMapping';
-import {
-  NOVELAI_V5_STANDARD_MAX_STEPS,
-  isNovelAIDirectorReferenceModel,
-} from '../../utils/modelUtils';
+import { NOVELAI_V5_STANDARD_MAX_STEPS } from '../../utils/modelUtils';
 import { useI18n } from '@/i18n/I18nProvider';
 
 // 采样算法选项
@@ -107,61 +104,48 @@ const BasicParameters = ({
   handleInputBlur,
   handleSizePresetClick,
   handleClearSeed,
-  handleRefreshSeed,
   expandedPanels,
   onExpandedPanelsChange,
-  onReferenceImageChange,
   isV5Model = false,
-  // 接收禁用状态
-  imageReferenceDisabled,
 }) => {
   const fieldId = React.useId();
   const { t } = useI18n();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-  // 初始化状态，如果 params 中已有 use_upscale_credits 则同步
-  const [isLargeMode, setIsLargeMode] = useState(!!params.use_upscale_credits);
+  const isLargeMode = !!params.use_upscale_credits;
   const standardMaxSteps = isV5Model ? NOVELAI_V5_STANDARD_MAX_STEPS : 28;
 
-  // 监听 params 变化，确保外部（如缓存加载）改变参数时，UI 状态能同步
   useEffect(() => {
-    const shouldBeLargeMode = !!params.use_upscale_credits;
-    if (isLargeMode !== shouldBeLargeMode) {
-      setIsLargeMode(shouldBeLargeMode);
-      setLargeImageMode(shouldBeLargeMode);
+    setLargeImageMode(isLargeMode);
+  }, [isLargeMode]);
+
+  // 按实际参数收紧范围，兼顾按钮切换、外部参数回传和缓存加载。
+  // 仅改变 Slider 的 max 会夹住圆点位置，右侧数值和生成请求仍可能保留旧步数。
+  useEffect(() => {
+    if (isLargeMode) return;
+
+    const [newWidth, newHeight] = findClosestAllowedResolution(params.width, params.height);
+    if (newWidth !== params.width || newHeight !== params.height) {
+      handleParamChange('width', newWidth);
+      handleParamChange('height', newHeight);
+      handleInputChange('width', newWidth.toString());
+      handleInputChange('height', newHeight.toString());
+    }
+    if (params.steps > standardMaxSteps) {
+      handleParamChange('steps', standardMaxSteps);
     }
   }, [
     isLargeMode,
-    params.use_upscale_credits,
+    params.width,
+    params.height,
+    params.steps,
+    standardMaxSteps,
+    handleParamChange,
+    handleInputChange,
   ]);
 
   const toggleLargeMode = () => {
-    const newMode = !isLargeMode;
-    setIsLargeMode(newMode);
-    setLargeImageMode(newMode);
-
-    // 启用大图模式时，将 use_upscale_credits 添加到 params 并设置为 true
-    handleParamChange('use_upscale_credits', newMode);
-
-    // 如果切换回小图模式，检查当前值是否越界并修正
-    if (!newMode) {
-      // 1. 检查并修正分辨率
-      // 这里的 findClosestAllowedResolution 已经在 setLargeImageMode 内部更新了允许列表，所以会返回符合小图模式的最接近值
-      const [newWidth, newHeight] = findClosestAllowedResolution(params.width, params.height);
-
-      if (newWidth !== params.width || newHeight !== params.height) {
-        handleParamChange('width', newWidth);
-        handleParamChange('height', newHeight);
-        // 更新输入框的临时状态，确保 UI 立刻刷新
-        handleInputChange('width', newWidth.toString());
-        handleInputChange('height', newHeight.toString());
-      }
-
-      // 2. 检查并修正步数
-      if (params.steps > standardMaxSteps) {
-        handleParamChange('steps', standardMaxSteps);
-      }
-    }
+    handleParamChange('use_upscale_credits', !isLargeMode);
   };
 
   const sizePresets = isLargeMode ? largeSizePresets : standardSizePresets;
@@ -208,6 +192,8 @@ const BasicParameters = ({
       flexDirection: 'column',
       gap: 2,
       pt: 1,
+      containerType: 'inline-size',
+      containerName: 'generation-parameters',
       '& .MuiInputBase-root': { fontSize: '0.9375rem' },
       '& .MuiOutlinedInput-root': { minHeight: 44 },
       '& .MuiOutlinedInput-input': { py: 1.25 },
@@ -290,68 +276,8 @@ const BasicParameters = ({
           </Box>
         </Box>
 
-        {/* Seed 设置与采样算法 */}
-        <Grid container spacing={2}>
-          <Grid item xs={12}>
-            <TextField
-              id={`${fieldId}-seed`}
-              label={t('painting.workspace.parameters.seed')}
-              value={params.seed}
-              onChange={(e) => handleSeedChange(e.target.value)}
-              fullWidth
-              size="small"
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end" sx={{ ml: 0.25, gap: 0.25 }}>
-                    <Tooltip title={t('painting.workspace.parameters.clearSeed')} arrow>
-                      <IconButton
-                        edge="end"
-                        size="small"
-                        onClick={handleClearSeed}
-                        disabled={params.seed === ''}
-                        sx={{ p: 0.75, mr: 0 }}
-                      >
-                        <ClearIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title={t('painting.workspace.parameters.randomSeed')} arrow>
-                      <IconButton size="small" onClick={() => handleSeedChange(null, true)} sx={{ p: 0.75 }}>
-                        <RefreshIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  </InputAdornment>
-                ),
-              }}
-            />
-          </Grid>
-          <Grid item xs={12}>
-            <FormControl fullWidth size="small">
-              <InputLabel id={`${fieldId}-sampler-label`}>
-                {t('painting.workspace.parameters.sampler')}
-              </InputLabel>
-              <Select
-                labelId={`${fieldId}-sampler-label`}
-                label={t('painting.workspace.parameters.sampler')}
-                value={params.sampler || 'k_euler'}
-                onChange={(e) => handleParamChange('sampler', e.target.value)}
-              >
-                {samplerOptions.map((option) => (
-                  <MenuItem key={option.value} value={option.value}>
-                    {option.label}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Grid>
-        </Grid>
-
-        {/* 常用滑条各占一行，标签与数值保持完整可读。 */}
-        <Box sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 1,
-        }}>
-          {/* 采样步数 */}
+        {/* 常用参数按生成时的设置顺序排列。 */}
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           <LockableSlider
             label={t('painting.workspace.parameters.samplingSteps')}
             value={params.steps}
@@ -361,8 +287,6 @@ const BasicParameters = ({
             onChange={(newValue) => handleParamChange('steps', newValue)}
             tooltip={t('painting.workspace.parameters.samplingStepsHelp')}
           />
-
-          {/* 引导比例 */}
           <LockableSlider
             label={t('painting.workspace.parameters.cfgScale')}
             value={params.guidanceScale}
@@ -373,62 +297,135 @@ const BasicParameters = ({
             tooltip={t('painting.workspace.parameters.cfgScaleCreativityHelp')}
             valueLabelFormat={(value) => value.toFixed(1)}
           />
+        </Box>
 
-          {/* Prompt Guidance Rescale */}
-          <LockableSlider
-            label={t('painting.workspace.parameters.promptGuidanceRescale')}
-            value={params.promptGuidanceRescale}
-            min={0}
-            max={1}
-            step={0.02}
-            onChange={(newValue) => handleParamChange('promptGuidanceRescale', newValue)}
-            tooltip={t('painting.workspace.parameters.promptGuidanceRescaleHelp')}
-            valueLabelFormat={(value) => value.toFixed(2)}
+        {/* 根据参数区自身宽度决定是否并排，避免宽屏中的窄侧栏挤压控件。 */}
+        <Box sx={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1fr)',
+          gap: 1.5,
+          '@container generation-parameters (min-width: 380px)': {
+            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+          },
+        }}>
+          <TextField
+            id={`${fieldId}-seed`}
+            label={t('painting.workspace.parameters.seed')}
+            value={params.seed}
+            onChange={(e) => handleSeedChange(e.target.value)}
+            fullWidth
+            size="small"
+            InputProps={{
+              endAdornment: (
+                <InputAdornment position="end" sx={{ ml: 0.25, gap: 0.25 }}>
+                  <Tooltip title={t('painting.workspace.parameters.clearSeed')} arrow>
+                    <IconButton
+                      edge="end"
+                      size="small"
+                      onClick={handleClearSeed}
+                      disabled={params.seed === ''}
+                      aria-label={t('painting.workspace.parameters.clearSeed')}
+                      sx={{ p: 0.75, mr: 0 }}
+                    >
+                      <ClearIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title={t('painting.workspace.parameters.randomSeed')} arrow>
+                    <IconButton aria-label={t('painting.workspace.parameters.randomSeed')} size="small" onClick={() => handleSeedChange(null, true)} sx={{ p: 0.75 }}>
+                      <RefreshIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </InputAdornment>
+              ),
+            }}
           />
-
-          {/* 噪声调度 */}
-          <FormControl fullWidth variant="outlined" size="small">
-            <InputLabel id={`${fieldId}-noise-label`}>
-              {t('painting.workspace.parameters.noiseSchedule')}
+          <FormControl fullWidth size="small" sx={{ minWidth: 0 }}>
+            <InputLabel id={`${fieldId}-sampler-label`}>
+              {t('painting.workspace.parameters.sampler')}
             </InputLabel>
             <Select
-              labelId={`${fieldId}-noise-label`}
-              label={t('painting.workspace.parameters.noiseSchedule')}
-              value={params.noiseSchedule}
-              onChange={(e) => handleParamChange('noiseSchedule', e.target.value)}
+              labelId={`${fieldId}-sampler-label`}
+              label={t('painting.workspace.parameters.sampler')}
+              value={params.sampler || 'k_euler'}
+              onChange={(e) => handleParamChange('sampler', e.target.value)}
             >
-              {noiseScheduleOptions.map((option) => (
+              {samplerOptions.map((option) => (
                 <MenuItem key={option.value} value={option.value}>
-                  {t(option.labelKey)}
+                  {option.label}
                 </MenuItem>
               ))}
             </Select>
           </FormControl>
         </Box>
 
-        {/* 角色参考仅对 NAI Diffusion 4.5 系列开放。 */}
-        {isNovelAIDirectorReferenceModel(params.model) && (
-          <ImageReferenceControl
-            onReferenceImageChange={onReferenceImageChange}
-            disabled={imageReferenceDisabled}
-          />
-        )}
+        <Accordion
+          expanded={Boolean(expandedPanels.otherSettings)}
+          onChange={(_, isExpanded) => onExpandedPanelsChange('otherSettings', isExpanded)}
+          disableGutters
+          sx={{
+            bgcolor: 'transparent',
+            backgroundImage: 'none',
+            boxShadow: 'none',
+            '&::before': { display: 'none' },
+            '&.Mui-expanded': { m: 0 },
+          }}
+        >
+          <AccordionSummary
+            expandIcon={<ExpandMoreIcon sx={{ fontSize: 18 }} />}
+            sx={{ minHeight: 36, px: 0, '& .MuiAccordionSummary-content': { my: 0 } }}
+          >
+            <Typography sx={{ fontSize: 14, fontWeight: 500 }}>
+              {t('painting.workspace.parameters.otherSettings')}
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails sx={{ p: 0, pt: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {/* Prompt Guidance Rescale */}
+            <LockableSlider
+              label={t('painting.workspace.parameters.promptGuidanceRescale')}
+              value={params.promptGuidanceRescale}
+              min={0}
+              max={1}
+              step={0.02}
+              onChange={(newValue) => handleParamChange('promptGuidanceRescale', newValue)}
+              tooltip={t('painting.workspace.parameters.promptGuidanceRescaleHelp')}
+              valueLabelFormat={(value) => value.toFixed(2)}
+            />
 
-        {/* 批量生成 */}
-        <LockableSlider
-          label={t('painting.workspace.parameters.batchSize')}
-          value={params.batchSize}
-          min={1}
-          max={8}
-          step={1}
-          onChange={(newValue) => handleParamChange('batchSize', newValue)}
-          tooltip={t('painting.workspace.parameters.batchSizeHelp')}
-          marks={[
-            { value: 1, label: '1' },
-            { value: 4, label: '4' },
-            { value: 8, label: '8' },
-          ]}
-        />
+            {/* 噪声调度 */}
+            <FormControl fullWidth variant="outlined" size="small">
+              <InputLabel id={`${fieldId}-noise-label`}>
+                {t('painting.workspace.parameters.noiseSchedule')}
+              </InputLabel>
+              <Select
+                labelId={`${fieldId}-noise-label`}
+                label={t('painting.workspace.parameters.noiseSchedule')}
+                value={params.noiseSchedule}
+                onChange={(e) => handleParamChange('noiseSchedule', e.target.value)}
+              >
+                {noiseScheduleOptions.map((option) => (
+                  <MenuItem key={option.value} value={option.value}>
+                    {t(option.labelKey)}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            {/* 批量生成 */}
+            <LockableSlider
+              label={t('painting.workspace.parameters.batchSize')}
+              value={params.batchSize}
+              min={1}
+              max={8}
+              step={1}
+              onChange={(newValue) => handleParamChange('batchSize', newValue)}
+              tooltip={t('painting.workspace.parameters.batchSizeHelp')}
+              marks={[
+                { value: 1, label: '1' },
+                { value: 4, label: '4' },
+                { value: 8, label: '8' },
+              ]}
+            />
+          </AccordionDetails>
+        </Accordion>
     </Box>
   );
 };
@@ -459,6 +456,7 @@ export function ExtraConfiguration({ params, handleParamChange, handleSmeaChange
 
   return (
     <Accordion
+      disableGutters
       sx={{
         boxShadow: 'none',
         background: 'transparent',
@@ -472,20 +470,20 @@ export function ExtraConfiguration({ params, handleParamChange, handleSmeaChange
       }}
     >
       <AccordionSummary
-        expandIcon={<ExpandMoreIcon sx={{ fontSize: 20 }} />}
+        expandIcon={<ExpandMoreIcon sx={{ fontSize: 18 }} />}
         sx={{
-          minHeight: 42,
-          height: 42,
+          minHeight: 44,
+          height: 44,
           p: 0,
           pl: 0,
           '&:hover': { backgroundColor: 'transparent' },
-          '&.Mui-expanded': { minHeight: 42 },
+          '&.Mui-expanded': { minHeight: 44 },
           '& .MuiAccordionSummary-content': { margin: 0 },
           '& .MuiAccordionSummary-content.Mui-expanded': { margin: 0 },
-          '& .MuiAccordionSummary-expandIconWrapper': { mr: 0.25 },
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
+          <TuneIcon sx={{ mr: 1, fontSize: 18, color: 'text.secondary' }} />
           <Typography sx={{ fontSize: '0.9375rem', fontWeight: 500, lineHeight: 1.5 }}>
             {t('painting.workspace.parameters.extraConfiguration')}
           </Typography>

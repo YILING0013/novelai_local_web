@@ -13,12 +13,19 @@ import {
   FormControl,
   Paper,
   Stack,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import {
   Info as InfoIcon,
   Delete as DeleteIcon,
   PhotoCamera as PhotoCameraIcon,
   Add as AddIcon,
+  ExpandMore as ExpandMoreIcon,
+  Visibility as VisibilityIcon,
+  VisibilityOff as VisibilityOffIcon,
 } from '@mui/icons-material';
 import { useI18n } from '@/i18n/I18nProvider';
 import { hmacSha256 } from '../../../utils/cryptoUtils';
@@ -31,7 +38,16 @@ const generateRandomKey = () => {
   return Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('');
 };
 
-const ImageReferenceControl = ({ onReferenceImageChange, disabled = false }) => {
+const referenceActionSx = {
+  width: 30,
+  height: 30,
+  p: 0.5,
+  borderRadius: 0.75,
+  bgcolor: 'action.selected',
+  '&:hover': { bgcolor: 'action.focus' },
+};
+
+const ImageReferenceControl = ({ onReferenceImageChange, disabled = false, expanded, onExpandedChange }) => {
   const { t } = useI18n();
   // 多图状态: { id, data: base64, displayUrl, type, strength, fidelity, disabled, cache_secret_key }
   const [images, setImages] = useState([]);
@@ -222,61 +238,107 @@ const ImageReferenceControl = ({ onReferenceImageChange, disabled = false }) => 
   };
 
   return (
-    <Tooltip title={disabled ? t('painting.workspace.parameters.removeVibesFirst') : ''} arrow>
-      <Box sx={{ mt: 2, opacity: disabled ? 0.5 : 1, pointerEvents: disabled ? 'none' : 'auto', transition: 'opacity 0.2s' }}>
-        <Typography color="text.primary" sx={{ fontSize: 15, fontWeight: 500, mb: 1.5 }}>
-          {t('painting.workspace.parameters.characterReferences', { count: images.length, max: 12 })}
-          <Tooltip title={t('painting.workspace.parameters.characterReferencesHelp')} arrow placement="top">
-            <InfoIcon sx={{ ml: 0.5, fontSize: 16, verticalAlign: 'middle', opacity: 0.7 }} />
+    <Accordion
+      expanded={expanded}
+      onChange={onExpandedChange}
+      disableGutters
+      sx={{
+        m: 0,
+        border: 0,
+        borderTop: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 0,
+        bgcolor: 'transparent',
+        backgroundImage: 'none',
+        boxShadow: 'none',
+        '&::before': { display: 'none' },
+        '&:first-of-type, &:last-of-type': { borderRadius: 0 },
+        '&.Mui-expanded': { margin: 0 },
+      }}
+    >
+      <AccordionSummary
+        expandIcon={<ExpandMoreIcon sx={{ fontSize: 18 }} />}
+        sx={{
+          minHeight: 44,
+          px: 0,
+          py: 0,
+          '&.Mui-expanded': { minHeight: 44 },
+          '& .MuiAccordionSummary-content, & .MuiAccordionSummary-content.Mui-expanded': { margin: 0 },
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+          <PhotoCameraIcon sx={{ mr: 1, fontSize: 18, color: 'text.secondary' }} />
+          <Typography sx={{ fontSize: 15, fontWeight: 500 }}>
+            {t('painting.workspace.parameters.characterReferences', { count: images.length, max: 12 })}
+          </Typography>
+          <Tooltip title={disabled
+            ? t('painting.workspace.parameters.removeVibesFirst')
+            : t('painting.workspace.parameters.characterReferencesHelp')} arrow>
+            <InfoIcon sx={{ ml: 0.75, fontSize: 16, color: 'text.secondary' }} />
           </Tooltip>
-        </Typography>
+        </Box>
+      </AccordionSummary>
+      <AccordionDetails sx={{ px: 0, pt: 1, pb: 2, opacity: disabled ? 0.5 : 1, transition: 'opacity 0.2s' }}>
 
-        <Stack spacing={2}>
+        <Stack spacing={1.25}>
           {images.map((img, index) => (
-            <Paper key={img.id} variant="outlined" sx={{ p: 1.5, bgcolor: 'transparent', opacity: img.disabled ? 0.5 : 1, borderRadius: 1 }}>
-              {/* 第一行：删除按钮 | 启用开关 | 类型选择 */}
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-                <IconButton
-                  size="small"
-                  onClick={() => deleteImage(img.id)}
-                  sx={{ p: 0.75 }}
-                >
-                  <DeleteIcon sx={{ fontSize: 18 }} />
-                </IconButton>
-                <Button
-                  size="small"
-                  variant={img.disabled ? "outlined" : "contained"}
-                  onClick={() => updateImage(img.id, 'disabled', !img.disabled)}
-                  disabled={disabled}
-                  sx={{
-                    minWidth: 'auto',
-                    px: 1,
-                    py: 0.5,
-                    minHeight: 34,
-                    fontSize: '0.875rem',
-                    textTransform: 'none',
-                  }}
-                >
-                  {img.disabled
-                    ? t('painting.workspace.parameters.disabled')
-                    : t('painting.workspace.parameters.enabled')}
-                </Button>
-                <FormControl size="small" sx={{ flex: 1 }}>
+            <Paper key={img.id} variant="outlined" sx={{ bgcolor: 'transparent', borderRadius: 1, overflow: 'hidden', backgroundImage: 'none' }}>
+              {/* 类型靠左、操作靠右；标题栏底色与正文形成轻微层次。 */}
+              <Box sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.75,
+                px: 1.25,
+                py: 0.75,
+                borderBottom: '1px solid',
+                borderColor: 'divider',
+                bgcolor: (theme) => alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.16 : 0.04),
+              }}>
+                <FormControl size="small" sx={{ minWidth: 96, maxWidth: 'calc(100% - 72px)' }}>
                   <Select
                     value={img.type}
                     onChange={(e) => updateImage(img.id, 'type', e.target.value)}
                     disabled={img.disabled || disabled}
-                    sx={{ fontSize: '0.875rem', height: 36, '.MuiSelect-select': { py: 0.5, pl: 1 } }}
+                    inputProps={{ 'aria-label': t('painting.workspace.parameters.referenceType') }}
+                    sx={{ fontSize: '0.75rem', height: 30, '.MuiSelect-select': { py: 0.5, pl: 1 } }}
                   >
-                    <MenuItem value="character" sx={{ fontSize: '0.875rem' }}>{t('painting.workspace.parameters.referenceTypeCharacter')}</MenuItem>
-                    <MenuItem value="style" sx={{ fontSize: '0.875rem' }}>{t('painting.workspace.parameters.referenceTypeStyle')}</MenuItem>
-                    <MenuItem value="character&style" sx={{ fontSize: '0.875rem' }}>{t('painting.workspace.parameters.referenceTypeCharacterAndStyle')}</MenuItem>
+                    <MenuItem value="character" sx={{ fontSize: '0.75rem' }}>{t('painting.workspace.parameters.referenceTypeCharacter')}</MenuItem>
+                    <MenuItem value="style" sx={{ fontSize: '0.75rem' }}>{t('painting.workspace.parameters.referenceTypeStyle')}</MenuItem>
+                    <MenuItem value="character&style" sx={{ fontSize: '0.75rem' }}>{t('painting.workspace.parameters.referenceTypeCharacterAndStyle')}</MenuItem>
                   </Select>
                 </FormControl>
+                <Tooltip title={t(`painting.workspace.parameters.${img.disabled ? 'enableReferenceImage' : 'disableReferenceImage'}`)} arrow>
+                  <span>
+                    <IconButton
+                      size="small"
+                      aria-label={t(`painting.workspace.parameters.${img.disabled ? 'enableReferenceImage' : 'disableReferenceImage'}`)}
+                      aria-pressed={!img.disabled}
+                      onClick={() => updateImage(img.id, 'disabled', !img.disabled)}
+                      disabled={disabled}
+                      sx={{ ...referenceActionSx, color: img.disabled ? 'text.secondary' : 'primary.main' }}
+                    >
+                      {img.disabled ? <VisibilityOffIcon sx={{ fontSize: 16 }} /> : <VisibilityIcon sx={{ fontSize: 16 }} />}
+                    </IconButton>
+                  </span>
+                </Tooltip>
+                <Box sx={{ flexGrow: 1 }} />
+                <Tooltip title={t('painting.workspace.parameters.deleteReferenceImage')} arrow>
+                  <span>
+                    <IconButton
+                      size="small"
+                      aria-label={t('painting.workspace.parameters.deleteReferenceImage')}
+                      onClick={() => deleteImage(img.id)}
+                      disabled={disabled}
+                      sx={{ ...referenceActionSx, color: 'text.secondary', '&:hover': { bgcolor: 'action.focus', color: 'error.main' } }}
+                    >
+                      <DeleteIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  </span>
+                </Tooltip>
               </Box>
 
               {/* 第二行：预览图 + 滑块 */}
-              <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+              <Box sx={{ display: 'flex', gap: 1.25, alignItems: 'center', p: 1.25, opacity: img.disabled ? 0.5 : 1 }}>
                 {/* 预览图 */}
                 <Box sx={{
                   width: 72,
@@ -288,20 +350,21 @@ const ImageReferenceControl = ({ onReferenceImageChange, disabled = false }) => 
                 }}>
                   <img
                     src={img.displayUrl}
-                  alt={t('painting.workspace.parameters.referenceImageNumber', { index: index + 1 })}
+                    alt={t('painting.workspace.parameters.referenceImageNumber', { index: index + 1 })}
                     style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                   />
                 </Box>
 
                 {/* 滑块区域 */}
-                <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                   {/* Strength 滑块 */}
-                  <Box sx={{ display: 'flex', alignItems: 'center', minHeight: 36 }}>
-                    <Typography sx={{ minWidth: 52, color: 'text.secondary', fontSize: 14 }}>{t('painting.workspace.parameters.strengthShort')}</Typography>
-                    <Typography sx={{ minWidth: 32, fontSize: 13, mr: 1 }}>{img.strength.toFixed(2)}</Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', minHeight: 30 }}>
+                    <Typography sx={{ minWidth: 52, color: 'text.secondary', fontSize: 12 }}>{t('painting.workspace.parameters.strengthShort')}</Typography>
+                    <Typography sx={{ minWidth: 32, fontSize: 12, mr: 1 }}>{img.strength.toFixed(2)}</Typography>
                     <Slider
                       size="small"
                       value={img.strength}
+                      aria-label={t('painting.workspace.parameters.strengthShort')}
                       onChange={(e, v) => updateImage(img.id, 'strength', v)}
                       min={0} max={1} step={0.05}
                       sx={{ flexGrow: 1 }}
@@ -310,12 +373,13 @@ const ImageReferenceControl = ({ onReferenceImageChange, disabled = false }) => 
                   </Box>
 
                   {/* Fidelity 滑块 */}
-                  <Box sx={{ display: 'flex', alignItems: 'center', minHeight: 36 }}>
-                    <Typography sx={{ minWidth: 52, color: 'text.secondary', fontSize: 14 }}>{t('painting.workspace.parameters.fidelityShort')}</Typography>
-                    <Typography sx={{ minWidth: 32, fontSize: 13, mr: 1 }}>{img.fidelity.toFixed(2)}</Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', minHeight: 30 }}>
+                    <Typography sx={{ minWidth: 52, color: 'text.secondary', fontSize: 12 }}>{t('painting.workspace.parameters.fidelityShort')}</Typography>
+                    <Typography sx={{ minWidth: 32, fontSize: 12, mr: 1 }}>{img.fidelity.toFixed(2)}</Typography>
                     <Slider
                       size="small"
                       value={img.fidelity}
+                      aria-label={t('painting.workspace.parameters.fidelityShort')}
                       onChange={(e, v) => updateImage(img.id, 'fidelity', v)}
                       min={0} max={1} step={0.05}
                       sx={{ flexGrow: 1 }}
@@ -343,7 +407,7 @@ const ImageReferenceControl = ({ onReferenceImageChange, disabled = false }) => 
             startIcon={images.length === 0 ? <PhotoCameraIcon /> : <AddIcon />}
             onClick={() => refImageInputRef.current?.click()}
             fullWidth
-            sx={{ mt: images.length > 0 ? 2 : 0, minHeight: 64, fontSize: 14, borderStyle: 'dashed', borderColor: 'divider' }}
+            sx={{ mt: images.length > 0 ? 1.25 : 0, minHeight: 56, fontSize: 14, borderStyle: 'dashed', borderColor: 'divider' }}
             disabled={disabled}
           >
             {images.length === 0
@@ -351,8 +415,8 @@ const ImageReferenceControl = ({ onReferenceImageChange, disabled = false }) => 
               : t('painting.workspace.parameters.addMoreImages')}
           </Button>
         )}
-      </Box>
-    </Tooltip>
+      </AccordionDetails>
+    </Accordion>
   );
 };
 

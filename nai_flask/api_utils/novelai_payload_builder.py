@@ -499,6 +499,71 @@ def _is_allowed_resolution(width, height, max_product, max_dimension, step=64):
     )
 
 
+def estimate_novelai_image_tool(data, source_width, source_height):
+    """按原图尺寸计算放大或增强的输出尺寸和预计官方 Anlas。
+
+    Args:
+        data: 包含 image_tool、模型和增强参数的请求。
+        source_width: 原图真实宽度；预估接口使用客户端提供的宽度。
+        source_height: 原图真实高度；预估接口使用客户端提供的高度。
+
+    Returns:
+        dict: 包含 cost、width、height 及规范化增强参数的结果。
+    """
+    if (
+        type(source_width) is not int or type(source_height) is not int
+        or not 64 <= source_width <= 8192 or not 64 <= source_height <= 8192
+        or source_width * source_height > 16_777_216
+    ):
+        raise ExposableError("The source image dimensions are unsupported.", 400)
+    tool = data.get("image_tool")
+    if tool == "upscale":
+        pixels = source_width * source_height
+        for cost, limit in enumerate((1048576, 1747627, 2446678, 3145728), 1):
+            if pixels <= limit:
+                return {"cost": cost, "width": source_width * 2, "height": source_height * 2}
+        raise ExposableError("Upscale supports source images up to 3,145,728 pixels.", 400)
+    if tool != "enhance":
+        raise ExposableError("Select Upscale or Enhance.", 400)
+    model = data.get("model")
+    if not isinstance(model, str) or model not in ALL_MODELS:
+        raise ExposableError("Enhance requires a supported NovelAI model.", 400)
+    amount = data.get("upscale_amount", 1)
+    if amount not in (1, 1.5, "max") or isinstance(amount, bool):
+        raise ExposableError("Enhance upscale amount must be 1, 1.5, or max.", 400)
+    if amount == "max" and model not in V5_MODELS:
+        raise ExposableError("Max Enhance requires a V5 model.", 400)
+    strength, noise = data.get("strength", 0.2), data.get("noise", 0)
+    steps = data.get("steps", 28)
+    for value, name in ((strength, "strength"), (noise, "noise")):
+        if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 1:
+            raise ExposableError(f"Enhance {name} must be between 0 and 1.", 400)
+    if type(steps) is not int or not 1 <= steps <= 50:
+        raise ExposableError("Enhance steps must be between 1 and 50.", 400)
+    if amount == "max":
+        width, height = source_width // 16 * 32, source_height // 16 * 32
+        ratio = min(1, math.sqrt(3145728 / (width * height)))
+        # 对齐官网 Math.round，Python round 的偶数舍入会在半格处改变尺寸。
+        output_width = 32 * math.floor(width * ratio / 32 + 0.5)
+        output_height = 32 * math.floor(height * ratio / 32 + 0.5)
+        if output_width * output_height > 3145728:
+            output_width = math.floor(width * ratio / 32) * 32
+            output_height = math.floor(height * ratio / 32) * 32
+    else:
+        output_width = math.floor(source_width * amount / 64 + 0.5) * 64
+        output_height = math.floor(source_height * amount / 64 + 0.5) * 64
+    if (
+        min(output_width, output_height) < 64 or max(output_width, output_height) > 4096
+        or output_width * output_height > 3145728
+    ):
+        raise ExposableError("Enhance output must fit within 3,145,728 pixels and 4,096 pixels per side.", 400)
+    return {
+        "cost": calculate_nai_cost(output_width, output_height, steps, model_name=model, strength=strength),
+        "width": output_width, "height": output_height,
+        "strength": strength, "noise": noise, "steps": steps,
+    }
+
+
 def build_novelai_payload(
     data,
     current_user,
@@ -524,6 +589,39 @@ def build_novelai_payload(
             "Site verification fields are not accepted by the local API.",
             code="SITE_SECURITY_FIELD_NOT_ALLOWED",
         )
+    image_tool = data.get("image_tool")
+    tool_estimate = None
+    if image_tool:
+        encoded_image = data.get("image", "")
+        if not isinstance(encoded_image, str) or len(encoded_image) > 32 * 1024 * 1024:
+            raise ExposableError("Provide a source image smaller than 24 MiB.", 400)
+        encoded_image = encoded_image.split(",", 1)[-1]
+        try:
+            image_bytes = base64.b64decode(encoded_image, validate=True)
+            with Image.open(io.BytesIO(image_bytes)) as source:
+                source_width, source_height = source.size
+                source.verify()
+        except (ValueError, binascii.Error, OSError, Image.DecompressionBombError) as exc:
+            raise ExposableError("The source image is invalid.", 400) from exc
+        tool_estimate = estimate_novelai_image_tool(data, source_width, source_height)
+        if image_tool == "upscale":
+            return {
+                "type": "novelai", "image_tool": "upscale", "user": current_user,
+                "use_upscale_credits": True, "user_upscale_credits": user_upscale_credits,
+                "calculated_cost": tool_estimate["cost"], "headers": {},
+                "data": {
+                    "model": "nai-diffusion-5-curated", "image": encoded_image,
+                    "width": source_width, "height": source_height, "scale": 2,
+                    "declared_blur_sigma": 0,
+                },
+            }
+        # 增强仅重绘当前图片，不继承工作区中另一个任务的遮罩或参考图。
+        data = {
+            key: value for key, value in data.items()
+            if key not in (*DIRECTOR_REFERENCE_PARAM_KEYS, *VIBE_PARAM_KEYS, "mask", "req_type")
+        }
+        data.update({**tool_estimate, "image": encoded_image, "action": True, "sm": False, "sm_dyn": False})
+        use_upscale_credits = True
     model_name = data.get("model", "nai-diffusion-3")
     if model_name not in ALL_MODELS:
         raise ExposableError(
@@ -563,6 +661,7 @@ def build_novelai_payload(
         current_resolution[1],
         max_resolution_product,
         max_dimension,
+        step=32 if image_tool == "enhance" else 64,
     ):
         req_width = data.get("width", 1024)
         req_height = data.get("height", 1024)
@@ -598,7 +697,7 @@ def build_novelai_payload(
             model_name=model_name,
             strength=cost_strength,
         )
-        if user_upscale_credits < required_cost:
+        if image_tool != "enhance" and user_upscale_credits < required_cost:
             raise ExposableError(
                 f"Insufficient upscale credits. This request needs {required_cost}, "
                 f"but only {user_upscale_credits} remain.",
@@ -659,31 +758,17 @@ def build_novelai_payload(
             },
         },
         "headers": {
-            "Accept": "*/*",
-            "Accept-Encoding": "gzip, deflate, br, zstd",
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
             "Content-Type": "application/json",
-            "Origin": "https://novelai.net",
-            "priority": "u=1, i",
-            "Referer": "https://novelai.net/",
-            "Sec-Ch-Ua": "Not;A=Brand\";v=\"99\", \"Google Chrome\";v=\"139\", \"Chromium\";v=\"139\"",
-            "Sec-Ch-Ua-Mobile": "?0",
-            "Sec-Ch-Ua-Platform": "\"Windows\"",
-            "Sec-Fetch-Dest": "empty",
-            "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Site": "same-site",
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-                "AppleWebKit/537.36 (KHTML, like Gecko)"
-                "Chrome/139.0.0.0 Safari/537.36"
-            ),
             "X-Correlation-ID": tools.correlation_id_generator(),
-            "x-initiated-at": tools.get_z_time_now(),
         },
     }
     if required_cost is not None:
         # worker 在选择 Token 和官方点数查询失败时都使用同一预计值。
         payload["calculated_cost"] = required_cost
+
+    if image_tool == "enhance":
+        payload["image_tool"] = "enhance"
+        payload["data"]["parameters"]["upscaled_enhance"] = data.get("upscale_amount") == "max"
 
     if data.get("action", False):
         payload["data"]["action"] = "img2img"
@@ -787,5 +872,9 @@ def build_novelai_payload(
 
     if model_name in V5_MODELS:
         payload["data"] = normalize_v5_request(payload["data"])
+
+    if image_tool == "enhance" and data.get("upscale_amount") == "max":
+        # Max 由官方内部放大，请求传原图尺寸；预估仍按最终输出尺寸计算。
+        payload["data"]["parameters"].update(width=source_width, height=source_height)
 
     return payload

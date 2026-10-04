@@ -4,6 +4,8 @@ import React from 'react';
 import Img2ImgPanel from './ImageParameterPanelUI/Img2ImgPanel';
 import VibePanel from './ImageParameterPanelUI/VibePanel';
 import CharacterControlPanel from './ImageParameterPanelUI/CharacterControlPanel';
+import ImageReferenceControl from './ImageParameterPanelUI/BasicParametersUI/ImageReferenceControl';
+import { isNovelAIDirectorReferenceModel } from '../utils/modelUtils';
 
 const ImageParameterPanel = ({
     params,
@@ -118,6 +120,15 @@ const ImageParameterPanel = ({
           blocked={vibeDisabled}
           blockedMessageKey={vibeBlockedMessageKey}
           handleVibeToggleDisabled={handleVibeToggleDisabled}
+        />
+      )}
+
+      {isNovelAIDirectorReferenceModel(params.model) && (
+        <ImageReferenceControl
+          onReferenceImageChange={onReferenceImageChange}
+          disabled={imageReferenceDisabled}
+          expanded={Boolean(expandedPanels.reference)}
+          onExpandedChange={(_, isExpanded) => onExpandedPanelsChange('reference', isExpanded)}
         />
       )}
 

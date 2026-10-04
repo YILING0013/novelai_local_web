@@ -3,32 +3,36 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const source = await readFile(new URL('./ApiClient.js', import.meta.url), 'utf8');
-const testableSource = source.replace(
-  /^import .*modelUtils';\r?\n/,
-  "const isPaintingModelAllowed = (model) => model === 'nai-diffusion-4-5-full';\n",
-);
-const apiModule = await import(`data:text/javascript;base64,${Buffer.from(testableSource).toString('base64')}`);
+const apiModule = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 const { ApiClient } = apiModule;
 
-test('标签请求使用 prompt 并只附加白名单模型', async (t) => {
+test('双语标签查询支持取消，中文释义和工具估价沿用本地会话与 CSRF', async (t) => {
   const requests = [];
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     requests.push({ url, options });
     return new Response(JSON.stringify({ tags: [] }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
+      status: 200, headers: { 'Content-Type': 'application/json' },
     });
   });
   const client = new ApiClient();
-
-  await client.getPrompt('1 girl', 'nai-diffusion-4-5-full');
-  await client.getPrompt('landscape', 'unsupported-model');
-
-  assert.equal(
-    requests[0].url,
-    '/api/images/tags?prompt=1+girl&model=nai-diffusion-4-5-full',
-  );
-  assert.equal(requests[1].url, '/api/images/tags?prompt=landscape');
+  client.setCsrfToken('local-test-csrf');
+  const controller = new AbortController();
+  await client.getPrompt('1 girl', { signal: controller.signal });
+  await client.translatePromptTags(['1girl', '蓝色眼睛'], { signal: controller.signal });
+  const estimate = { image_tool: 'enhance', source_width: 1024, source_height: 1024 };
+  await client.estimateImageTool(estimate, { signal: controller.signal });
+  assert.equal(requests[0].url, '/api/suggest-tags?prompt=1+girl');
+  assert.equal(requests[0].options.signal, controller.signal);
+  assert.equal(requests[1].url, '/api/translate-tags');
+  assert.deepEqual(JSON.parse(requests[1].options.body), { tags: ['1girl', '蓝色眼睛'] });
+  assert.equal(requests[2].url, '/api/image-tools/estimate');
+  assert.deepEqual(JSON.parse(requests[2].options.body), estimate);
+  for (const { options } of requests.slice(1)) {
+    assert.equal(options.method, 'POST');
+    assert.equal(options.credentials, 'include');
+    assert.equal(options.signal, controller.signal);
+    assert.equal(options.headers.get('X-CSRF-Token'), 'local-test-csrf');
+  }
 });
 
 test('卸载批次删除请求可启用 keepalive', async (t) => {

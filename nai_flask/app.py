@@ -54,12 +54,16 @@ from api_utils.local_image_library import LocalImageLibrary
 from api_utils.migrate_reference_library import migrate_reference_library
 from api_utils.image_validation import validate_base64_image, validate_generation_images
 from api_utils.novelai_client import NovelAIClient, NovelAIUpstreamError
+from api_utils.prompt_tags import TAG_DATABASE, normalize_tag
 from api_utils.novelai_payload_builder import (
     ALL_MODELS,
+    DIRECTOR_REFERENCE_PARAM_KEYS,
     NOVELAI_MAX_COST_PER_IMAGE,
+    VIBE_PARAM_KEYS,
     V5_MODEL_FAMILY,
     V5_MODELS,
     build_novelai_payload,
+    estimate_novelai_image_tool,
 )
 
 
@@ -757,6 +761,7 @@ def _save_generated_images(images: list[dict], parameters: dict) -> None:
                 base64.b64decode(image["data"]), filename=filename, metadata=metadata,
             )
             image["saved_file"] = {"id": saved["id"], "filename": saved["filename"], "url": saved["url"]}
+            image.update(width=saved["width"], height=saved["height"])
         except (OSError, ValueError, LocalStoreError, ExposableError, sqlite3.Error):
             current_app.logger.warning("event=generated_image_save_failed correlation_id=%s", _request_correlation_id())
             image["save_error"] = "LOCAL_IMAGE_SAVE_FAILED"
@@ -937,7 +942,8 @@ def create_app(
     }
 
     app.extensions["novelai_client"] = novelai_client or NovelAIClient(
-        app.config["UPSTREAM_TIMEOUT_SECONDS"]
+        app.config["UPSTREAM_TIMEOUT_SECONDS"],
+        tls_bindings_path=Path(app.config["DATA_DIR"]) / "novelai-tls-bindings.json",
     )
     app.extensions["local_store"] = LocalJsonStore(
         app.config["DATA_DIR"],
@@ -1510,6 +1516,10 @@ def create_app(
         _ensure_no_account_recovery()
         source_payload = copy.deepcopy(_request_json())
         batch_id, index, batch_size = _parse_batch_metadata(source_payload)
+        if source_payload.get("image_tool") == "enhance":
+            # 增强只处理当前图片，工作区上一次任务的遮罩与参考图不参与本次请求。
+            for field in (*DIRECTOR_REFERENCE_PARAM_KEYS, *VIBE_PARAM_KEYS, "mask", "req_type"):
+                source_payload.pop(field, None)
         validate_generation_images(source_payload)
         model_name = source_payload.get("model", "nai-diffusion-3")
         if model_name not in ALL_MODELS:
@@ -1540,7 +1550,9 @@ def create_app(
                 )
                 images = [_image_result(image, seed=seed, index=index)]
             else:
-                upstream_images = app.extensions["novelai_client"].generate_image(
+                image_client = app.extensions["novelai_client"]
+                operation = image_client.upscale_image if internal_payload.get("image_tool") == "upscale" else image_client.generate_image
+                upstream_images = operation(
                     g.local_session["token"], official_payload, correlation_id
                 )
                 if len(upstream_images) != 1:
@@ -1557,9 +1569,12 @@ def create_app(
                 )]
         saved_parameters = {key: value for key, value in official_payload.get("parameters", {}).items() if key in {
             "width", "height", "steps", "scale", "seed", "sampler", "noise_schedule", "cfg_rescale",
-            "uc", "v4_prompt", "v4_negative_prompt", "characterPrompts", "use_coords", "sm", "sm_dyn",
+            "uc", "negative_prompt", "v4_prompt", "v4_negative_prompt", "characterPrompts", "use_coords", "sm", "sm_dyn",
+            "strength", "noise", "upscaled_enhance",
         }}
         saved_parameters.update(prompt=source_payload.get("positivePrompt", source_payload.get("prompt", "")), model=model_name)
+        if internal_payload.get("image_tool"):
+            saved_parameters["image_tool"] = internal_payload["image_tool"]
         _save_generated_images(images, saved_parameters)
         account_snapshot = _refresh_account_snapshot(
             g.local_session,
@@ -1572,6 +1587,28 @@ def create_app(
             "batch_id": batch_id,
             "index": index,
         }, g.local_session, g.local_session_id)
+
+    @app.post("/api/image-tools/estimate")
+    @session_required(csrf=True)
+    def estimate_image_tool() -> Response:
+        """根据原图尺寸预估官方 Anlas，不提交生成或修改余额。
+
+        Args:
+            None. 工具参数和原图尺寸由 JSON 请求体提供。
+
+        Returns:
+            输出尺寸、预计 Anlas 和最近一次官方账号快照中的可用余额。
+        """
+
+        payload = _request_json()
+        estimate = estimate_novelai_image_tool(payload, payload.get("source_width"), payload.get("source_height"))
+        snapshot = g.local_session["account_snapshot"]
+        balance = snapshot["anlas"]["total"] if not snapshot["stale"] else None
+        return jsonify({
+            **estimate,
+            "balance": balance,
+            "affordable": balance >= estimate["cost"] if balance is not None else None,
+        })
 
     @app.delete("/api/images/batch")
     @session_required(csrf=True)
@@ -1632,7 +1669,7 @@ def create_app(
         if operation_name == "augment" and payload.get("req_type") not in DIRECTOR_TOOLS:
             raise ApiError("The selected Director tool is not allowed.", 400, "DIRECTOR_TOOL_INVALID")
         if operation_name == "upscale":
-            unknown_fields = set(payload) - {"image", "model", "declared_blur_sigma"}
+            unknown_fields = set(payload) - {"image", "model", "declared_blur_sigma", "width", "height", "scale"}
             if unknown_fields:
                 raise ApiError(
                     "The upscale request contains unsupported fields.",
@@ -1649,6 +1686,13 @@ def create_app(
                 payload["declared_blur_sigma"]
             ) is None:
                 raise ApiError("declared_blur_sigma must be a finite number.")
+            if payload.get("scale", 2) != 2:
+                raise ApiError("Upscale only supports scale=2.", 400, "UPSCALE_FIELD_INVALID")
+            with PillowImage.open(BytesIO(base64.b64decode(payload["image"]))) as source:
+                width, height = source.size
+            estimate_novelai_image_tool({"image_tool": "upscale"}, width, height)
+            # 尺寸以图像内容为准，不信任浏览器声明的宽高。
+            payload.update(model="nai-diffusion-5-curated", width=width, height=height, scale=2)
 
         correlation_id = _correlation_id()
         with _image_operation(g.local_session_id, batch_id, index, batch_size):
@@ -1768,6 +1812,97 @@ def create_app(
             "account_snapshot": g.local_session["account_snapshot"],
             "correlation_id": _correlation_id(),
         })
+
+    @app.get("/api/suggest-tags")
+    @session_required()
+    def suggest_bilingual_tags() -> Response:
+        """把官方英文联想与本地中文词库合并，最多返回 40 条候选。
+
+        Args:
+            None. prompt 与可选 model 从查询参数读取。
+
+        Returns:
+            标签列表、数量以及官方联想是否可用的状态。
+        """
+
+        prompt = normalize_tag(request.args.get("prompt", ""))
+        if len(prompt) > 200:
+            raise ApiError("搜索词不能超过 200 个字符。")
+        if not prompt:
+            return jsonify({"tags": [], "count": 0, "upstream_status": "not_requested"})
+        model_name = request.args.get("model")
+        if model_name is not None and model_name not in ALL_MODELS:
+            raise ApiError("The selected model is not allowed.", 400, "MODEL_NOT_SUPPORTED")
+        matches, seen = [], set()
+        upstream_status = "not_requested"
+        if not re.search(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]", prompt):
+            params = {"prompt": prompt}
+            if model_name:
+                params["model"] = model_name
+            try:
+                result = app.extensions["novelai_client"].suggest_tags(g.local_session["token"], params)
+                tags = result.get("tags") if isinstance(result, dict) else result
+                if not isinstance(tags, list) or any(
+                    not isinstance(tag, dict) or not isinstance(tag.get("tag"), str) or not tag["tag"].strip()
+                    for tag in tags
+                ):
+                    raise ValueError("invalid_tag_payload")
+                upstream_status = "ok"
+                for tag in tags[:20]:
+                    name = tag["tag"].strip()
+                    key = normalize_tag(name)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    local = TAG_DATABASE.get(key)
+                    matches.append({
+                        "name": name, "tag_name": name,
+                        "translation": local["translation"] if local else "",
+                        "count": local["count"] if local else 0,
+                        "group": local["group"] if local else "",
+                        "d_category": local["group"] if local else "",
+                        "source": "upstream",
+                    })
+            except (NovelAIUpstreamError, ValueError) as exc:
+                upstream_status = "unavailable"
+                app.logger.warning(
+                    "event=tag_suggestion_upstream_failed error_type=%s local_fallback=true",
+                    type(exc).__name__,
+                )
+        local_count = 0
+        for key, tag in TAG_DATABASE.items():
+            if key not in seen and (prompt in key or prompt in normalize_tag(tag["translation"])):
+                matches.append({**tag, "source": "local"})
+                seen.add(key)
+                local_count += 1
+                if local_count == 20:
+                    break
+        return jsonify({"tags": matches, "count": len(matches), "upstream_status": upstream_status})
+
+    @app.post("/api/translate-tags")
+    @session_required(csrf=True)
+    def translate_tags() -> Response:
+        """在本地词库中按完整英文标签批量查询中文含义。
+
+        Args:
+            None. JSON 的 tags 字段包含最多 1000 个标签。
+
+        Returns:
+            以规范化英文标签为键、中文含义为值的 translations 映射。
+        """
+
+        tags = _request_json().get("tags")
+        if not isinstance(tags, list) or len(tags) > 1000 or any(
+            not isinstance(tag, str) or len(tag) > 500 for tag in tags
+        ):
+            raise ApiError("tags 必须为字符串数组，最多 1000 项，每项最多 500 个字符。")
+        translations = {}
+        for tag in tags:
+            key = normalize_tag(tag)
+            entry = TAG_DATABASE.get(key)
+            if entry and entry["translation"]:
+                translations[key] = entry["translation"]
+        return jsonify({"translations": translations})
 
     @app.get("/api/local/settings")
     @session_required()
