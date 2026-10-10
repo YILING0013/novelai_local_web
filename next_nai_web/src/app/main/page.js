@@ -44,6 +44,8 @@ import {
   Brush as BrushIcon,
   PhotoLibraryOutlined as ReferenceGalleryIcon,
   FolderOutlined as LocalGalleryIcon,
+  AutoAwesome as TaggingIcon,
+  ZoomInMap as UpscalingIcon,
   ChevronLeft as ChevronLeftIcon,
   ChevronRight as ChevronRightIcon,
   Close as CloseIcon,
@@ -59,6 +61,7 @@ import {
 import AIPaintingPage from '@/components/ai-painting/AIPaintingPage';
 import SettingsPage from '@/components/settings/SettingsPage';
 import GalleryWorkspace from '@/components/gallery/GalleryWorkspace';
+import LocalInferencePage from '@/components/local-inference/LocalInferencePage';
 import apiClient from '@/utils/ApiClient';
 import { useI18n } from '@/i18n/I18nProvider';
 import LanguageSwitcher from '@/components/i18n/LanguageSwitcher';
@@ -551,6 +554,8 @@ export default function MainPage() {
       { id: PAGE_IDS.AI_PAINTING, labelKey: 'pages.aiPainting', icon: <BrushIcon />, component: <AIPaintingPage />, color: readPageColor(storage, PAGE_IDS.AI_PAINTING), confirmOnClose: true },
       { id: PAGE_IDS.REFERENCE_GALLERY, labelKey: 'gallery.referencesTitle', icon: <ReferenceGalleryIcon />, component: <GalleryWorkspace source="references" />, color: readPageColor(storage, PAGE_IDS.REFERENCE_GALLERY), confirmOnClose: false },
       { id: PAGE_IDS.LOCAL_GALLERY, labelKey: 'gallery.outputsTitle', icon: <LocalGalleryIcon />, component: <GalleryWorkspace source="outputs" />, color: readPageColor(storage, PAGE_IDS.LOCAL_GALLERY), confirmOnClose: false },
+      { id: PAGE_IDS.IMAGE_TAGGING, labelKey: 'pages.imageTagging', icon: <TaggingIcon />, component: <LocalInferencePage kind="tagger" />, color: readPageColor(storage, PAGE_IDS.IMAGE_TAGGING), confirmOnClose: false },
+      { id: PAGE_IDS.LOCAL_UPSCALING, labelKey: 'pages.localUpscaling', icon: <UpscalingIcon />, component: <LocalInferencePage kind="upscale" />, color: readPageColor(storage, PAGE_IDS.LOCAL_UPSCALING), confirmOnClose: false },
       { id: PAGE_IDS.SETTINGS, labelKey: 'pages.settings', icon: <SettingsIcon />, color: readPageColor(storage, PAGE_IDS.SETTINGS), confirmOnClose: false },
     ];
   });
@@ -690,7 +695,7 @@ export default function MainPage() {
               return (
                 <Tooltip key={page.id} title={openDrawer ? '' : getPageLabel(page)} placement="right" arrow>
                   <ListItem disablePadding sx={{ mb: 1, borderRadius: 2, overflow: 'hidden' }}>
-                    <ListItemButton onClick={() => handleOpenPage(page)} onMouseEnter={() => setHoveredItem(page.id)} onMouseLeave={() => setHoveredItem(null)}
+                    <ListItemButton aria-label={getPageLabel(page)} onClick={() => handleOpenPage(page)} onMouseEnter={() => setHoveredItem(page.id)} onMouseLeave={() => setHoveredItem(null)}
                       sx={{ borderRadius: 2, py: 1.25, position: 'relative',
                         backgroundColor: isActive ? alpha(page.color, mode === 'light' ? 0.12 : 0.2) : isHovered ? alpha(theme.palette.action.hover, 0.1) : 'transparent',
                         transition: `all ${animationEnabled ? animationSpeed : 0}ms ease`,
@@ -758,7 +763,7 @@ export default function MainPage() {
                 {openPages.map((page) => (
                   <Box key={page.id} sx={{ height: '100%', display: page.id === activePage ? 'block' : 'none' }}>
                     {page.id === PAGE_IDS.SETTINGS
-                      ? React.cloneElement(page.component, { pages: visiblePages })
+                      ? React.cloneElement(page.component, { pages: visiblePages, active: page.id === activePage })
                       : React.cloneElement(page.component, {
                         userId: accountSnapshot?.information?.email || '',
                         accountSnapshot,

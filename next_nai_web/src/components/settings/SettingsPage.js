@@ -1,1273 +1,417 @@
-import React, { useState, useEffect, useRef } from 'react';
+"use client";
+
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  Paper,
-  Typography,
-  Box,
-  Grid,
-  TextField,
-  Button,
-  Switch,
-  FormControlLabel,
-  Alert,
-  Snackbar,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
-  Tooltip,
-  Slider,
-  useTheme,
-  alpha,
-  Card,
-  CircularProgress,
-  useMediaQuery,
-  Radio,
-  RadioGroup,
-  InputAdornment, // 导入
+  Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, ButtonBase,
+  Chip, FormControlLabel, InputAdornment, Paper, Radio, RadioGroup, Slider,
+  Snackbar, Stack, Switch, Tab, Tabs, TextField, ToggleButton, ToggleButtonGroup,
+  Typography, useMediaQuery, useTheme, alpha,
 } from '@mui/material';
 import {
-  ColorLens as ColorLensIcon,
-  Save as SaveIcon,
-  Refresh as RefreshIcon,
-  ExpandMore as ExpandMoreIcon,
-  Speed as SpeedIcon,
-  Brush as BrushIcon,
-  Settings as SettingsIcon,
-  Check as CheckIcon,
-  Palette as PaletteIcon,
-  Lightbulb as LightbulbIcon,
-  DarkMode as DarkModeIcon,
-  LightMode as LightModeIcon,
-  Visibility as VisibilityIcon,
-  Image as ImageIcon,
-  SaveAlt as SaveAltIcon,
-  Label as LabelIcon,
-  AutoFixHigh as AutoFixHighIcon,
+  Check, DarkModeOutlined, ExpandMore, FolderOpenOutlined, LightModeOutlined,
+  PaletteOutlined, Refresh, SaveOutlined, SpeedOutlined, TuneOutlined,
 } from '@mui/icons-material';
 import { generateFileName, DOWNLOAD_NAMING_METHODS } from '@/components/ai-painting/tools/ImageTools/ImageSaveUtils';
-import { useI18n } from '@/i18n/I18nProvider';
-import { PAGE_IDS, PAGE_COLOR_DEFAULTS, getPageColorStorageKey, migrateLegacyPageColors } from '@/i18n/pageConfig.mjs';
-import { BACKGROUND_PRESETS, DEFAULT_THEME_SETTINGS, THEME_COLOR_PRESETS } from '@/providers/themePresets.mjs';
-import apiClient from '@/utils/ApiClient';
 import GallerySourceSelect from '@/components/gallery/GallerySourceSelect';
+import apiClient from '@/utils/ApiClient';
+import { useI18n } from '@/i18n/I18nProvider';
+import { PAGE_COLOR_DEFAULTS, getPageColorStorageKey } from '@/i18n/pageConfig.mjs';
+import { DEFAULT_THEME_SETTINGS, THEME_PRESETS } from '@/providers/themePresets.mjs';
+import { useAppTheme } from '@/providers/AppThemeProvider';
 
-// 页面图标映射 (保持在此处，因为 SettingsPage 需要它)
-const pageIcons = {
-  [PAGE_IDS.AI_PAINTING]: <BrushIcon />,
-  [PAGE_IDS.SETTINGS]: <SettingsIcon />,
-};
+const sections = [
+  { id: 'appearance', icon: <PaletteOutlined /> },
+  { id: 'pages', icon: <TuneOutlined /> },
+  { id: 'interface', icon: <SpeedOutlined /> },
+  { id: 'gallery', icon: <FolderOpenOutlined /> },
+];
 
-// 动态生成页面颜色的初始状态
-const getInitialPageColors = (pages) => {
-  const initialColors = {};
-  migrateLegacyPageColors(localStorage);
-  pages.forEach(page => {
-    if (!pageIcons[page.id]) {
-      // 如果没有图标，给一个默认图标
-      pageIcons[page.id] = <LabelIcon />;
-    }
-    initialColors[page.id] = localStorage.getItem(getPageColorStorageKey(page.id)) || page.color || DEFAULT_THEME_SETTINGS.primaryColors.light;
-  });
-  return initialColors;
-};
+/** 判断输入能否被 MUI 调色函数处理，避免未输入完整的色值进入全站主题。 */
+function isValidColor(value) {
+  return /^(#|rgba?\(|hsla?\()/i.test(value) && CSS.supports('color', value);
+}
 
-// 动态生成默认页面颜色
-const getDefaultPageColors = (pages) => {
-  const defaultColors = {};
-  pages.forEach(page => {
-    // 页面传入的颜色可能已经是用户保存值，重置应使用页面的原始默认色。
-    defaultColors[page.id] = PAGE_COLOR_DEFAULTS[page.id] || page.color || DEFAULT_THEME_SETTINGS.primaryColors.light;
-  });
-  return defaultColors;
-};
+/**
+ * 主题与页面强调色共用的色值输入，文本框和取色器修改同一个值。
+ * @param {object} props label 为字段名称，value 为色值，onChange 接收新色值。
+ * @returns {React.ReactElement} 带颜色预览和错误提示的输入框。
+ */
+function ColorField({ label, value, onChange }) {
+  const { t } = useI18n();
+  const valid = isValidColor(value);
+  return <TextField
+    label={label} value={value} onChange={(event) => onChange(event.target.value)}
+    size="small" fullWidth error={!valid}
+    helperText={!valid ? t('settings.invalidColor') : undefined}
+    InputProps={{ startAdornment: <InputAdornment position="start">
+      <Box component="label" sx={{
+        position: 'relative', width: 24, height: 24, borderRadius: 0.75,
+        border: 1, borderColor: 'divider', bgcolor: valid ? value : 'transparent', overflow: 'hidden',
+      }}>
+        <input type="color" aria-label={t('settings.pickColor', { name: label })}
+          value={/^#[\da-f]{6}$/i.test(value) ? value : '#58779A'}
+          onChange={(event) => onChange(event.target.value)}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }} />
+      </Box>
+    </InputAdornment> }}
+  />;
+}
 
-
-const SettingsPage = ({ pages = [] }) => { // 接收来自 page.js 的 pages 数组
+/**
+ * 设置工作区：按分区编辑草稿，试色即时预览，保存后写入本地后端并更新浏览器缓存。
+ * @param {object} props pages 为可见页面，active 表示标签是否可见，sectionRequest 指定从画廊跳入的分区。
+ * @returns {React.ReactElement} 分类导航、设置内容与始终可见的保存栏。
+ */
+export default function SettingsPage({ pages = [], active = true, sectionRequest = null }) {
   const theme = useTheme();
   const { t, locale, setLocale } = useI18n();
-  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const remoteSettingsLoaded = useRef(false);
-  
-  // 获取当前应用的主题模式
-  const [mode, setMode] = useState(() => {
-    return localStorage.getItem('themeMode') || DEFAULT_THEME_SETTINGS.mode;
-  });
-  
-  // 未保存自定义颜色时使用全站默认配色。
-  const [customBackgroundColors, setCustomBackgroundColors] = useState({
-    light: {
-      default: localStorage.getItem('themeBackgroundDefaultLight') || DEFAULT_THEME_SETTINGS.backgroundColors.light.default,
-      paper: localStorage.getItem('themeBackgroundPaperLight') || DEFAULT_THEME_SETTINGS.backgroundColors.light.paper,
-      drawer: localStorage.getItem('themeBackgroundDrawerLight') || DEFAULT_THEME_SETTINGS.backgroundColors.light.drawer,
-    },
-    dark: {
-      default: localStorage.getItem('themeBackgroundDefaultDark') || DEFAULT_THEME_SETTINGS.backgroundColors.dark.default,
-      paper: localStorage.getItem('themeBackgroundPaperDark') || DEFAULT_THEME_SETTINGS.backgroundColors.dark.paper,
-      drawer: localStorage.getItem('themeBackgroundDrawerDark') || DEFAULT_THEME_SETTINGS.backgroundColors.dark.drawer,
-    },
-  });
-  
-  const [customColors, setCustomColors] = useState({
-    light: localStorage.getItem('themePrimaryLight') || DEFAULT_THEME_SETTINGS.primaryColors.light,
-    dark: localStorage.getItem('themePrimaryDark') || DEFAULT_THEME_SETTINGS.primaryColors.dark,
-  });
-  
-  // 动态初始化 pageColors
-  const [pageColors, setPageColors] = useState(() => getInitialPageColors(pages));
+  const mobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const { savedSettings, previewTheme, reloadFromStorage } = useAppTheme();
+  const [section, setSection] = useState('appearance');
+  const [themeDraft, setThemeDraft] = useState(null);
+  const themeSettings = themeDraft || savedSettings;
+  const { mode, primaryColors, backgroundColors, animationEnabled, animationSpeed } = themeSettings;
+  const [pageColors, setPageColors] = useState(() => Object.fromEntries(pages.map((page) => [
+    page.id, localStorage.getItem(getPageColorStorageKey(page.id)) || page.color,
+  ])));
+  const [imageSettings, setImageSettings] = useState(() => ({
+    outputDirectory: '',
+    inspirationSource: 'default',
+    fileNamePrefix: localStorage.getItem('fileNamePrefix') || 'AI_Image',
+    namingMethod: localStorage.getItem('namingMethod') || 'seed',
+  }));
+  const [savedImages, setSavedImages] = useState(imageSettings);
+  const [savedPageColors, setSavedPageColors] = useState(pageColors);
+  const [snackbar, setSnackbar] = useState(null);
+  const contentRef = useRef(null);
+  const initialState = useRef({ pageColors, imageSettings });
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
-  const [animationEnabled, setAnimationEnabled] = useState(
-    localStorage.getItem('animationEnabled') !== 'false'
-  );
-  const [animationSpeed, setAnimationSpeed] = useState(
-    parseInt(localStorage.getItem('animationSpeed') || '300')
-  );
-  
-  // 图像下载设置状态，自动保存和手动下载共用同一套命名规则。
-  const [outputDirectory, setOutputDirectory] = useState('');
-  const [inspirationSource, setInspirationSource] = useState('default');
   useEffect(() => {
-    const updateSource = (event) => setInspirationSource(event.detail);
+    let cancelled = false;
+    setLoadError(false);
+    apiClient.getLocalSettings().then((settings) => {
+      if (cancelled) return;
+      // 后端保存值是跨浏览器的持久配置；旧浏览器缓存只补没有保存过的字段。
+      for (const [key, value] of Object.entries(settings)) {
+        if (key.startsWith('theme') || ['animationEnabled', 'animationSpeed', 'fileNamePrefix', 'namingMethod'].includes(key)) {
+          localStorage.setItem(key, String(value));
+        }
+      }
+      const colors = { ...initialState.current.pageColors, ...settings.pageColors };
+      for (const [id, color] of Object.entries(colors)) localStorage.setItem(getPageColorStorageKey(id), color);
+      const images = { ...initialState.current.imageSettings };
+      for (const key of Object.keys(images)) if (settings[key] !== undefined) images[key] = settings[key];
+      if (images.namingMethod === 'datetime') images.namingMethod = 'localDateTime';
+      setPageColors(colors); setSavedPageColors(colors);
+      setImageSettings(images); setSavedImages(images);
+      if (settings.locale) setLocale(settings.locale);
+      reloadFromStorage();
+      window.dispatchEvent(new CustomEvent('themeUpdate', { detail: { pageColors: colors } }));
+      window.dispatchEvent(new CustomEvent('imageSettingsUpdate', { detail: images }));
+      setLoaded(true);
+    }).catch(() => { if (!cancelled) setLoadError(true); });
+    return () => { cancelled = true; };
+  }, [reloadFromStorage, setLocale, loadAttempt]);
+
+  useEffect(() => {
+    const updateSource = (event) => {
+      setImageSettings((current) => ({ ...current, inspirationSource: event.detail }));
+      setSavedImages((current) => ({ ...current, inspirationSource: event.detail }));
+    };
     window.addEventListener('novelai:gallery-source', updateSource);
     return () => window.removeEventListener('novelai:gallery-source', updateSource);
   }, []);
-  const [fileNamePrefix, setFileNamePrefix] = useState(
-    localStorage.getItem('fileNamePrefix') || 'AI_Image'
-  );
-  const [namingMethod, setNamingMethod] = useState(
-    localStorage.getItem('namingMethod') || 'seed'
-  );
-  
-  // 消息通知
-  const [snackbar, setSnackbar] = useState({
-    open: false,
-    message: '',
-    severity: 'success',
-  });
-  
-  // 保存状态
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
-  
-  // 保存所有设置
-  const saveSettings = async () => {
-    setIsSaving(true);
 
-    try {
-      // 保存主题设置
-      localStorage.setItem('themePrimaryLight', customColors.light);
-      localStorage.setItem('themePrimaryDark', customColors.dark);
-      localStorage.setItem('themeMode', mode);
-      
-      // 保存背景色设置
-      localStorage.setItem('themeBackgroundDefaultLight', customBackgroundColors.light.default);
-      localStorage.setItem('themeBackgroundPaperLight', customBackgroundColors.light.paper);
-      localStorage.setItem('themeBackgroundDrawerLight', customBackgroundColors.light.drawer);
-      localStorage.setItem('themeBackgroundDefaultDark', customBackgroundColors.dark.default);
-      localStorage.setItem('themeBackgroundPaperDark', customBackgroundColors.dark.paper);
-      localStorage.setItem('themeBackgroundDrawerDark', customBackgroundColors.dark.drawer);
-      
-      // 保存页面颜色 (动态)
-      Object.entries(pageColors).forEach(([page, color]) => {
-        localStorage.setItem(getPageColorStorageKey(page), color);
-      });
-      
-      // 保存界面设置
-      localStorage.setItem('animationEnabled', animationEnabled.toString());
-      localStorage.setItem('animationSpeed', animationSpeed.toString());
-      
-      // 保存图像下载设置，并清理旧版命名字段，避免隐藏设置继续影响文件名。
-      localStorage.setItem('fileNamePrefix', fileNamePrefix);
-      localStorage.setItem('namingMethod', namingMethod);
-      localStorage.setItem('fileNameSuffix', '');
-      localStorage.setItem('randomStringLength', '8');
-      localStorage.setItem('includeDateInName', 'false');
-      localStorage.setItem('dateFormat', 'yyyyMMdd_HHmmss');
+  const colorsValid = [
+    ...Object.values(primaryColors),
+    ...Object.values(backgroundColors).flatMap(Object.values),
+    ...Object.values(pageColors),
+  ].every(isValidColor);
+  const dirty = JSON.stringify(themeSettings) !== JSON.stringify(savedSettings)
+    || JSON.stringify(imageSettings) !== JSON.stringify(savedImages)
+    || JSON.stringify(pageColors) !== JSON.stringify(savedPageColors);
+  const selectedPreset = THEME_PRESETS.find((preset) => preset.mode === mode
+    && preset.primary.toLowerCase() === primaryColors[mode].toLowerCase()
+    && Object.entries(preset.background).every(([key, value]) => value.toLowerCase() === backgroundColors[mode][key].toLowerCase()));
 
-      await apiClient.saveLocalSettings({
-        themeMode: mode,
-        themePrimaryLight: customColors.light,
-        themePrimaryDark: customColors.dark,
-        themeBackgroundDefaultLight: customBackgroundColors.light.default,
-        themeBackgroundPaperLight: customBackgroundColors.light.paper,
-        themeBackgroundDrawerLight: customBackgroundColors.light.drawer,
-        themeBackgroundDefaultDark: customBackgroundColors.dark.default,
-        themeBackgroundPaperDark: customBackgroundColors.dark.paper,
-        themeBackgroundDrawerDark: customBackgroundColors.dark.drawer,
-        pageColors,
-        locale,
-        animationEnabled,
-        animationSpeed,
-        outputDirectory,
-        inspirationSource,
-        fileNamePrefix,
-        namingMethod,
-      });
-      
-      window.dispatchEvent(new CustomEvent('novelai:gallery-source', { detail: inspirationSource }));
-      setSnackbar({
-        open: true,
-        message: t('settings.savedMessage'),
-        severity: 'success',
-      });
-      
-      // 派发事件通知主应用更新主题和设置
-      window.dispatchEvent(new CustomEvent('themeUpdate', {
-        detail: {
-          mode,
-          primaryColors: {
-            light: customColors.light,
-            dark: customColors.dark,
-          },
-          backgroundColors: customBackgroundColors,
-          pageColors,
-          animationEnabled,
-          animationSpeed
-        }
-      }));
-      
-      // 派发图像设置更新事件
-      window.dispatchEvent(new CustomEvent('imageSettingsUpdate', {
-        detail: {
-          outputDirectory,
-          inspirationSource,
-          fileNamePrefix,
-          namingMethod,
-          fileNameSuffix: '',
-          randomStringLength: 8,
-          includeDateInName: false,
-          dateFormat: 'yyyyMMdd_HHmmss'
-        }
-      }));
-      
-      setIsSaving(false);
-      setSaveSuccess(true);
-      
-      setTimeout(() => {
-        setSaveSuccess(false);
-      }, 2000);
-    } catch (error) {
-      setSnackbar({
-        open: true,
-        message: error?.message || t('settings.saveFailed'),
-        severity: 'error',
-      });
-      setIsSaving(false);
-    }
-  };
-  
-  // 重置所有设置
-  const resetSettings = () => {
-    // 动态重置页面颜色
-    const defaultPageColors = getDefaultPageColors(pages);
-    
-    setCustomColors(DEFAULT_THEME_SETTINGS.primaryColors);
-    setCustomBackgroundColors(DEFAULT_THEME_SETTINGS.backgroundColors);
-    setPageColors(defaultPageColors);
-    setMode(DEFAULT_THEME_SETTINGS.mode);
-    setAnimationEnabled(DEFAULT_THEME_SETTINGS.animationEnabled);
-    setAnimationSpeed(DEFAULT_THEME_SETTINGS.animationSpeed);
-    
-    // 重置图像设置
-    setOutputDirectory('');
-    setInspirationSource('default');
-    setFileNamePrefix('AI_Image');
-    setNamingMethod('seed');
-    
-    setSnackbar({
-      open: true,
-      message: t('settings.resetMessage'),
-      severity: 'info',
-    });
-  };
-  
-  // 主题模式切换
-  const handleModeChange = (event) => {
-    setMode(event.target.checked ? 'dark' : 'light');
-  };
-  
-  // 是否为有效的颜色代码
-  const isValidColor = (color) => {
-    if (!color) return false; // 处理空值
-    const s = new Option().style;
-    s.color = color;
-    return s.color !== '';
-  };
-  
-  // 当组件挂载时，从localStorage读取设置
+  // 应用侧栏也能切换亮暗模式；同步模式，同时保留正在微调的颜色。
   useEffect(() => {
-    const themeMode = localStorage.getItem('themeMode');
-    if (themeMode) {
-      setMode(themeMode);
+    setThemeDraft((current) => current ? { ...current, mode: savedSettings.mode } : null);
+  }, [savedSettings]);
+
+  // 无效的输入保留在表单里；用户打字途中仍显示上一次有效预览。
+  useEffect(() => {
+    if (active && colorsValid) previewTheme(themeDraft);
+  }, [active, colorsValid, themeDraft, previewTheme]);
+
+  // 主工作区保留隐藏标签的组件，因此切走标签也要撤掉未保存的预览。
+  useEffect(() => {
+    if (!active) previewTheme(null);
+    return () => previewTheme(null);
+  }, [active, previewTheme]);
+
+  useEffect(() => {
+    contentRef.current?.scrollTo({ top: 0 });
+  }, [section]);
+
+  useEffect(() => {
+    if (sectionRequest) setSection(sectionRequest.section);
+  }, [sectionRequest]);
+
+  const saveSettings = async () => {
+    setSaving(true);
+    try {
+      const settings = { themeMode: mode, pageColors, locale, animationEnabled, animationSpeed, ...imageSettings };
+      for (const colorMode of ['light', 'dark']) {
+        const suffix = colorMode === 'light' ? 'Light' : 'Dark';
+        settings[`themePrimary${suffix}`] = primaryColors[colorMode];
+        for (const [key, color] of Object.entries(backgroundColors[colorMode])) {
+          settings[`themeBackground${key[0].toUpperCase()}${key.slice(1)}${suffix}`] = color;
+        }
+      }
+      // 先确认后端保存成功，失败时保留草稿，避免页面误报已保存。
+      await apiClient.saveLocalSettings(settings);
+      localStorage.setItem('themeMode', mode);
+      for (const colorMode of ['light', 'dark']) {
+        const suffix = colorMode === 'light' ? 'Light' : 'Dark';
+        localStorage.setItem(`themePrimary${suffix}`, primaryColors[colorMode]);
+        for (const [key, color] of Object.entries(backgroundColors[colorMode])) {
+          localStorage.setItem(`themeBackground${key[0].toUpperCase()}${key.slice(1)}${suffix}`, color);
+        }
+      }
+      Object.entries(pageColors).forEach(([id, color]) => localStorage.setItem(getPageColorStorageKey(id), color));
+      localStorage.setItem('animationEnabled', String(animationEnabled));
+      localStorage.setItem('animationSpeed', String(animationSpeed));
+      Object.entries(imageSettings).forEach(([key, value]) => localStorage.setItem(key, String(value)));
+      // 后端输出和浏览器下载继续共用现有命名字段。
+      const downloadSettings = { ...imageSettings, fileNameSuffix: '', randomStringLength: 8, includeDateInName: false, dateFormat: 'yyyyMMdd_HHmmss' };
+      for (const key of ['fileNameSuffix', 'randomStringLength', 'includeDateInName', 'dateFormat']) {
+        localStorage.setItem(key, String(downloadSettings[key]));
+      }
+      window.dispatchEvent(new CustomEvent('themeUpdate', { detail: { ...themeSettings, pageColors } }));
+      window.dispatchEvent(new CustomEvent('imageSettingsUpdate', { detail: downloadSettings }));
+      window.dispatchEvent(new CustomEvent('novelai:gallery-source', { detail: imageSettings.inspirationSource }));
+      setThemeDraft(null);
+      setSavedImages(imageSettings);
+      setSavedPageColors(pageColors);
+      setSnackbar({ severity: 'success', message: t('settings.savedMessage') });
+    } catch {
+      setSnackbar({ severity: 'error', message: t('settings.saveFailed') });
+    } finally {
+      setSaving(false);
     }
-    
-    const themePrimaryLight = localStorage.getItem('themePrimaryLight');
-    const themePrimaryDark = localStorage.getItem('themePrimaryDark');
-    
-    const colors = {
-      light: themePrimaryLight || DEFAULT_THEME_SETTINGS.primaryColors.light,
-      dark: themePrimaryDark || DEFAULT_THEME_SETTINGS.primaryColors.dark,
-    };
-    setCustomColors(colors);
-    
-    // 加载背景色设置
-    const backgroundDefaultLight = localStorage.getItem('themeBackgroundDefaultLight');
-    const backgroundPaperLight = localStorage.getItem('themeBackgroundPaperLight');
-    const backgroundDrawerLight = localStorage.getItem('themeBackgroundDrawerLight');
-    const backgroundDefaultDark = localStorage.getItem('themeBackgroundDefaultDark');
-    const backgroundPaperDark = localStorage.getItem('themeBackgroundPaperDark');
-    const backgroundDrawerDark = localStorage.getItem('themeBackgroundDrawerDark');
-    
-    setCustomBackgroundColors({
-      light: {
-        default: backgroundDefaultLight || DEFAULT_THEME_SETTINGS.backgroundColors.light.default,
-        paper: backgroundPaperLight || DEFAULT_THEME_SETTINGS.backgroundColors.light.paper,
-        drawer: backgroundDrawerLight || DEFAULT_THEME_SETTINGS.backgroundColors.light.drawer,
-      },
-      dark: {
-        default: backgroundDefaultDark || DEFAULT_THEME_SETTINGS.backgroundColors.dark.default,
-        paper: backgroundPaperDark || DEFAULT_THEME_SETTINGS.backgroundColors.dark.paper,
-        drawer: backgroundDrawerDark || DEFAULT_THEME_SETTINGS.backgroundColors.dark.drawer,
-      },
-    });
-    
-    // 动态读取页面颜色
-    const storedPageColors = getInitialPageColors(pages);
-    setPageColors(storedPageColors);
-    
-    setAnimationEnabled(localStorage.getItem('animationEnabled') !== 'false');
-    setAnimationSpeed(parseInt(localStorage.getItem('animationSpeed') || '300'));
-    
-    // 读取图像设置
-
-    setFileNamePrefix(localStorage.getItem('fileNamePrefix') || 'AI_Image');
-    setNamingMethod(localStorage.getItem('namingMethod') || 'seed');
-
-    if (remoteSettingsLoaded.current) return undefined;
-    remoteSettingsLoaded.current = true;
-
-    let active = true;
-    void apiClient.getLocalSettings().then((settings) => {
-      if (!active || !settings || Object.keys(settings).length === 0) return;
-
-      const remoteMode = settings.themeMode === 'light' || settings.themeMode === 'dark'
-        ? settings.themeMode
-        : (themeMode === 'light' ? 'light' : 'dark');
-      const remotePrimaryColors = {
-        light: settings.themePrimaryLight || colors.light,
-        dark: settings.themePrimaryDark || colors.dark,
-      };
-      const remoteBackgroundColors = {
-        light: {
-          default: settings.themeBackgroundDefaultLight || backgroundDefaultLight || DEFAULT_THEME_SETTINGS.backgroundColors.light.default,
-          paper: settings.themeBackgroundPaperLight || backgroundPaperLight || DEFAULT_THEME_SETTINGS.backgroundColors.light.paper,
-          drawer: settings.themeBackgroundDrawerLight || backgroundDrawerLight || DEFAULT_THEME_SETTINGS.backgroundColors.light.drawer,
-        },
-        dark: {
-          default: settings.themeBackgroundDefaultDark || backgroundDefaultDark || DEFAULT_THEME_SETTINGS.backgroundColors.dark.default,
-          paper: settings.themeBackgroundPaperDark || backgroundPaperDark || DEFAULT_THEME_SETTINGS.backgroundColors.dark.paper,
-          drawer: settings.themeBackgroundDrawerDark || backgroundDrawerDark || DEFAULT_THEME_SETTINGS.backgroundColors.dark.drawer,
-        },
-      };
-      const remotePageColors = { ...storedPageColors, ...(settings.pageColors || {}) };
-      const remoteAnimationEnabled = settings.animationEnabled ?? (localStorage.getItem('animationEnabled') !== 'false');
-      const remoteAnimationSpeed = Number.isFinite(settings.animationSpeed)
-        ? settings.animationSpeed
-        : parseInt(localStorage.getItem('animationSpeed') || '300');
-
-      const remoteFileNamePrefix = settings.fileNamePrefix || localStorage.getItem('fileNamePrefix') || 'AI_Image';
-      const remoteNamingMethod = settings.namingMethod || localStorage.getItem('namingMethod') || 'seed';
-
-      localStorage.setItem('themeMode', remoteMode);
-      localStorage.setItem('themePrimaryLight', remotePrimaryColors.light);
-      localStorage.setItem('themePrimaryDark', remotePrimaryColors.dark);
-      localStorage.setItem('themeBackgroundDefaultLight', remoteBackgroundColors.light.default);
-      localStorage.setItem('themeBackgroundPaperLight', remoteBackgroundColors.light.paper);
-      localStorage.setItem('themeBackgroundDrawerLight', remoteBackgroundColors.light.drawer);
-      localStorage.setItem('themeBackgroundDefaultDark', remoteBackgroundColors.dark.default);
-      localStorage.setItem('themeBackgroundPaperDark', remoteBackgroundColors.dark.paper);
-      localStorage.setItem('themeBackgroundDrawerDark', remoteBackgroundColors.dark.drawer);
-      Object.entries(remotePageColors).forEach(([page, color]) => {
-        localStorage.setItem(getPageColorStorageKey(page), color);
-      });
-      localStorage.setItem('animationEnabled', String(remoteAnimationEnabled));
-      localStorage.setItem('animationSpeed', String(remoteAnimationSpeed));
-
-      localStorage.setItem('fileNamePrefix', remoteFileNamePrefix);
-      localStorage.setItem('namingMethod', remoteNamingMethod);
-
-      setMode(remoteMode);
-      setCustomColors(remotePrimaryColors);
-      setCustomBackgroundColors(remoteBackgroundColors);
-      setPageColors(remotePageColors);
-      setAnimationEnabled(remoteAnimationEnabled);
-      setAnimationSpeed(remoteAnimationSpeed);
-      setOutputDirectory(settings.outputDirectory || '');
-      setInspirationSource(settings.inspirationSource || 'default');
-      setFileNamePrefix(remoteFileNamePrefix);
-      setNamingMethod(remoteNamingMethod);
-      if (settings.locale) setLocale(settings.locale);
-
-      window.dispatchEvent(new CustomEvent('themeUpdate', {
-        detail: {
-          mode: remoteMode,
-          primaryColors: remotePrimaryColors,
-          backgroundColors: remoteBackgroundColors,
-          pageColors: remotePageColors,
-          animationEnabled: remoteAnimationEnabled,
-          animationSpeed: remoteAnimationSpeed,
-        },
-      }));
-      window.dispatchEvent(new CustomEvent('imageSettingsUpdate', {
-        detail: {
-          outputDirectory: settings.outputDirectory || '',
-          inspirationSource: settings.inspirationSource || 'default',
-          fileNamePrefix: remoteFileNamePrefix,
-          namingMethod: remoteNamingMethod,
-        },
-      }));
-    }).catch((error) => {
-      console.warn('Unable to load local settings:', error);
-    });
-
-    return () => { active = false; };
-  }, [pages, setLocale]); // 依赖 pages prop，以便在 pages 加载后正确初始化
-  
-  
-  // 获取颜色名称函数
-  const getColorName = (color) => {
-    const preset = THEME_COLOR_PRESETS.find(({ light, dark }) => (
-      light.toLowerCase() === color.toLowerCase() || dark.toLowerCase() === color.toLowerCase()
-    ));
-    return preset ? t(`settings.colorNames.${preset.id}`) : t('common.custom');
   };
-  
-  // 查找设置页面的颜色，如果 pages prop 还没加载，则使用 theme
-  const settingsPageColor = pageColors[PAGE_IDS.SETTINGS] || theme.palette.primary.main;
-  const fileNamePreview = generateFileName(
-    {
-      seed: '1234567890',
-      prompt: 'Golden Hour Portrait of a girl in a city garden',
-      id: 'preview',
-    },
-    {
-      fileNamePrefix,
-      namingMethod,
-    }
-  );
 
-  return (
-    <Paper elevation={0} sx={{ p: {xs: 1, sm: 2}, borderRadius: 2, height: '100%', overflow: 'auto', position: 'relative', pb: 9 }}>
-      <Typography variant="h5" sx={{ 
-        mb: 2, // 减小间距
-        fontWeight: 600,
-        color: 'text.primary',
-        display: 'flex', 
-        alignItems: 'center',
+  const resetSettings = () => {
+    setThemeDraft(DEFAULT_THEME_SETTINGS);
+    setPageColors(Object.fromEntries(pages.map((page) => [page.id, PAGE_COLOR_DEFAULTS[page.id] || page.color])));
+    setImageSettings({ ...imageSettings, fileNamePrefix: 'AI_Image', namingMethod: 'seed' });
+    setSnackbar({ severity: 'info', message: t('settings.resetMessage') });
+  };
+
+  const fileNamePreview = generateFileName({
+    seed: '1234567890', prompt: 'Golden Hour Portrait of a girl in a city garden', id: 'preview',
+  }, imageSettings);
+
+  return <Paper elevation={0} sx={{
+    height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column',
+    borderRadius: 0, overflow: 'hidden', bgcolor: 'background.default',
+  }}>
+    <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: { xs: 'column', sm: 'row' } }}>
+      <Box component="nav" aria-label={t('settings.navigation')} sx={{
+        width: { xs: '100%', sm: 210, lg: 232 }, flexShrink: 0, minHeight: 0,
+        bgcolor: 'background.paper', borderRight: { sm: `1px solid ${theme.palette.divider}` },
+        borderBottom: { xs: `1px solid ${theme.palette.divider}`, sm: 0 },
+        display: 'flex', flexDirection: 'column', py: { xs: 0, sm: 3 },
       }}>
-        <SettingsIcon sx={{ mr: 1, color: 'text.secondary' }} />
-        {t('settings.title')}
-      </Typography>
-      
-      <Box sx={{ mb: 2 }}>
-        <Alert severity="info" sx={{ mb: 1.5 }}>
-          {t('settings.intro')}
-        </Alert>
-      </Box>
-      
-      <Grid container spacing={2}> {/* 减小间距 */}
-        {/* 主题设置部分 */}
-        <Grid item xs={12}>
-          <Accordion defaultExpanded sx={{
-            mb: 1.5, // 减小间距
-            backgroundColor: theme.palette.background.paper,
-            boxShadow: 'none',
-            border: `1px solid ${theme.palette.divider}`,
-          }}>
-            <AccordionSummary 
-              expandIcon={<ExpandMoreIcon />}
-              sx={{
-                '& .MuiAccordionSummary-content': {
-                  alignItems: 'center',
-                },
-              }}
-            >
-              <ColorLensIcon sx={{ mr: 1, color: settingsPageColor }} /> 
-              <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-                {t('settings.themeSettings')}
-              </Typography>
-            </AccordionSummary>
-            <AccordionDetails>
-              {/* 暗色/亮色模式切换 */}
-              <Box sx={{ mb: 2, display: 'flex', flexDirection: 'column' }}>
-                <Typography variant="subtitle2" sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
-                  <LightbulbIcon sx={{ mr: 0.5, fontSize: '1rem' }} />
-                  {t('settings.themeMode')}
-                </Typography>
-                <Card variant="outlined" sx={{ 
-                  p: 1.5, // 减小间距
-                  display: 'flex', 
-                  flexDirection: { xs: 'column', sm: 'row' },
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 1.5
-                }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    {mode === 'dark' ? 
-                      <Box sx={{ 
-                        p: 1.25, // 减小间距
-                        bgcolor: DEFAULT_THEME_SETTINGS.backgroundColors.dark.paper,
-                        borderRadius: 1, 
-                        color: '#fff',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        mr: 1.5
-                      }}>
-                        <DarkModeIcon />
-                      </Box> :
-                      <Box sx={{ 
-                        p: 1.25, // 减小间距
-                        bgcolor: DEFAULT_THEME_SETTINGS.backgroundColors.light.default,
-                        borderRadius: 1, 
-                        color: DEFAULT_THEME_SETTINGS.backgroundColors.dark.default,
-                        border: `1px solid ${theme.palette.divider}`,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        mr: 1.5
-                      }}>
-                        <LightModeIcon />
-                      </Box>
-                    }
-                    <Box>
-                      <Typography variant="body1" sx={{ fontWeight: 'medium' }}>
-                        {mode === 'dark' ? t('main.darkMode') : t('main.lightMode')}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {mode === 'dark' ? t('settings.currentDark') : t('settings.currentLight')}
-                      </Typography>
-                    </Box>
-                  </Box>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={mode === 'dark'}
-                        onChange={handleModeChange}
-                        color="primary"
-                      />
-                    }
-                    label={mode === 'dark' ? t('settings.switchToLight') : t('settings.switchToDark')}
-                    sx={{ m: 0 }}
-                  />
-                </Card>
-              </Box>
-              
-              {/* 主色调选择 */}
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="subtitle2" sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
-                  <PaletteIcon sx={{ mr: 0.5, fontSize: '1rem' }} />
-                  {t('settings.primaryColor')}
-                </Typography>
-                
-                <Box sx={{ mb: 1.5 }}>
-                  <Grid container spacing={1} sx={{ mb: 1.5 }}>
-                    {THEME_COLOR_PRESETS.map((preset) => {
-                      const color = preset[mode];
-                      const isSelected = customColors[mode].toLowerCase() === color.toLowerCase();
-                      return (
-                        <Grid item key={preset.id}>
-                          <Tooltip title={t(`settings.colorNames.${preset.id}`)} arrow>
-                            <Box
-                              component="button"
-                              type="button"
-                              aria-label={t(`settings.colorNames.${preset.id}`)}
-                              aria-pressed={isSelected}
-                              onClick={() => setCustomColors({
-                                ...customColors,
-                                [mode]: color
-                              })}
-                              sx={{
-                                width: 36,
-                                height: 36,
-                                p: 0,
-                                borderRadius: '10px',
-                                backgroundColor: color,
-                                cursor: 'pointer',
-                                transition: 'box-shadow 0.15s ease, border-color 0.15s ease',
-                                border: isSelected
-                                  ? `3px solid ${theme.palette.background.paper}`
-                                  : `1px solid ${theme.palette.divider}`,
-                                boxShadow: isSelected
-                                  ? `0 0 0 2px ${color}`
-                                  : 'none',
-                                '&:hover': {
-                                  boxShadow: `0 0 0 2px ${color}`,
-                                },
-                                '&:focus-visible': {
-                                  outline: `2px solid ${theme.palette.text.primary}`,
-                                  outlineOffset: 3,
-                                },
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                              }}
-                            >
-                              {isSelected && <CheckIcon sx={{ color: theme.palette.getContrastText(color), fontSize: '1rem' }} />}
-                            </Box>
-                          </Tooltip>
-                        </Grid>
-                      );
-                    })}
-                  </Grid>
-                  
-                  {/* 自定义颜色输入 (包含新色盘) */}
-                  <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
-                    <TextField
-                      label={t('settings.customColorCode')}
-                      fullWidth
-                      margin="dense"
-                      value={customColors[mode]}
-                      onChange={(e) => setCustomColors({
-                        ...customColors,
-                        [mode]: e.target.value
-                      })}
-                      error={!isValidColor(customColors[mode])}
-                      helperText={!isValidColor(customColors[mode]) ? t('settings.invalidColor') : t('settings.colorExample')}
-                      InputProps={{
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <Box
-                              sx={{
-                                width: 20,
-                                height: 20,
-                                borderRadius: '50%',
-                                backgroundColor: isValidColor(customColors[mode]) ? customColors[mode] : '#ccc',
-                                border: `1px solid ${theme.palette.divider}`,
-                              }}
-                            />
-                          </InputAdornment>
-                        ),
-                      }}
-                      size="small"
-                      sx={{
-                        flex: 1,
-                        minWidth: 0,
-                        '& .MuiOutlinedInput-root': { height: 40 },
-                      }}
-                    />
-                    
-                    {/* HTML5 颜色选择器 */}
-                    <Tooltip title={t('settings.colorPicker')} arrow>
-                      <Box
-                        sx={{
-                          width: 40,
-                          height: 40,
-                          flexShrink: 0,
-                          // 与 dense 输入框的上边距一致，帮助文案换行时仍对齐输入框主体。
-                          mt: 1,
-                          borderRadius: '50%',
-                          overflow: 'hidden',
-                          border: `1px solid ${theme.palette.divider}`,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          cursor: 'pointer',
-                          backgroundColor: isValidColor(customColors[mode]) ? customColors[mode] : '#ccc',
-                        }}
-                      >
-                        <input
-                          type="color"
-                          aria-label={t('settings.colorPicker')}
-                          value={isValidColor(customColors[mode]) ? customColors[mode] : DEFAULT_THEME_SETTINGS.primaryColors[mode]}
-                          onChange={(e) => setCustomColors({
-                            ...customColors,
-                            [mode]: e.target.value
-                          })}
-                          style={{
-                            width: '50px',
-                            height: '50px',
-                            border: 'none',
-                            padding: 0,
-                            margin: 0,
-                            cursor: 'pointer',
-                            transform: 'scale(1.5)', // 放大色盘使其填满圆形
-                          }}
-                        />
-                      </Box>
-                    </Tooltip>
-                  </Box>
-                </Box>
-              </Box>
-
-              {/* 背景色设置 */}
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="subtitle2" sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
-                  <AutoFixHighIcon sx={{ mr: 0.5, fontSize: '1rem' }} />
-                  {t('settings.backgroundSettings')}
-                </Typography>
-                
-                {/* 背景色预设 */}
-                <Box sx={{ mb: 1.5 }}>
-                  <Typography variant="body2" sx={{ mb: 1, opacity: 0.8 }}>{t('settings.backgroundPreset')}</Typography>
-                  <Grid container spacing={1} sx={{ mb: 1.5 }}>
-                    {Object.entries(BACKGROUND_PRESETS[mode]).map(([presetName, colors]) => {
-                      const isSelected = customBackgroundColors[mode].default === colors.default && 
-                                      customBackgroundColors[mode].paper === colors.paper &&
-                                      customBackgroundColors[mode].drawer === colors.drawer;
-                      
-                      return (
-                        <Grid item key={presetName}>
-                          <Tooltip title={t(`settings.backgroundPresets.${mode}.${presetName}`)} arrow>
-                            <Box
-                              component="button"
-                              type="button"
-                              aria-label={t(`settings.backgroundPresets.${mode}.${presetName}`)}
-                              aria-pressed={isSelected}
-                              onClick={() => setCustomBackgroundColors({
-                                ...customBackgroundColors,
-                                [mode]: colors
-                              })}
-                              sx={{
-                                width: 76,
-                                height: 36,
-                                p: 0,
-                                borderRadius: '8px',
-                                cursor: 'pointer',
-                                transition: 'box-shadow 0.15s ease, border-color 0.15s ease',
-                                border: isSelected 
-                                  ? `2px solid ${theme.palette.primary.main}` 
-                                  : `1px solid ${theme.palette.divider}`,
-                                overflow: 'hidden',
-                                position: 'relative',
-                                '&:hover': {
-                                  borderColor: theme.palette.primary.main,
-                                },
-                                '&:focus-visible': {
-                                  outline: `2px solid ${theme.palette.text.primary}`,
-                                  outlineOffset: 3,
-                                },
-                                display: 'flex',
-                              }}
-                            >
-                              <Box sx={{ width: '33.33%', height: '100%', backgroundColor: colors.default }} />
-                              <Box sx={{ width: '33.33%', height: '100%', backgroundColor: colors.paper }} />
-                              <Box sx={{ width: '33.33%', height: '100%', backgroundColor: colors.drawer }} />
-                              
-                              {isSelected && (
-                                <Box sx={{
-                                  position: 'absolute',
-                                  top: '50%',
-                                  left: '50%',
-                                  transform: 'translate(-50%, -50%)',
-                                  backgroundColor: alpha(theme.palette.primary.main, 0.9),
-                                  borderRadius: '50%',
-                                  width: 18, // 减小
-                                  height: 18, // 减小
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                }}>
-                                  <CheckIcon sx={{ color: theme.palette.primary.contrastText, fontSize: '0.75rem' }} />
-                                </Box>
-                              )}
-                            </Box>
-                          </Tooltip>
-                        </Grid>
-                      );
-                    })}
-                  </Grid>
-                </Box>
-                
-                {/* 自定义背景色输入 */}
-                <Box sx={{ mb: 1.5 }}>
-                  <Typography variant="body2" sx={{ mb: 1, opacity: 0.8 }}>{t('settings.customBackground')}</Typography>
-                  <Grid container spacing={1}>
-                    <Grid item xs={12} sm={4}>
-                      <TextField
-                        label={t('settings.mainBackground')}
-                        fullWidth
-                        margin="dense"
-                        value={customBackgroundColors[mode].default || ''}
-                        onChange={(e) => setCustomBackgroundColors({
-                          ...customBackgroundColors,
-                          [mode]: { ...customBackgroundColors[mode], default: e.target.value }
-                        })}
-                        error={!isValidColor(customBackgroundColors[mode].default)}
-                        helperText={t('settings.mainBackgroundHint')}
-                        InputProps={{
-                          startAdornment: (
-                            <InputAdornment position="start">
-                              <Box
-                                sx={{
-                                  width: 18,
-                                  height: 18,
-                                  borderRadius: '50%',
-                                  backgroundColor: isValidColor(customBackgroundColors[mode].default) 
-                                    ? customBackgroundColors[mode].default 
-                                    : '#ccc',
-                                  border: `1px solid ${theme.palette.divider}`,
-                                }}
-                              />
-                            </InputAdornment>
-                          ),
-                        }}
-                        size="small"
-                      />
-                    </Grid>
-                    <Grid item xs={12} sm={4}>
-                      <TextField
-                        label={t('settings.cardBackground')}
-                        fullWidth
-                        margin="dense"
-                        value={customBackgroundColors[mode].paper || ''}
-                        onChange={(e) => setCustomBackgroundColors({
-                          ...customBackgroundColors,
-                          [mode]: { ...customBackgroundColors[mode], paper: e.target.value }
-                        })}
-                        error={!isValidColor(customBackgroundColors[mode].paper)}
-                        helperText={t('settings.cardBackgroundHint')}
-                        InputProps={{
-                          startAdornment: (
-                            <InputAdornment position="start">
-                              <Box
-                                sx={{
-                                  width: 18,
-                                  height: 18,
-                                  borderRadius: '50%',
-                                  backgroundColor: isValidColor(customBackgroundColors[mode].paper) 
-                                    ? customBackgroundColors[mode].paper 
-                                    : '#ccc',
-                                  border: `1px solid ${theme.palette.divider}`,
-                                }}
-                              />
-                            </InputAdornment>
-                          ),
-                        }}
-                        size="small"
-                      />
-                    </Grid>
-                    <Grid item xs={12} sm={4}>
-                      <TextField
-                        label={t('settings.drawerBackground')}
-                        fullWidth
-                        margin="dense"
-                        value={customBackgroundColors[mode].drawer || ''}
-                        onChange={(e) => setCustomBackgroundColors({
-                          ...customBackgroundColors,
-                          [mode]: { ...customBackgroundColors[mode], drawer: e.target.value }
-                        })}
-                        error={!isValidColor(customBackgroundColors[mode].drawer)}
-                        helperText={t('settings.drawerBackgroundHint')}
-                        InputProps={{
-                          startAdornment: (
-                            <InputAdornment position="start">
-                              <Box
-                                sx={{
-                                  width: 18,
-                                  height: 18,
-                                  borderRadius: '50%',
-                                  backgroundColor: isValidColor(customBackgroundColors[mode].drawer) 
-                                    ? customBackgroundColors[mode].drawer 
-                                    : '#ccc',
-                                  border: `1px solid ${theme.palette.divider}`,
-                                }}
-                              />
-                            </InputAdornment>
-                          ),
-                        }}
-                        size="small"
-                      />
-                    </Grid>
-                  </Grid>
-                </Box>
-              </Box>
-              
-              {/* 页面颜色设置 (动态) */}
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="subtitle2" sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
-                  <BrushIcon sx={{ mr: 0.5, fontSize: '1rem' }} />
-                  {t('settings.pageColors')}
-                </Typography>
-                
-                <Grid container spacing={1.5}>
-                  {Object.entries(pageColors).map(([page, color]) => (
-                    <Grid item xs={12} sm={6} key={page}>
-                      <Box sx={{ 
-                        display: 'flex', 
-                        alignItems: 'center',
-                        p: 1.25, // 减小
-                        borderRadius: 1,
-                        border: `1px solid ${theme.palette.divider}`,
-                        backgroundColor: alpha(theme.palette.background.paper, 0.4),
-                      }}>
-                        <Box sx={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          flexGrow: 1,
-                        }}>
-                          <Box sx={{ 
-                            mr: 1.5, 
-                            color, 
-                            bgcolor: alpha(color, 0.1),
-                            p: 0.75,
-                            borderRadius: 1,
-                            display: 'flex',
-                            alignItems: 'center',
-                          }}>
-                            {/* 使用 pageIcons 映射 */}
-                            {pageIcons[page] ? (
-                              React.cloneElement(pageIcons[page], { fontSize: 'small' })
-                            ) : (
-                              <LabelIcon fontSize="small" /> // 默认图标
-                            )}
-                          </Box>
-                          <Box>
-                            <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                              {pages.find(candidate => candidate.id === page)?.labelKey
-                                ? t(pages.find(candidate => candidate.id === page).labelKey)
-                                : pages.find(candidate => candidate.id === page)?.title || page}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">{getColorName(color)}</Typography>
-                          </Box>
-                        </Box>
-                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                          <Tooltip title={t('settings.cyclePreset')} arrow>
-                            <Box
-                              sx={{
-                                width: 22, // 减小
-                                height: 22, // 减小
-                                borderRadius: '50%',
-                                backgroundColor: color,
-                                cursor: 'pointer',
-                                transition: 'all 0.2s',
-                                border: `1px solid ${theme.palette.divider}`,
-                                '&:hover': {
-                                  transform: 'scale(1.15)',
-                                },
-                                ml: 1,
-                              }}
-                              onClick={() => {
-                                // 在预设颜色中循环
-                                const colorValues = THEME_COLOR_PRESETS.map((preset) => preset.light);
-                                const currentIndex = colorValues.indexOf(pageColors[page]);
-                                const nextIndex = (currentIndex + 1) % colorValues.length;
-                                const nextColor = colorValues[nextIndex];
-                                
-                                setPageColors({
-                                  ...pageColors,
-                                  [page]: nextColor
-                                });
-                              }}
-                            />
-                          </Tooltip>
-                        </Box>
-                      </Box>
-                    </Grid>
-                  ))}
-                </Grid>
-              </Box>
-              
-              {/* 颜色预览 */}
-              <Box sx={{ mb: 1.5 }}>
-                <Typography variant="subtitle2" sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
-                  <VisibilityIcon sx={{ mr: 0.5, fontSize: '1rem' }} />
-                  {t('settings.preview')}
-                </Typography>
-                <Box
-                  sx={{
-                    p: 1.5, // 减小
-                    borderRadius: 2,
-                    mb: 1.5, // 减小
-                    backgroundColor: customBackgroundColors[mode].default,
-                    color: mode === 'dark' ? '#ffffff' : '#000000',
-                    boxShadow: 'none',
-                    border: `1px solid ${theme.palette.divider}`,
-                    position: 'relative',
-                    overflow: 'hidden',
-                  }}
-                >
-                  <Box
-                    sx={{
-                      p: 1.5, // 减小
-                      borderRadius: 1,
-                      backgroundColor: customBackgroundColors[mode].paper,
-                      border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
-                      mb: 1.5, // 减小
-                    }}
-                  >
-                    <Typography variant="subtitle2" sx={{ mb: 1, color: customColors[mode] }}>
-                      {t('settings.previewTitle')}
-                    </Typography>
-                    <Typography variant="body2" sx={{ opacity: 0.8, mb: 1.5 }}>
-                      {t('settings.previewDescription')}
-                    </Typography>
-                    <Box sx={{ display: 'flex', gap: 1 }}>
-                      <Button
-                        variant="contained"
-                        size="small"
-                        sx={{ 
-                          backgroundColor: customColors[mode],
-                          color: isValidColor(customColors[mode]) ? theme.palette.getContrastText(customColors[mode]) : undefined,
-                          '&:hover': { backgroundColor: alpha(customColors[mode], 0.8) } 
-                        }}
-                      >
-                        {t('settings.primaryButton')}
-                      </Button>
-                      <Button 
-                        variant="outlined" 
-                        size="small" 
-                        sx={{ 
-                          color: customColors[mode], 
-                          borderColor: customColors[mode],
-                          '&:hover': {
-                            borderColor: customColors[mode],
-                            backgroundColor: alpha(customColors[mode], 0.04),
-                          }
-                        }}
-                      >
-                        {t('settings.secondaryButton')}
-                      </Button>
-                    </Box>
-                  </Box>
-                  
-                  <Box sx={{ 
-                    display: 'flex', 
-                    flexWrap: 'wrap', // 允许换行
-                    gap: 1,
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    fontSize: '0.75rem',
-                    opacity: 0.6,
-                    fontFamily: 'monospace'
-                  }}>
-                    <span>{t('settings.backgroundValue', { value: customBackgroundColors[mode].default })}</span>
-                    <span>{t('settings.paperValue', { value: customBackgroundColors[mode].paper })}</span>
-                  </Box>
-                </Box>
-              </Box>
-            </AccordionDetails>
-          </Accordion>
-          
-          {/* 界面设置部分 */}
-          <Accordion sx={{
-            mb: 1.5, // 减小
-            backgroundColor: theme.palette.background.paper,
-            boxShadow: 'none',
-            border: `1px solid ${theme.palette.divider}`,
-          }}>
-            <AccordionSummary 
-              expandIcon={<ExpandMoreIcon />}
-              sx={{ '& .MuiAccordionSummary-content': { alignItems: 'center' } }}
-            >
-              <SpeedIcon sx={{ mr: 1, color: settingsPageColor }} /> 
-              <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-                {t('settings.interfaceSettings')}
-              </Typography>
-            </AccordionSummary>
-            <AccordionDetails>
-              {/* 动画设置 */}
-              <Card variant="outlined" sx={{ mb: 2, p: 1.5 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
-                  <Box>
-                    <Typography variant="subtitle2">{t('settings.interfaceAnimation')}</Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {t('settings.animationDescription')}
-                    </Typography>
-                  </Box>
-                  <Switch
-                    checked={animationEnabled}
-                    onChange={(e) => setAnimationEnabled(e.target.checked)}
-                    color="primary"
-                  />
-                </Box>
-                
-                <Box sx={{ mt: 2 }}>
-                  <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                    {t('settings.transitionSpeed', { speed: animationSpeed })}
-                  </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Typography variant="caption" color="text.secondary">{t('common.slow')}</Typography>
-                    <Slider
-                      value={animationSpeed}
-                      onChange={(e, newValue) => setAnimationSpeed(newValue)}
-                      min={100}
-                      max={500}
-                      step={50}
-                      sx={{ 
-                        mx: 2, 
-                        color: customColors[mode],
-                        '& .MuiSlider-thumb': {
-                          '&:hover, &.Mui-focusVisible': {
-                            boxShadow: `0px 0px 0px 8px ${alpha(customColors[mode], 0.16)}`
-                          },
-                        },
-                      }}
-                      disabled={!animationEnabled}
-                    />
-                    <Typography variant="caption" color="text.secondary">{t('common.fast')}</Typography>
-                  </Box>
-                </Box>
-              </Card>
-            </AccordionDetails>
-          </Accordion>
-          
-          {/* 图像设置部分 */}
-          <Accordion defaultExpanded sx={{
-            mb: 1.5, // 减小
-            backgroundColor: theme.palette.background.paper,
-            boxShadow: 'none',
-            border: `1px solid ${theme.palette.divider}`,
-          }}>
-            <AccordionSummary 
-              expandIcon={<ExpandMoreIcon />}
-              sx={{ '& .MuiAccordionSummary-content': { alignItems: 'center' } }}
-            >
-              <ImageIcon sx={{ mr: 1, color: pageColors[PAGE_IDS.AI_PAINTING] || theme.palette.primary.main }} />
-              <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-                {t('settings.imageSettings')}
-              </Typography>
-            </AccordionSummary>
-            <AccordionDetails>
-              {/* 下载命名设置 */}
-              <Card variant="outlined" sx={{ mb: 2, p: 1.5 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
-                  <Box>
-                    <Typography variant="subtitle2" sx={{ display: 'flex', alignItems: 'center' }}>
-                      <SaveAltIcon sx={{ mr: 0.5, fontSize: '1.2rem', color: pageColors[PAGE_IDS.AI_PAINTING] || theme.palette.primary.main }} />
-                      {t('settings.downloadImage')}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {t('settings.downloadSharedRule')}
-                    </Typography>
-                  </Box>
-                </Box>
-
-                <TextField fullWidth size="small" label={t('librarySettings.outputDirectory')}
-                  value={outputDirectory} onChange={(event) => setOutputDirectory(event.target.value)}
-                  placeholder={'E:\\NovelAI\\images'} helperText={t('librarySettings.outputHint')} sx={{ mb: 2 }} />
-                <GallerySourceSelect value={inspirationSource} onChange={setInspirationSource} />
-                <Alert severity="info" sx={{ mt: 1.5, mb: 2 }}>{t('librarySettings.localOnly')}</Alert>
-
-                <Box sx={{ mt: 1.5, mb: 1 }}>
-                  <Typography variant="subtitle2" sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
-                    <LabelIcon sx={{ mr: 0.5, fontSize: '1rem' }} />
-                    {t('settings.filenameRules')}
-                  </Typography>
-                  
-                  <Box sx={{ pl: 1 }}>
-                    <TextField
-                      label={t('settings.customPrefix')}
-                      value={fileNamePrefix}
-                      onChange={(e) => setFileNamePrefix(e.target.value)}
-                      fullWidth
-                      margin="dense"
-                      size="small"
-                      helperText={t('settings.prefixExample')}
-                    />
-                    
-                    <Box sx={{ mt: 1.5, mb: 1 }}>
-                      <Typography variant="body2" sx={{ mb: 1 }}>{t('settings.downloadPreset')}</Typography>
-                      <RadioGroup
-                        value={namingMethod}
-                        onChange={(e) => setNamingMethod(e.target.value)}
-                      >
-                        {DOWNLOAD_NAMING_METHODS.map((method) => (
-                          <FormControlLabel
-                            key={method.value}
-                            value={method.value}
-                            control={<Radio size="small" />}
-                            label={t(`settings.naming.${method.value}`)}
-                          />
-                        ))}
-                      </RadioGroup>
-                    </Box>
-                  </Box>
-                </Box>
-                
-                <Box sx={{ mt: 2, p: 1.5, bgcolor: alpha(theme.palette.background.paper, 0.5), borderRadius: 1, border: `1px dashed ${theme.palette.divider}` }}>
-                  <Typography variant="subtitle2" sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
-                    <VisibilityIcon sx={{ mr: 0.5, fontSize: '1rem' }} />
-                    {t('settings.filenamePreview')}
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontFamily: 'monospace', wordBreak: 'break-all', fontSize: '0.8rem' }}>
-                    {fileNamePreview}
-                  </Typography>
-                </Box>
-              </Card>
-            </AccordionDetails>
-          </Accordion>
-        </Grid>
-      </Grid>
-      
-      {/* 固定在底部的操作栏 */}
-      <Paper
-        elevation={0}
-        sx={{
-          position: 'fixed',
-          bottom: 0,
-          left: { xs: 0, sm: isMobile ? 0 : 80 },
-          right: 0,
-          p: 1.5, // 减小
-          display: 'flex',
-          justifyContent: 'flex-end',
-          gap: 1.5, // 减小
-          zIndex: 100,
-          borderTop: `1px solid ${theme.palette.divider}`,
-          borderRadius: 0,
-          backgroundColor: theme.palette.background.paper,
-        }}
-      >
-        <Button
-          variant="outlined"
-          startIcon={<RefreshIcon />}
-          onClick={resetSettings}
-          sx={{ 
-            borderColor: alpha(settingsPageColor, 0.5),
-            color: settingsPageColor,
-            '&:hover': {
-              borderColor: settingsPageColor,
-              backgroundColor: alpha(settingsPageColor, 0.04),
-            }
-          }}
-        >
-          {t('settings.reset')}
-        </Button>
-        <Button
-          variant="contained"
-          startIcon={saveSuccess ? <CheckIcon /> : (isSaving ? <CircularProgress size={20} color="inherit" /> : <SaveIcon />)}
-          onClick={saveSettings}
-          disabled={isSaving}
-          sx={{ 
-            backgroundColor: settingsPageColor,
-            color: theme.palette.getContrastText(settingsPageColor),
-            '&:hover': {
-              backgroundColor: alpha(settingsPageColor, 0.9),
+        <Box sx={{ px: 2.5, mb: 3, display: { xs: 'none', sm: 'block' } }}>
+          <Typography variant="h6">{t('settings.title')}</Typography>
+          <Typography variant="caption" color="text.secondary">{t('settings.localSettings')}</Typography>
+        </Box>
+        <Tabs value={section} onChange={(_, value) => setSection(value)}
+          orientation={mobile ? 'horizontal' : 'vertical'} variant="scrollable" scrollButtons="auto"
+          aria-label={t('settings.navigation')}
+          sx={{
+            px: { xs: 0.5, sm: 1.5 }, minHeight: 48,
+            '& .MuiTabs-indicator': { display: 'none' },
+            '& .MuiTab-root': {
+              minHeight: 48, minWidth: { xs: 112, sm: 0 }, maxWidth: 'none',
+              justifyContent: { xs: 'center', sm: 'flex-start' }, borderRadius: 1.5,
+              px: 1.5, mb: { xs: 0, sm: 0.75 }, gap: 1, color: 'text.secondary',
+              '&.Mui-selected': { bgcolor: alpha(theme.palette.primary.main, 0.12), color: 'primary.main', fontWeight: 650 },
+              '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 },
+              '& .MuiTab-iconWrapper': { mb: 0, mr: 0, fontSize: 20 },
             },
-            transition: 'background-color 0.3s ease',
-            minWidth: 110, // 减小
-          }}
-        >
-          {saveSuccess ? t('settings.saved') : (isSaving ? t('settings.saving') : t('settings.save'))}
-        </Button>
-      </Paper>
-      
-      {/* 提示信息 */}
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={4000}
-        onClose={() => setSnackbar({ ...snackbar, open: false })}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert 
-          onClose={() => setSnackbar({ ...snackbar, open: false })} 
-          severity={snackbar.severity}
-          variant="filled"
-          sx={{ width: '100%', mb: 8 }} // 避免被底部操作栏遮挡
-        >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
-    </Paper>
-  );
-};
+          }}>
+          {sections.map((item) => <Tab key={item.id} value={item.id} icon={item.icon} iconPosition="start"
+            id={`settings-tab-${item.id}`} aria-controls={`settings-panel-${item.id}`}
+            label={t(`settings.sections.${item.id}.title`)} />)}
+        </Tabs>
+        <Typography variant="caption" color="text.secondary" sx={{ mt: 'auto', px: 3, pt: 3, display: { xs: 'none', sm: 'block' } }}>
+          {t('settings.sidebarHint')}
+        </Typography>
+      </Box>
 
-export default SettingsPage;
+      <Box ref={contentRef} role="tabpanel" id={`settings-panel-${section}`}
+        aria-labelledby={`settings-tab-${section}`} tabIndex={0}
+        sx={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: 'auto', p: { xs: 2, md: 3.5, xl: 4 } }}>
+        {loadError && <Alert severity="error" sx={{ mb: 2 }} action={<Button onClick={() => setLoadAttempt((n) => n + 1)}>{t('common.retry')}</Button>}>{t('settings.loadFailed')}</Alert>}
+        <Box component="fieldset" disabled={!loaded || saving} sx={{ border: 0, m: 0, p: 0, minWidth: 0, maxWidth: 1080, mx: 'auto' }}>
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="h5" sx={{ mb: 0.75 }}>{t(`settings.sections.${section}.title`)}</Typography>
+            <Typography variant="body2" color="text.secondary">{t(`settings.sections.${section}.description`)}</Typography>
+          </Box>
+
+          {section === 'appearance' && <Stack spacing={2.5}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1} flexWrap="wrap">
+              <Box>
+                <Typography variant="subtitle2">{t('settings.colorSchemes')}</Typography>
+                <Typography variant="caption" color="text.secondary">{t('settings.currentScheme', { name: selectedPreset?.name || t('common.custom') })}</Typography>
+              </Box>
+              <ToggleButtonGroup exclusive size="small" value={mode} aria-label={t('settings.themeMode')}
+                onChange={(_, value) => { if (value) setThemeDraft({ ...themeSettings, mode: value }); }}>
+                <ToggleButton value="dark" aria-label={t('main.darkMode')} sx={{ gap: 0.75 }}><DarkModeOutlined fontSize="small" />{t('main.darkMode')}</ToggleButton>
+                <ToggleButton value="light" aria-label={t('main.lightMode')} sx={{ gap: 0.75 }}><LightModeOutlined fontSize="small" />{t('main.lightMode')}</ToggleButton>
+              </ToggleButtonGroup>
+            </Stack>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(3, minmax(0, 1fr))', lg: 'repeat(4, minmax(0, 1fr))' }, gap: 1.5 }}>
+              {THEME_PRESETS.filter((preset) => preset.mode === mode).map((preset) => {
+                const selected = selectedPreset?.id === preset.id;
+                const textColor = mode === 'dark' ? '#E7E9EE' : '#272B32';
+                return <ButtonBase key={preset.id} aria-label={preset.name} aria-pressed={selected}
+                  onClick={() => setThemeDraft({
+                    ...themeSettings, mode: preset.mode,
+                    primaryColors: { ...primaryColors, [preset.mode]: preset.primary },
+                    backgroundColors: { ...backgroundColors, [preset.mode]: preset.background },
+                  })}
+                  sx={{
+                    display: 'block', textAlign: 'left', borderRadius: 2, overflow: 'hidden',
+                    color: textColor, bgcolor: preset.background.paper,
+                    border: '2px solid', borderColor: selected ? preset.primary : 'transparent',
+                    boxShadow: `0 0 0 1px ${alpha(textColor, 0.12)}`,
+                    '&:hover': { borderColor: preset.primary },
+                    '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'text.primary', outlineOffset: 3 },
+                  }}>
+                  <Box aria-hidden sx={{ p: 1.5, bgcolor: preset.background.default }}>
+                    <Box sx={{ height: 54, display: 'flex', borderRadius: 0.75, overflow: 'hidden' }}>
+                      <Stack spacing={0.6} sx={{ width: 27, p: 0.75, bgcolor: preset.background.drawer }}>
+                        {[0, 1, 2].map((line) => <Box key={line} sx={{ height: 4, borderRadius: 0.5, bgcolor: alpha(textColor, line === 0 ? 0.7 : 0.16) }} />)}
+                      </Stack>
+                      <Box sx={{ flex: 1, bgcolor: preset.background.paper, p: 1 }}>
+                        <Box sx={{ height: 4, width: '45%', bgcolor: alpha(textColor, 0.8), mb: 0.75 }} />
+                        <Box sx={{ height: 4, width: '75%', bgcolor: alpha(textColor, 0.15), mb: 0.75 }} />
+                        <Box sx={{ height: 11, width: 27, bgcolor: preset.primary, borderRadius: 0.5, ml: 'auto' }} />
+                      </Box>
+                    </Box>
+                  </Box>
+                  <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 1.25, py: 0.9, borderTop: `1px solid ${alpha(textColor, 0.1)}`, gap: 0.5 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 650, fontSize: { xs: 12, sm: 13 } }}>{preset.name}</Typography>
+                    <Box sx={{ bgcolor: selected ? preset.primary : alpha(textColor, 0.15), width: 20, height: 20, borderRadius: '50%', flexShrink: 0, display: 'grid', placeItems: 'center' }}>
+                      {selected && <Check sx={{ fontSize: 14, color: theme.palette.getContrastText(preset.primary) }} />}
+                    </Box>
+                  </Stack>
+                </ButtonBase>;
+              })}
+            </Box>
+            <Accordion disableGutters sx={{ border: 1, borderColor: 'divider', borderRadius: '8px !important', bgcolor: 'background.paper' }}>
+              <AccordionSummary expandIcon={<ExpandMore />}><Typography variant="subtitle2">{t('settings.customizeScheme')}</Typography></AccordionSummary>
+              <AccordionDetails>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{t('settings.customizeHint')}</Typography>
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
+                  <ColorField label={t('settings.primaryColor')} value={primaryColors[mode]}
+                    onChange={(color) => setThemeDraft({ ...themeSettings, primaryColors: { ...primaryColors, [mode]: color } })} />
+                  {['default', 'paper', 'drawer'].map((key, index) => <ColorField key={key}
+                    label={t(['settings.mainBackground', 'settings.cardBackground', 'settings.drawerBackground'][index])}
+                    value={backgroundColors[mode][key]}
+                    onChange={(color) => setThemeDraft({ ...themeSettings, backgroundColors: { ...backgroundColors, [mode]: { ...backgroundColors[mode], [key]: color } } })} />)}
+                </Box>
+              </AccordionDetails>
+            </Accordion>
+          </Stack>}
+
+          {section === 'pages' && <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
+            {pages.map((page) => <Paper key={page.id} variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+              <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 2 }}>
+                {page.icon}
+                <Typography variant="subtitle2">{page.labelKey ? t(page.labelKey) : page.title}</Typography>
+              </Stack>
+              <ColorField label={t('settings.primaryColor')} value={pageColors[page.id] || page.color}
+                onChange={(color) => setPageColors({ ...pageColors, [page.id]: color })} />
+            </Paper>)}
+          </Box>}
+
+          {section === 'interface' && <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 }, borderRadius: 2 }}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2}>
+              <Box><Typography variant="subtitle1">{t('settings.interfaceAnimation')}</Typography>
+                <Typography variant="body2" color="text.secondary">{t('settings.animationDescription')}</Typography></Box>
+              <Switch checked={animationEnabled} inputProps={{ 'aria-label': t('settings.interfaceAnimation') }}
+                onChange={(event) => setThemeDraft({ ...themeSettings, animationEnabled: event.target.checked })} />
+            </Stack>
+            <Box sx={{ mt: 4, maxWidth: 520 }}>
+              <Typography id="animation-duration-label" variant="body2">{t('settings.transitionSpeed', { speed: animationSpeed })}</Typography>
+              <Slider value={animationSpeed} min={100} max={500} step={50} disabled={!animationEnabled}
+                aria-labelledby="animation-duration-label" valueLabelDisplay="auto"
+                onChange={(_, value) => setThemeDraft({ ...themeSettings, animationSpeed: value })}
+                marks={[{ value: 100, label: t('common.fast') }, { value: 500, label: t('common.slow') }]}
+                sx={{ width: 'calc(100% - 24px)', mx: 1.5, mt: 2 }} />
+            </Box>
+          </Paper>}
+
+          {section === 'gallery' && <Stack spacing={2.5}>
+            <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
+              <TextField fullWidth size="small" label={t('librarySettings.outputDirectory')}
+                value={imageSettings.outputDirectory}
+                onChange={(event) => setImageSettings({ ...imageSettings, outputDirectory: event.target.value })}
+                helperText={t('librarySettings.outputHint')} sx={{ mb: 2 }} />
+              <GallerySourceSelect value={imageSettings.inspirationSource}
+                onChange={(value) => setImageSettings({ ...imageSettings, inspirationSource: value })} />
+              <Alert severity="info" sx={{ mt: 2 }}>{t('librarySettings.localOnly')}</Alert>
+            </Paper>
+            <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
+              <Typography variant="subtitle1">{t('settings.filenameRules')}</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>{t('settings.downloadSharedRule')}</Typography>
+              <TextField label={t('settings.customPrefix')} value={imageSettings.fileNamePrefix} fullWidth size="small"
+                onChange={(event) => setImageSettings({ ...imageSettings, fileNamePrefix: event.target.value })}
+                helperText={t('settings.prefixExample')} />
+              <RadioGroup value={imageSettings.namingMethod} aria-label={t('settings.downloadPreset')}
+                onChange={(event) => setImageSettings({ ...imageSettings, namingMethod: event.target.value })}
+                sx={{ my: 2, display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
+                {DOWNLOAD_NAMING_METHODS.map((method) => <FormControlLabel key={method.value} value={method.value}
+                  control={<Radio size="small" />} label={t(`settings.naming.${method.value}`)} />)}
+              </RadioGroup>
+              <Box sx={{ p: 1.5, borderRadius: 1, bgcolor: 'background.default', border: 1, borderColor: 'divider' }}>
+                <Typography variant="caption" color="text.secondary">{t('settings.filenamePreview')}</Typography>
+                <Typography variant="body2" sx={{ mt: 0.5, fontFamily: 'monospace', overflowWrap: 'anywhere' }}>{fileNamePreview}</Typography>
+              </Box>
+            </Paper>
+          </Stack>}
+        </Box>
+      </Box>
+    </Box>
+
+    {/* 底栏属于工作区自身，不再猜测应用侧栏宽度，也不会遮住滚动内容。 */}
+    <Box component="footer" sx={{
+      flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      gap: 1.5, px: { xs: 2, sm: 3 }, py: 1.5, pb: 'max(12px, env(safe-area-inset-bottom))',
+      borderTop: 1, borderColor: 'divider', bgcolor: 'background.paper',
+    }}>
+      <Chip size="small" variant="outlined" label={t(dirty ? 'settings.unsaved' : 'settings.upToDate')}
+        sx={{ display: { xs: 'none', sm: 'inline-flex' }, borderColor: 'divider', color: dirty ? 'primary.main' : 'text.secondary' }} />
+      <Stack direction="row" gap={1} sx={{ ml: 'auto' }}>
+        {dirty && <Button disabled={saving} onClick={() => {
+          setThemeDraft(null); setPageColors(savedPageColors); setImageSettings(savedImages);
+        }}>{t('settings.discard')}</Button>}
+        <Button startIcon={<Refresh />} disabled={!loaded || saving} onClick={resetSettings} color="inherit">{t('settings.reset')}</Button>
+        <Button variant="contained" startIcon={<SaveOutlined />} disabled={!loaded || saving || !dirty || !colorsValid} onClick={saveSettings}>{t('settings.save')}</Button>
+      </Stack>
+    </Box>
+    <Snackbar open={Boolean(snackbar)} autoHideDuration={4000} onClose={() => setSnackbar(null)}
+      anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+      {snackbar && <Alert severity={snackbar.severity} variant="filled" onClose={() => setSnackbar(null)} sx={{ mb: 8 }}>{snackbar.message}</Alert>}
+    </Snackbar>
+  </Paper>;
+}

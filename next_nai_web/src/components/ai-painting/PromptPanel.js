@@ -21,6 +21,7 @@ import {
   Save as SaveIcon,
   OpenInFull as OpenInFullIcon,
   Casino as CasinoIcon,
+  InfoOutlined as InfoIcon,
 } from '@mui/icons-material';
 import apiClient from '../../utils/ApiClient';
 import { copyTextToClipboard } from '@/utils/browserCapabilities.mjs';
@@ -49,6 +50,8 @@ import PromptSuggestions from './PromptEditor/PromptSuggestions';
 import InlinePromptInput from './PromptEditor/InlinePromptInput';
 import PromptEditorSettings from './PromptEditor/PromptEditorSettings';
 import usePromptEditorSettings from './PromptEditor/usePromptEditorSettings';
+import { NOVELAI_V5_MEDIUM_MODEL_ID } from './utils/novelAIV5Params.mjs';
+import { downloadNotesExport } from './noteExport.mjs';
 
 const PromptPanel = ({
   positivePrompt,
@@ -63,11 +66,13 @@ const PromptPanel = ({
 }) => {
   const { t } = useI18n();
   const [tabValue, setTabValue] = useState(0);
-  const effectiveTabValue = tabValue;
+  const isV5Medium = model === NOVELAI_V5_MEDIUM_MODEL_ID;
+  const effectiveTabValue = isV5Medium && tabValue === 1 ? 0 : tabValue;
   const [cursorPosition, setCursorPosition] = useState(0);
 
   const [notesDialogOpen, setNotesDialogOpen] = useState(false);
   const [notes, setNotes] = useState([]);
+  const [noteGroups, setNoteGroups] = useState([]);
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
@@ -123,6 +128,14 @@ const PromptPanel = ({
   useEffect(() => {
     checkRandomPromptStatus();
   }, [checkRandomPromptStatus]); // Call the memoized function
+
+  useEffect(() => {
+    if (isV5Medium && tabValue === 1) {
+      // 切换模型或账号时回到可用页签，避免继续编辑不会进入请求的字段。
+      setTabValue(0);
+      setActiveTabForDialog(0);
+    }
+  }, [isV5Medium, tabValue]);
 
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
@@ -243,6 +256,8 @@ const PromptPanel = ({
     try {
       const response = await apiClient.getTexts();
       setNotes(response.texts || []);
+      setNoteGroups(response.groups || []);
+      return true;
     } catch (error) {
       console.error('Error fetching notes:', error);
       const reported = forwardPaintingPanelError(onError, error, {
@@ -263,11 +278,12 @@ const PromptPanel = ({
 
   const handleSaveNote = () => {
     setSaveDialogOpen(true);
+    fetchNotes();
   };
 
-  const handleSaveNoteSubmit = async (title, imageUrl) => {
+  const handleSaveNoteSubmit = async (title, imageUrl, savedCharacterTabs, groupId) => {
     if (onSaveCurrentNote) {
-      const success = await onSaveCurrentNote(title, imageUrl);
+      const success = await onSaveCurrentNote(title, imageUrl, savedCharacterTabs, groupId);
       if (success) {
         setSaveDialogOpen(false); // 如果保存成功，关闭对话框
         if (notesDialogOpen) { // 如果笔记本是打开的，刷新它
@@ -283,7 +299,7 @@ const PromptPanel = ({
   const handleUseNote = (note) => {
     // 调用从 AIPaintingPage 传递过来的函数来应用笔记内容
     if (onApplyNoteContent) {
-      onApplyNoteContent(note);
+      if (onApplyNoteContent(note) === false) return;
     } else {
       // 旧的直接修改方式，如果 onApplyNoteContent 未提供，作为后备
       if (typeof onPositivePromptChange === 'function') {
@@ -331,7 +347,8 @@ const PromptPanel = ({
         editedNote.text_content1,
         editedNote.text_content2,
         editedNote.image_url,
-        editedNote.character_tabs // <--- 修复：确保传递 character_tabs
+        editedNote.character_tabs,
+        editedNote.group_id,
       );
 
       setSnackbar({
@@ -359,13 +376,7 @@ const PromptPanel = ({
   const handleExportNotes = async () => {
     try {
       const response = await apiClient.exportTexts();
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(response.texts));
-      const downloadAnchorNode = document.createElement('a');
-      downloadAnchorNode.setAttribute("href", dataStr);
-      downloadAnchorNode.setAttribute("download", "notes_export.json");
-      document.body.appendChild(downloadAnchorNode);
-      downloadAnchorNode.click();
-      downloadAnchorNode.remove();
+      await downloadNotesExport(response);
       setSnackbar({
         open: true,
         message: t('painting.workspace.prompt.notesExported'),
@@ -477,8 +488,9 @@ const PromptPanel = ({
                 }}
               >
                 <Tab label={t('painting.workspace.prompt.positiveTab')} />
-                <Tab label={t('painting.workspace.prompt.negativeTab')} />
+                <Tab label={t(isV5Medium ? 'painting.workspace.parameters.fixedNegativeTab' : 'painting.workspace.prompt.negativeTab')} disabled={isV5Medium} />
             </Tabs>
+            {isV5Medium && <Tooltip title={t('painting.workspace.parameters.modelV5MediumNegativeHelp')}><InfoIcon fontSize="small" /></Tooltip>}
             {(
               <Tooltip title={t('painting.workspace.prompt.randomPrompt')} arrow>
                 <IconButton
@@ -504,7 +516,7 @@ const PromptPanel = ({
                   <IconButton
                     aria-label={t('painting.workspace.prompt.saveToNotebook')}
                     onClick={handleSaveNote}
-                    disabled={!positivePrompt && !negativePrompt}
+                    disabled={!positivePrompt && !negativePrompt && characterTabs.length === 0}
                   >
                     <SaveIcon />
                   </IconButton>
@@ -678,6 +690,13 @@ const PromptPanel = ({
             open={notesDialogOpen}
             onClose={() => setNotesDialogOpen(false)}
             notes={notes}
+            groups={noteGroups}
+            currentCharacterTabs={characterTabs}
+            onCreateGroup={async (data) => { await apiClient.createNoteGroup(data); await fetchNotes(); return true; }}
+            onUpdateGroup={async (id, data) => { await apiClient.updateNoteGroup(id, data); await fetchNotes(); return true; }}
+            onDeleteGroup={async (id) => { await apiClient.deleteNoteGroup(id); await fetchNotes(); return true; }}
+            onBatchMoveNotes={async (titles, groupId) => { await apiClient.batchNotes('move', titles, groupId); await fetchNotes(); return true; }}
+            onBatchDeleteNotes={async (titles) => { await apiClient.batchNotes('delete', titles); await fetchNotes(); return true; }}
             isLoading={isLoadingNotes}
             positivePrompt={positivePrompt}
             negativePrompt={negativePrompt}
@@ -697,6 +716,8 @@ const PromptPanel = ({
             positivePrompt={positivePrompt}
             negativePrompt={negativePrompt}
             extractActiveContent={extractActiveContent}
+            currentCharacterTabs={characterTabs}
+            groups={noteGroups}
           />
 
           <RandomPromptConfig

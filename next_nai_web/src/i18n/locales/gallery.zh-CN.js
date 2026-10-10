@@ -15,7 +15,7 @@ const gallery = {
     "refresh": "刷新图库",
     "returnToGallery": "返回图库",
     "recycleBin": "回收站",
-    "trashHint": "已删除图片保留在本地回收站中，可在这里恢复。",
+    "trashHint": "回收站中的图片可恢复，也可确认后彻底删除。",
     "selectLoaded": "选择已加载的全部图片",
     "selectedCount": "已选 {count} 张",
     "restore": "恢复",
@@ -139,8 +139,11 @@ const gallery = {
     "useDirectory": "使用此目录",
     "batchTemplate": "批量默认模板",
     "noTemplate": "不使用模板 · 仅覆盖改动字段",
-    "templateHint": "使用这张图片的元数据作为整批默认值，再应用你的编辑。切换模板会重置当前编辑内容。"
+    "templateHint": "使用这张图片的元数据作为整批默认值，再应用你的编辑。切换模板会重置当前编辑内容。",
+    "deleteForever": "彻底删除",
+    "deleteConfirm": "彻底删除 {count} 张图片？",
+    "deleteConfirmHint": "将删除回收站中的原图、缩略图和图库记录，无法恢复。",
+    "deleted": "已彻底删除 {count} 张图片"
   }
 };
-
 export default gallery;

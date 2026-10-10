@@ -56,6 +56,33 @@ def library(tmp_path):
     return LocalImageLibrary(tmp_path / "data", tmp_path / "outputs")
 
 
+def test_delete_requires_trash_and_keeps_index_after_partial_failure(library, monkeypatch):
+    entry = library.import_image(image_bytes(), "synthetic.png")
+    keep = library.import_image(image_bytes(size=(12, 12)), "keep.png")
+    thumbnail = library.image_path(entry["id"], thumbnail=True)
+    with pytest.raises(ExposableError) as error:
+        library.delete_trashed_image(entry["id"])
+    assert error.value.code == "LIBRARY_NOT_IN_TRASH"
+    library.trash_image(entry["id"])
+    original = library.image_path(entry["id"])
+    real_unlink = type(thumbnail).unlink
+    def deny_thumbnail(path, *args, **kwargs):
+        if path == thumbnail:
+            raise PermissionError("synthetic permission failure")
+        return real_unlink(path, *args, **kwargs)
+    with monkeypatch.context() as patch:
+        patch.setattr(type(thumbnail), "unlink", deny_thumbnail)
+        with pytest.raises(PermissionError):
+            library.delete_trashed_image(entry["id"])
+    assert library.get_image(entry["id"])["trashed_at"]
+    assert not original.exists()
+    library.delete_trashed_image(entry["id"])
+    assert not thumbnail.exists()
+    assert library.image_path(keep["id"]).exists()
+    with pytest.raises(ExposableError):
+        library.get_image(entry["id"])
+
+
 def test_import_stores_files_and_index_persists_edits_groups_and_safe_ids(library):
     group = library.create_group("水彩", "references", group_id="legacy-group")
     original = image_bytes(metadata={"prompt": "old prompt", "uc": "bad", "scale": 6, "seed": 12})

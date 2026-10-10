@@ -83,7 +83,7 @@ def test_migration_preserves_images_parameters_notes_and_original_store(tmp_path
     assert single["group_id"] is None
     assert single["style_prompt"] == ""
     assert single["parameters"]["steps"] == 23
-    notes = local.read("notes")
+    notes = local.read_notebook()["notes"]
     assert len(notes) == 3
     assert notes[0] == {"id": "existing", "title": "Synthetic reference", "text_content1": "Keep me"}
     assert len({note["title"] for note in notes}) == 3
@@ -94,10 +94,10 @@ def test_migration_preserves_images_parameters_notes_and_original_store(tmp_path
 
     # 完成后用户删掉新库内容，旧源记录也不会在下次启动时将其复活。
     library.images.clear()
-    local.write("notes", [notes[0]])
+    local.mutate_notebook(lambda book: {**book, "notes": [notes[0]]})
     migrate_reference_library(library, legacy, local)
     assert not library.images
-    assert local.read("notes") == [notes[0]]
+    assert local.read_notebook()["notes"] == [notes[0]]
 
 
 def test_interrupted_image_import_reuses_stable_ids_without_overwriting_edits(tmp_path):
@@ -131,13 +131,13 @@ def test_interrupted_marker_does_not_duplicate_or_overwrite_migrated_notes(tmp_p
 
     with pytest.raises(OSError, match="migration marker"):
         migrate_reference_library(library, legacy, local)
-    notes = local.read("notes")
+    notes = local.read_notebook()["notes"]
     notes[0]["text_content1"] = "Edited after interruption"
-    local.write("notes", notes)
+    local.mutate_notebook(lambda book: {**book, "notes": notes})
 
     library.fail_marker = False
     migrate_reference_library(library, legacy, local)
-    assert local.read("notes") == notes
+    assert local.read_notebook()["notes"] == notes
     assert library.has_migration(MIGRATION_NAME)
 
 

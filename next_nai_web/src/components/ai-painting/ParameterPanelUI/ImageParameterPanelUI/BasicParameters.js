@@ -35,7 +35,7 @@ import {
 } from '@mui/icons-material';
 import { useMediaQuery, useTheme } from '@mui/material';
 import { setLargeImageMode, findClosestAllowedResolution } from '../../utils/parameterMapping';
-import { NOVELAI_V5_STANDARD_MAX_STEPS } from '../../utils/modelUtils';
+import { NOVELAI_V5_MEDIUM_DEFAULT_PARAMS, NOVELAI_V5_MEDIUM_MODEL_ID, NOVELAI_V5_STANDARD_MAX_STEPS } from '../../utils/modelUtils';
 import { useI18n } from '@/i18n/I18nProvider';
 
 // 采样算法选项
@@ -113,11 +113,19 @@ const BasicParameters = ({
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const isLargeMode = !!params.use_upscale_credits;
+  const isV5Medium = params.model === NOVELAI_V5_MEDIUM_MODEL_ID;
   const standardMaxSteps = isV5Model ? NOVELAI_V5_STANDARD_MAX_STEPS : 28;
 
   useEffect(() => {
     setLargeImageMode(isLargeMode);
   }, [isLargeMode]);
+
+  useEffect(() => {
+    if (!isV5Medium) return;
+    Object.entries(NOVELAI_V5_MEDIUM_DEFAULT_PARAMS).forEach(([field, value]) => {
+      if (params[field] !== value) handleParamChange(field, value);
+    });
+  }, [handleParamChange, isV5Medium, params]);
 
   // 按实际参数收紧范围，兼顾按钮切换、外部参数回传和缓存加载。
   // 仅改变 Slider 的 max 会夹住圆点位置，右侧数值和生成请求仍可能保留旧步数。
@@ -278,7 +286,17 @@ const BasicParameters = ({
 
         {/* 常用参数按生成时的设置顺序排列。 */}
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-          <LockableSlider
+          {isV5Medium ? (
+            <Tooltip title={t('painting.workspace.parameters.modelV5MediumSettings')} arrow>
+              <TextField
+                label={t('painting.workspace.parameters.samplingSteps')}
+                value={NOVELAI_V5_MEDIUM_DEFAULT_PARAMS.steps}
+                size="small"
+                fullWidth
+                slotProps={{ input: { readOnly: true } }}
+              />
+            </Tooltip>
+          ) : <LockableSlider
             label={t('painting.workspace.parameters.samplingSteps')}
             value={params.steps}
             min={1}
@@ -286,7 +304,7 @@ const BasicParameters = ({
             step={1}
             onChange={(newValue) => handleParamChange('steps', newValue)}
             tooltip={t('painting.workspace.parameters.samplingStepsHelp')}
-          />
+          />}
           <LockableSlider
             label={t('painting.workspace.parameters.cfgScale')}
             value={params.guidanceScale}
@@ -347,6 +365,7 @@ const BasicParameters = ({
               labelId={`${fieldId}-sampler-label`}
               label={t('painting.workspace.parameters.sampler')}
               value={params.sampler || 'k_euler'}
+              disabled={isV5Medium}
               onChange={(e) => handleParamChange('sampler', e.target.value)}
             >
               {samplerOptions.map((option) => (
@@ -380,7 +399,7 @@ const BasicParameters = ({
           </AccordionSummary>
           <AccordionDetails sx={{ p: 0, pt: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
             {/* Prompt Guidance Rescale */}
-            <LockableSlider
+            {!isV5Medium && <LockableSlider
               label={t('painting.workspace.parameters.promptGuidanceRescale')}
               value={params.promptGuidanceRescale}
               min={0}
@@ -389,10 +408,10 @@ const BasicParameters = ({
               onChange={(newValue) => handleParamChange('promptGuidanceRescale', newValue)}
               tooltip={t('painting.workspace.parameters.promptGuidanceRescaleHelp')}
               valueLabelFormat={(value) => value.toFixed(2)}
-            />
+            />}
 
             {/* 噪声调度 */}
-            <FormControl fullWidth variant="outlined" size="small">
+            {!isV5Medium && <FormControl fullWidth variant="outlined" size="small">
               <InputLabel id={`${fieldId}-noise-label`}>
                 {t('painting.workspace.parameters.noiseSchedule')}
               </InputLabel>
@@ -408,7 +427,7 @@ const BasicParameters = ({
                   </MenuItem>
                 ))}
               </Select>
-            </FormControl>
+            </FormControl>}
             {/* 批量生成 */}
             <LockableSlider
               label={t('painting.workspace.parameters.batchSize')}

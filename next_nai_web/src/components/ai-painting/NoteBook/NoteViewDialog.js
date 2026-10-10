@@ -15,7 +15,7 @@ import {
   Accordion,
   AccordionSummary,
   AccordionDetails,
-  Chip,
+  Alert,
 } from '@mui/material';
 import {
   Cancel as CancelIcon,
@@ -26,28 +26,21 @@ import {
   Face as FaceIcon, // 用于角色卡图标
 } from '@mui/icons-material';
 import { useI18n } from '@/i18n/I18nProvider';
-
-// 简单的角色卡项预览组件
-const CharacterTabDisplayItem = ({ tab, index, t }) => (
-  <Paper variant="outlined" sx={{ p: 1.5, mb: 1, borderRadius: 1.5 }}>
-    <Typography variant="body2" fontWeight="medium" gutterBottom>
-      {t('painting.tools.notebook.character')} {index + 1}: {tab.prompt || t('painting.tools.notebook.noDescription')}
-    </Typography>
-    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-      <Chip label={`${t('painting.tools.notebook.position')}: ${tab.position || t('painting.tools.common.notAvailable')}`} size="small" variant="outlined" />
-      {tab.uc && (
-        <Chip label={`${t('painting.tools.notebook.exclude')}: ${tab.uc.substring(0,30)}${tab.uc.length > 30 ? '...' : '' }`} size="small" variant="outlined" color="secondary" />
-      )}
-    </Box>
-  </Paper>
-);
+import { normalizeNoteCharacters } from './noteCharacters.mjs';
+import noteCharacterMessages from './noteCharacterMessages';
+import NoteCharacterCards from './NoteCharacterCards';
 
 const NoteViewDialog = ({ open, onClose, note, onEdit, onUse }) => {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   if (!note) return null;
 
-  // 确保 character_tabs 是一个数组，即使它在 note 对象中不存在或为 null
-  const characterTabs = Array.isArray(note.character_tabs) ? note.character_tabs : [];
+  let characterTabs = [];
+  let characterError = false;
+  try {
+    characterTabs = normalizeNoteCharacters(note.character_tabs ?? note.characterTabs);
+  } catch {
+    characterError = true;
+  }
 
   return (
     <Dialog 
@@ -67,6 +60,7 @@ const NoteViewDialog = ({ open, onClose, note, onEdit, onUse }) => {
         </IconButton>
       </DialogTitle>
       <DialogContent dividers>
+        {characterError && <Alert severity="error" sx={{ mb: 2 }}>{noteCharacterMessages[locale].parsingFailed}</Alert>}
         <Grid container spacing={2}>
           {/* 图像预览 */}
           {note.image_url && (
@@ -116,15 +110,13 @@ const NoteViewDialog = ({ open, onClose, note, onEdit, onUse }) => {
           {/* 角色卡展示区域 */}
           {characterTabs.length > 0 && (
             <Grid item xs={12}>
-              <Accordion TransitionProps={{ unmountOnExit: true }} sx={{boxShadow: 'none', border: '1px solid rgba(0,0,0,0.12)', '&:before': {display: 'none'} }}>
+              <Accordion defaultExpanded TransitionProps={{ unmountOnExit: true }} sx={{boxShadow: 'none', border: '1px solid', borderColor: 'divider', '&:before': {display: 'none'} }}>
                 <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                   <FaceIcon sx={{ mr: 1, color: 'action.active' }} />
                   <Typography variant="subtitle2" sx={{fontWeight: 'medium'}}>{t('painting.tools.notebook.characterCards')} ({t('painting.tools.notebook.count', { count: characterTabs.length })})</Typography>
                 </AccordionSummary>
                 <AccordionDetails sx={{ maxHeight: 300, overflowY: 'auto', p: {xs: 1, sm: 1.5} }}>
-                  {characterTabs.map((tab, index) => (
-                    <CharacterTabDisplayItem key={index} tab={tab} index={index} t={t} />
-                  ))}
+                  <NoteCharacterCards characters={characterTabs} />
                 </AccordionDetails>
               </Accordion>
             </Grid>
@@ -141,6 +133,7 @@ const NoteViewDialog = ({ open, onClose, note, onEdit, onUse }) => {
         </Button>
         <Button 
           variant="contained" 
+          disabled={characterError}
           onClick={() => { onUse(note); onClose(); }}
           startIcon={<CheckCircleIcon />}
         >

@@ -74,7 +74,8 @@ const paintingWorkspacezhCN = {
         "novelAIInpaintModelNotSupported": "V5 Curated 暂不支持局部重绘，请切换为 V5 Full 或 V4.5。",
         "novelAIInpaintVibeNotSupported": "V4／V4.5 局部重绘不支持 Vibe，请移除 Vibe 后重试。",
         "novelAIReferenceModelNotSupported": "角色／精准参考仅支持 V4.5 模型及其局部重绘。",
-        "novelAIReferenceVibeConflict": "角色／精准参考与 Vibe 不能同时使用。"
+        "novelAIReferenceVibeConflict": "角色／精准参考与 Vibe 不能同时使用。",
+        "autoDownloadFailed": "图像已生成，但自动下载失败。可在结果工具栏手动重试下载。"
       },
       "notifications": {
         "completed": "已完成。",
@@ -162,7 +163,7 @@ const paintingWorkspacezhCN = {
       },
       "parameters": {
         "title": "生成参数",
-        "modelV5Full": "NovelAI V5 Full",
+        "modelV5Full": "High 完整版 · 可调整采样器与负向提示词",
         "modelV5Curated": "NovelAI V5 Curated",
         "modelV45Full": "NovelAI V4.5 Full",
         "modelV45Curated": "NovelAI V4.5 Curated",
@@ -327,7 +328,11 @@ const paintingWorkspacezhCN = {
         "disableReferenceImage": "停用参考图",
         "enableReferenceImage": "启用参考图",
         "otherSettings": "其它设置",
-        "referenceType": "参考类型"
+        "referenceType": "参考类型",
+        "modelV5Medium": "Medium 快速版 · 固定 14 步 · 每张 0.6 点额度",
+        "modelV5MediumSettings": "Medium 固定 14 步和 Euler Ancestral，使用官方固定 Heavy 负向提示，不支持自定义负向或 CFG Rescale。",
+        "fixedNegativeTab": "负面（固定）",
+        "modelV5MediumNegativeHelp": "Medium 使用官方固定 Heavy 负向提示，角色负向不参与生成。自定义负向草稿会保留，切回 High 可继续使用。"
       },
       "batch": {
         "statusTitle": "批量生成状态"
@@ -418,7 +423,9 @@ const paintingWorkspacezhCN = {
         "discard": "丢弃",
         "primary": "主结果",
         "finish": "完成",
-        "apply": "应用"
+        "apply": "应用",
+        "circleBrush": "圆形笔刷",
+        "squareBrush": "方形笔刷"
       },
       "gallery": {
         "resultEmptyTitle": "生成结果会显示在这里",

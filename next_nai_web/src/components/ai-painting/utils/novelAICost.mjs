@@ -7,6 +7,8 @@ const V5_MODEL_FAMILY = new Set([
   'nai-diffusion-5-curated-inpainting',
   'nai-diffusion-5-full',
   'nai-diffusion-5-full-inpainting',
+  'nai-diffusion-5-full-medium',
+  'nai-diffusion-5-full-medium-inpainting',
 ]);
 
 /**
@@ -35,12 +37,16 @@ export const calculateNovelAIImageCost = ({
   strength = 1,
   inpaintImg2ImgStrength = 1,
 }) => {
+  const isMedium = model === 'nai-diffusion-5-full-medium'
+    || model === 'nai-diffusion-5-full-medium-inpainting';
+  const effectiveSteps = isMedium ? 14 : Number(steps);
+  const stepFactor = isMedium ? 1 / 1.06521739 : 1;
   const resolution = Number(width) * Number(height);
   const baseCost = Math.ceil(
     (BASE_PIXEL_COEFFICIENT * resolution)
-    + (STEP_PIXEL_COEFFICIENT * resolution * Number(steps)),
+    + (STEP_PIXEL_COEFFICIENT * resolution * effectiveSteps * stepFactor),
   );
-  const smeaFactor = enableSmea ? (enableSmeaDyn ? 1.4 : 1.2) : 1;
+  const smeaFactor = !isMedium && enableSmea ? (enableSmeaDyn ? 1.4 : 1.2) : 1;
   const modelFactor = V5_MODEL_FAMILY.has(model) ? 1.5 : 1;
   const editStrength = hasMask
     ? Number(inpaintImg2ImgStrength ?? 1)

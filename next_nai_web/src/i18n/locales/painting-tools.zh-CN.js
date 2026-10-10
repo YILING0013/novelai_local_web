@@ -170,7 +170,9 @@ const paintingToolszhCN = {
           "MEDIA_ASSET_URL_REQUIRED": "缺少可下载的资源地址。",
           "MEDIA_ASSET_DOWNLOAD_FAILED": "资源下载失败，请稍后重试。",
           "MEDIA_ASSET_CONTENT_REQUIRED": "缺少可下载的资源内容。",
-          "MEDIA_ASSET_OBJECT_URL_FAILED": "无法创建本地下载地址。"
+          "MEDIA_ASSET_OBJECT_URL_FAILED": "无法创建本地下载地址。",
+          "NOTE_TOKEN_LIMIT_EXCEEDED": "笔记提示词合计超过 2942 tokens，请缩短正文或角色提示词。",
+          "NOTE_TRANSFER_GROUP_CONFLICT": "目标账号存在相同 ID 的分组，请先导出备份并处理分组冲突。"
         },
         "editDialog": {
           "title": "编辑笔记",
@@ -370,7 +372,7 @@ const paintingToolszhCN = {
           "configuredCategoryStart": "配置的起始类别位置：{position}",
           "processAllSelected": "处理所有选定类别",
           "noRelatedCategories": "无关联类别",
-          "title": "预览（应用仿生学阅读、权重高亮和随机标签预览）"
+          "title": "预览"
         },
         "editing": "编辑中",
         "tokensLoading": "加载 Tokens…",
@@ -385,9 +387,9 @@ const paintingToolszhCN = {
         "randomPromptInserted": "随机提示词标记已插入",
         "editPositivePrompt": "编辑正面提示词",
         "editNegativePrompt": "编辑负面提示词",
-        "weightUpTooltip": "加权：给选中内容添加 {}",
-        "weightDownTooltip": "降权：移除 {} 或添加 []",
-        "commentTooltip": "注释：使选中内容不参与处理",
+        "weightUpTooltip": "增加权重 · Alt + ↑ / Shift + 滚轮向上",
+        "weightDownTooltip": "降低权重 · Alt + ↓ / Shift + 滚轮向下",
+        "commentTooltip": "注释：将选中内容包裹为 /* */，生成时忽略。",
         "uncommentTooltip": "取消注释：移除 /* */",
         "insertRandomPrompt": "插入随机提示词",
         "randomPreviewEnabled": "已启用随机提示词预览",
@@ -402,8 +404,27 @@ const paintingToolszhCN = {
         "suggestionsHelp": "输入至少 2 个英文字符（含数字）或 1 个中文字符后显示联想；点击、选中和复制不会触发。",
         "overlayPreview": "叠加预览",
         "sideBySidePreview": "分栏预览",
-        "translationHelp": "悬浮在带虚线的标签上查看中文释义",
-        "translationFailed": "标签释义加载失败，请稍后重新输入重试"
+        "translationHelp": "点击提示词或移动光标查看译文，再次点击同一提示词收起。桌面端也可悬浮查看。",
+        "translationFailed": "翻译不可用，请稍后重试或关闭。",
+        "defaultWeightMode": "默认权重格式",
+        "weightModes": {
+          "numeric": "数值 · 1.2::提示词::",
+          "brackets": "括号 · {提示词} / [提示词]"
+        },
+        "weightModeHelp": "数值权重每次调整 0.1，可降至负数；1.0 不显示权重标记，已有 {} 或 [] 沿用括号。选中提示词或将光标放在词内，按 Alt + 上下键或 Shift + 滚轮调整。",
+        "translationEnabled": "启用翻译",
+        "translationUnderline": "译文显示点状下划线",
+        "translationTarget": "翻译目标语言",
+        "translationTargetHelp": "自动模式：中文译成英文，其他语言译成中文。停止输入 3 秒后翻译。",
+        "translationLanguages": {
+          "auto": "自动",
+          "zh": "中文",
+          "en": "英文",
+          "ja": "日文",
+          "ko": "韩文"
+        },
+        "translationRetry": "重试",
+        "translationDisable": "关闭翻译"
       },
       "batch": {
         "errors": {

@@ -17,6 +17,8 @@ import {
   AccordionSummary,
   AccordionDetails,
   CircularProgress,
+  Alert,
+  MenuItem,
 } from '@mui/material';
 import {
   Image as ImageIcon,
@@ -26,18 +28,14 @@ import {
   Face as FaceIcon, // 用于角色卡图标
 } from '@mui/icons-material';
 import { getNoteTitleError } from '../../../utils/noteTitle.mjs';
+import { getPublicToolErrorMessageKey } from '../../../utils/publicToolErrors.mjs';
 import { useI18n } from '@/i18n/I18nProvider';
-
-// 简单的角色卡预览组件 (与 NoteEditDialog 中的类似)
-const CharacterTabPreviewSimple = ({ tab, index, t }) => (
-  <Paper elevation={0} sx={{ p: 0.5, mb: 0.5, bgcolor: 'rgba(0,0,0,0.02)', borderRadius: 0.5 }}>
-    <Typography variant="caption" display="block" sx={{fontSize: '0.7rem'}}>
-      {t('painting.tools.notebook.character')} {index + 1}: {tab.prompt ? (tab.prompt.substring(0, 25) + (tab.prompt.length > 25 ? '...' : '')) : t('painting.tools.notebook.untitled')}
-      {tab.position && ` (${tab.position})`}
-    </Typography>
-  </Paper>
-);
-
+import { getGroupOptions } from './noteGroups.mjs';
+import { normalizeNoteCharacters } from './noteCharacters.mjs';
+import { getNoteContentLength, NOTE_CONTENT_LIMIT, NOTE_CHARACTER_JSON_LIMIT, NOTE_TOKEN_LIMIT } from './noteLimits.mjs';
+import noteCharacterMessages from './noteCharacterMessages';
+import NoteCharacterCards from './NoteCharacterCards';
+import useNoteTokenCount from './useNoteTokenCount';
 
 const SaveNoteDialog = ({ 
   open, 
@@ -47,12 +45,17 @@ const SaveNoteDialog = ({
   negativePrompt, 
   extractActiveContent,
   currentCharacterTabs, // 新增: 从 AIPaintingPage -> PromptPanel 传递过来的当前角色卡数据
+  groups = [],
+  defaultGroupId = null,
 }) => {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const words = noteCharacterMessages[locale];
   const [noteTitle, setNoteTitle] = useState('');
   const [noteImageUrl, setNoteImageUrl] = useState('');
   const [imageUrlError, setImageUrlError] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [groupId, setGroupId] = useState(defaultGroupId);
+  const [saveError, setSaveError] = useState('');
   const titleErrorCode = getNoteTitleError(noteTitle);
   const titleError = titleErrorCode
     ? t(`painting.tools.notebook.errors.${titleErrorCode}`)
@@ -64,8 +67,11 @@ const SaveNoteDialog = ({
       setNoteTitle('');
       setNoteImageUrl('');
       setImageUrlError(false);
+      setGroupId(defaultGroupId);
+      setSaveError('');
+      setLoading(false);
     }
-  }, [open]);
+  }, [open, defaultGroupId]);
 
   const handleImageUrlChange = (e) => {
     setNoteImageUrl(e.target.value);
@@ -73,18 +79,19 @@ const SaveNoteDialog = ({
   };
 
   const handleSave = async () => {
-    if (titleError) {
+    if (titleError || characterError || overLimit || structureOverLimit) {
       return;
     }
     setLoading(true);
+    setSaveError('');
     try {
       // 将当前的角色卡数据 (currentCharacterTabs) 一起传递
-      const success = await onSave(noteTitle, noteImageUrl, currentCharacterTabs || []);
-      if (success) { // 假设 onSave 返回一个布尔值指示成功与否
+      const success = await onSave(noteTitle.trim(), noteImageUrl, characterTabsToDisplay, groupId);
+      if (success !== false) {
         onClose(); // 只有成功时才关闭
-      }
+      } else setSaveError(words.saveFailed);
     } catch (error) {
-        console.error("保存笔记时发生错误:", error);
+        setSaveError(t(getPublicToolErrorMessageKey(error, 'painting.tools.notebook.errors.NOTE_SAVE_FAILED')));
     } finally {
         setLoading(false);
     }
@@ -92,13 +99,30 @@ const SaveNoteDialog = ({
 
   const activePositivePrompt = extractActiveContent ? extractActiveContent(positivePrompt) : positivePrompt;
   const activeNegativePrompt = extractActiveContent ? extractActiveContent(negativePrompt) : negativePrompt;
-  const characterTabsToDisplay = Array.isArray(currentCharacterTabs) ? currentCharacterTabs : [];
-
+  let characterTabsToDisplay = [];
+  let characterError = '';
+  try {
+    characterTabsToDisplay = normalizeNoteCharacters(currentCharacterTabs);
+  } catch (error) {
+    characterError = error.code === 'NOTE_CHARACTER_FIELDS_INVALID' ? words.fieldsInvalid
+      : error.code === 'NOTE_CHARACTER_JSON_ARRAY_REQUIRED' ? words.arrayRequired : words.invalidJson;
+  }
+  const contentLength = getNoteContentLength(activePositivePrompt, activeNegativePrompt, characterTabsToDisplay);
+  const { tokenCount, status: tokenizerStatus, retry: retryTokenizer } = useNoteTokenCount(open, activePositivePrompt, activeNegativePrompt, characterTabsToDisplay);
+  const tokenOverLimit = tokenCount > NOTE_TOKEN_LIMIT;
+  const overLimit = contentLength > NOTE_CONTENT_LIMIT;
+  const structureOverLimit = Array.from(JSON.stringify(characterTabsToDisplay)).length > NOTE_CHARACTER_JSON_LIMIT;
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>{t('painting.tools.notebook.saveDialog.title')}</DialogTitle>
       <DialogContent dividers>
+        {saveError && <Alert severity="error" sx={{ mb: 2 }}>{saveError}</Alert>}
+        {characterError && <Alert severity="error" sx={{ mb: 2 }}>{characterError}</Alert>}
+        {overLimit && <Alert severity="error" sx={{ mb: 2 }}>{words.contentLimit}</Alert>}
+        {structureOverLimit && <Alert severity="error" sx={{ mb: 2 }}>{words.structureLimit}</Alert>}
+        {tokenOverLimit && <Alert severity="warning" sx={{ mb: 2 }}>{words.tokenLimit}</Alert>}
+        {tokenizerStatus === 'error' && <Alert severity="error" sx={{ mb: 2 }} action={<Button color="inherit" onClick={retryTokenizer}>{words.retry}</Button>}>{words.tokenError}</Alert>}
         <Grid container spacing={2}>
           {/* 左侧：输入和预览 */}
           <Grid item xs={12} md={7}>
@@ -114,6 +138,12 @@ const SaveNoteDialog = ({
               sx={{ mb: 2 }}
               disabled={loading}
             />
+            <TextField select fullWidth label={words.group} value={groupId ?? ''} disabled={loading}
+              SelectProps={{ displayEmpty: true }} InputLabelProps={{ shrink: true }}
+              onChange={(event) => setGroupId(event.target.value || null)} sx={{ mb: 2 }}>
+              <MenuItem value="">{words.ungrouped}</MenuItem>
+              {getGroupOptions(groups).map((group) => <MenuItem key={group.id} value={group.id}>{group.label}</MenuItem>)}
+            </TextField>
             
             <Typography variant="subtitle2" gutterBottom sx={{ mt: 1, fontWeight: 'medium' }}>
               {t('painting.tools.notebook.saveDialog.previewHelp')}:
@@ -128,18 +158,22 @@ const SaveNoteDialog = ({
                 {activeNegativePrompt || t('painting.tools.notebook.emptyValue')}
               </Typography>
             </Paper>
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="body2" color={tokenOverLimit ? 'warning.main' : 'text.secondary'}>
+                {words.contentCount}: {tokenizerStatus === 'ready' ? `${tokenCount} tokens` : tokenizerStatus === 'error' ? '—' : words.tokenLoading} · {contentLength} {words.characters}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">{words.tokenHelp}</Typography>
+            </Box>
 
             {/* 当前角色卡预览 */}
             {characterTabsToDisplay.length > 0 && (
-                <Accordion defaultExpanded={characterTabsToDisplay.length <= 3} TransitionProps={{ unmountOnExit: true }} sx={{boxShadow: 'none', border: '1px solid rgba(0,0,0,0.12)', '&:before': {display: 'none'} , mb:2}}>
+                <Accordion defaultExpanded TransitionProps={{ unmountOnExit: true }} sx={{boxShadow: 'none', border: '1px solid', borderColor: 'divider', '&:before': {display: 'none'} , mb:2}}>
                     <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                         <FaceIcon sx={{ mr: 1, color: 'action.active' }} />
                         <Typography variant="subtitle2" sx={{fontWeight: 'medium'}}>{t('painting.tools.notebook.currentCharacterCards')} ({t('painting.tools.notebook.count', { count: characterTabsToDisplay.length })})</Typography>
                     </AccordionSummary>
-                    <AccordionDetails sx={{ maxHeight: 150, overflowY: 'auto', p:1, pt:0 }}>
-                        {characterTabsToDisplay.map((tab, index) => (
-                            <CharacterTabPreviewSimple key={index} tab={tab} index={index} t={t} />
-                        ))}
+                    <AccordionDetails sx={{ maxHeight: 300, overflowY: 'auto', p:1, pt:0 }}>
+                        <NoteCharacterCards characters={characterTabsToDisplay} />
                     </AccordionDetails>
                 </Accordion>
             )}
@@ -210,7 +244,7 @@ const SaveNoteDialog = ({
         <Button 
           onClick={handleSave} 
           variant="contained"
-          disabled={loading || Boolean(titleError) || (!!noteImageUrl && imageUrlError)}
+          disabled={loading || Boolean(titleError) || Boolean(characterError) || overLimit || structureOverLimit || (!!noteImageUrl && imageUrlError)}
           startIcon={loading ? <CircularProgress size={20} /> : <SaveIcon />}
         >
           {loading ? t('painting.tools.common.saving') : t('painting.tools.notebook.confirmSave')}

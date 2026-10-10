@@ -3,6 +3,10 @@
 import { useEffect, useSyncExternalStore } from 'react';
 
 const defaults = {
+  defaultWeightMode: 'numeric',
+  translationEnabled: true,
+  translationTarget: 'auto',
+  translationUnderline: true,
   inlinePreview: true,
   expandedPreview: null,
   overlayPreview: false,

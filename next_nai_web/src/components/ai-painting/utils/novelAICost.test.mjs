@@ -14,6 +14,15 @@ test('0 点属于可显示成本，非生成状态和超限状态保持隐藏', 
   assert.equal(isDisplayableNovelAICost(-3), false);
 });
 
+test('Medium 按实际固定 14 步估算 Anlas，与用户 0.6 额度分别计算', () => {
+  for (const model of ['nai-diffusion-5-full-medium', 'nai-diffusion-5-full-medium-inpainting']) {
+    assert.equal(calculateNovelAIImageCost({ model, width: 832, height: 1216, steps: 50 }), 17);
+    assert.equal(calculateNovelAIImageCost({
+      model, width: 832, height: 1216, steps: 50, enableSmea: true, enableSmeaDyn: true,
+    }), 17);
+  }
+});
+
 test('V5 在 V4 基础价上按单次请求乘 1.5 并取整', () => {
   assert.equal(calculateNovelAIImageCost({
     model: 'nai-diffusion-4-5-full', width: 832, height: 1216, steps: 28,

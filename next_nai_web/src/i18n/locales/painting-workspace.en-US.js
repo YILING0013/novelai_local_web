@@ -74,7 +74,8 @@ const paintingWorkspaceenUS = {
         "novelAIInpaintModelNotSupported": "V5 Curated does not currently support inpainting. Switch to V5 Full or V4.5.",
         "novelAIInpaintVibeNotSupported": "V4/V4.5 inpainting does not support Vibe. Remove Vibe and try again.",
         "novelAIReferenceModelNotSupported": "Character/Precise Reference is only supported by V4.5 models, including inpainting.",
-        "novelAIReferenceVibeConflict": "Character/Precise Reference and Vibe cannot be used together."
+        "novelAIReferenceVibeConflict": "Character/Precise Reference and Vibe cannot be used together.",
+        "autoDownloadFailed": "The image was generated, but the automatic download failed. Retry using Download on the result toolbar."
       },
       "notifications": {
         "completed": "Completed.",
@@ -162,7 +163,7 @@ const paintingWorkspaceenUS = {
       },
       "parameters": {
         "title": "Generation parameters",
-        "modelV5Full": "NovelAI V5 Full",
+        "modelV5Full": "High effort · Adjustable sampler and negative prompts",
         "modelV5Curated": "NovelAI V5 Curated",
         "modelV45Full": "NovelAI V4.5 Full",
         "modelV45Curated": "NovelAI V4.5 Curated",
@@ -327,7 +328,11 @@ const paintingWorkspaceenUS = {
         "disableReferenceImage": "Disable reference image",
         "enableReferenceImage": "Enable reference image",
         "otherSettings": "Other settings",
-        "referenceType": "Reference type"
+        "referenceType": "Reference type",
+        "modelV5Medium": "Faster Medium effort · Fixed 14 steps · 0.6 quota points per image",
+        "modelV5MediumSettings": "Medium uses 14 steps, Euler Ancestral, and the official fixed Heavy negative prompt. Custom negative prompts and CFG Rescale are unavailable.",
+        "fixedNegativeTab": "Negative (fixed)",
+        "modelV5MediumNegativeHelp": "Medium uses the official fixed Heavy negative prompt and ignores character negative prompts. Your custom negative drafts are kept for use when you switch back to High."
       },
       "batch": {
         "statusTitle": "Batch generation status"
@@ -418,7 +423,9 @@ const paintingWorkspaceenUS = {
         "discard": "Discard",
         "primary": "Primary",
         "finish": "Finish",
-        "apply": "Apply"
+        "apply": "Apply",
+        "circleBrush": "Round brush",
+        "squareBrush": "Square brush"
       },
       "gallery": {
         "resultEmptyTitle": "Generated images will appear here",

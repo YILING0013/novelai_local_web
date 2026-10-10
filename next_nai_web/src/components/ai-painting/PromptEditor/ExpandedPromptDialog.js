@@ -21,15 +21,14 @@ import {
 import {
   Close as CloseIcon,
   Check as CheckIcon,
-  FormatBold as FormatBoldIcon,
-  FormatSize as FormatSizeIcon,
+  Add as AddIcon,
+  Remove as RemoveIcon,
   Code as CodeIcon,
   FormatClear as FormatClearIcon,
   Casino as CasinoIcon,
+  InfoOutlined as InfoIcon,
 } from '@mui/icons-material';
 import {
-  weightUpText,
-  weightDownText,
   commentText,
   uncommentText,
   extractActiveContent
@@ -42,6 +41,8 @@ import usePromptSuggestions from './usePromptSuggestions';
 import PromptSuggestions from './PromptSuggestions';
 import PromptEditorSettings from './PromptEditorSettings';
 import usePromptEditorSettings from './usePromptEditorSettings';
+import usePromptWeightShortcuts from './usePromptWeightShortcuts';
+import usePromptTranslationPreview, { PromptTranslationFeedback } from './usePromptTranslationPreview';
 // 引入随机提示词控件
 import RandomPromptConfig from '../RandomPromptConfig/RandomPromptConfig';
 import apiClient from '@/utils/ApiClient';
@@ -72,7 +73,7 @@ const ExpandedPromptDialog = ({
   const textFieldRef = useRef(null);
   const previewRef = useRef(null);
   const syncScrollRef = useRef(null);
-  const { expandedPreview, overlayPreview, suggestionsEnabled, setSetting } = usePromptEditorSettings();
+  const { expandedPreview, overlayPreview, suggestionsEnabled, defaultWeightMode, setSetting } = usePromptEditorSettings();
   const suggestions = usePromptSuggestions({ value: text, onChange: setText, inputRef: textFieldRef, enabled: open && suggestionsEnabled });
   const theme = useTheme();
   const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
@@ -81,10 +82,11 @@ const ExpandedPromptDialog = ({
   const showPreview = expandedPreview ?? isDesktop;
   const [isComposing, setIsComposing] = useState(false);
   const previewIsOverlay = showPreview && overlayPreview;
+  const translationPreview = usePromptTranslationPreview({ text, previewRef, overlay: previewIsOverlay && !isComposing, enabled: open && !isComposing });
+  const weightShortcuts = usePromptWeightShortcuts({ inputRef: textFieldRef, value: text, onChange: setText, defaultWeightMode, onAdjust: translationPreview.close, enabled: !isComposing });
 
   // 添加随机提示词配置状态
   const [randomPromptConfig, setRandomPromptConfig] = useState(null);
-  const [randomPromptEnabled, setRandomPromptEnabled] = useState(false);
   // 随机提示词对话框状态
   const [randomPromptDialogOpen, setRandomPromptDialogOpen] = useState(false);
   // 提示消息状态
@@ -106,7 +108,6 @@ const ExpandedPromptDialog = ({
       try {
         const config = await apiClient.getRandomPromptConfig();
         setRandomPromptConfig(config);
-        setRandomPromptEnabled(config.enabled !== false);
       } catch (error) {
         console.error('获取随机提示词配置失败:', error);
         forwardPaintingPanelError(onError, error, {
@@ -193,6 +194,7 @@ const ExpandedPromptDialog = ({
   const handleTextChange = (e) => {
     // 输入期间不格式化整段文本；否则中文组字和已有光标位置会被异步改写。
     setText(e.currentTarget.value);
+    translationPreview.inputProps.onChange(e);
     suggestions.updateFromInput(e.currentTarget, e.nativeEvent);
   };
 
@@ -222,6 +224,7 @@ const ExpandedPromptDialog = ({
 
   const handleSelectText = (e) => {
     suggestions.inputProps.onSelect(e);
+    translationPreview.inputProps.onSelect(e);
     setSelection({
       start: e.target.selectionStart,
       end: e.target.selectionEnd,
@@ -373,7 +376,8 @@ const ExpandedPromptDialog = ({
             <IconButton
               aria-label={t('painting.tools.promptEditor.weightUpTooltip')}
               size={isDesktop ? "small" : "medium"}
-              onClick={() => handleFormatOperation(weightUpText)}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => weightShortcuts.adjustWeight(1)}
               color="primary"
               sx={{
                 // 移动端缩小图标
@@ -382,14 +386,15 @@ const ExpandedPromptDialog = ({
                 }
               }}
             >
-              <FormatBoldIcon />
+              <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', fontWeight: 700, fontSize: '1rem' }}>W<AddIcon sx={{ fontSize: '1rem' }} /></Box>
             </IconButton>
           </Tooltip>
           <Tooltip title={t('painting.tools.promptEditor.weightDownTooltip')} arrow>
             <IconButton
               aria-label={t('painting.tools.promptEditor.weightDownTooltip')}
               size={isDesktop ? "small" : "medium"}
-              onClick={() => handleFormatOperation(weightDownText)}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => weightShortcuts.adjustWeight(-1)}
               color="primary"
               sx={{
                 '& .MuiSvgIcon-root': {
@@ -397,7 +402,7 @@ const ExpandedPromptDialog = ({
                 }
               }}
             >
-              <FormatSizeIcon />
+              <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', fontWeight: 700, fontSize: '1rem' }}>W<RemoveIcon sx={{ fontSize: '1rem' }} /></Box>
             </IconButton>
           </Tooltip>
           <Divider orientation="vertical" flexItem />
@@ -431,7 +436,6 @@ const ExpandedPromptDialog = ({
               <FormatClearIcon />
             </IconButton>
           </Tooltip>
-
           <Divider orientation="vertical" flexItem />
 
           {/* 随机提示词按钮 */}
@@ -451,27 +455,6 @@ const ExpandedPromptDialog = ({
               </IconButton>
           </Tooltip>
 
-          <Box sx={{ flex: 1 }} />
-
-          {/* 显示随机提示词状态 */}
-          {randomPromptEnabled && (
-            <Tooltip title={t('painting.tools.promptEditor.randomPreviewEnabled')} arrow>
-              <IconButton
-                aria-label={t('painting.tools.promptEditor.randomPreviewEnabled')}
-                size={isDesktop ? "small" : "medium"}
-                color="secondary"
-                sx={{
-                  mr: isDesktop ? 1 : 0.5,
-                  '& .MuiSvgIcon-root': {
-                    fontSize: isDesktop ? undefined : '1.1rem'
-                  }
-                }}
-              >
-                <CasinoIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          )}
-
         </Paper>
 
         <Box sx={{
@@ -483,19 +466,36 @@ const ExpandedPromptDialog = ({
           minHeight: 0,
         }}>
           <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
-            <Typography component="label" htmlFor={`${suggestions.listId}-input`} variant="caption" color="text.secondary" sx={{ height: 28, flexShrink: 0 }}>
-              {t(previewIsOverlay ? 'painting.tools.promptEditor.overlayPreview' : 'painting.tools.promptEditor.editing')}
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 1.5, rowGap: 0.25, minHeight: 28, mb: 0.5, flexShrink: 0 }}>
+              <Typography component="label" htmlFor={`${suggestions.listId}-input`} variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+                {t(previewIsOverlay ? 'painting.tools.promptEditor.overlayPreview' : 'painting.tools.promptEditor.editing')}
+              </Typography>
+              <Typography variant="caption" sx={{ flex: 1, minWidth: 140, color: tokenizerStatus === 'error' || (tokenLimit && totalTokenCount > tokenLimit) ? 'error.main' : 'text.secondary' }}>
+                {tokenizerStatus === 'loading' && t('painting.tools.promptEditor.tokensLoading')}
+                {tokenizerStatus === 'loaded' && (tokenLimit
+                  ? t('painting.tools.promptEditor.tokenCountWithTotalAndLimit', { count: tokenCount, direction: t(isPositive ? 'painting.tools.promptEditor.positiveDirection' : 'painting.tools.promptEditor.negativeDirection'), total: totalTokenCount, limit: tokenLimit })
+                  : t('painting.tools.promptEditor.tokenCount', { count: tokenCount }))}
+                {tokenizerStatus === 'error' && t('painting.tools.promptEditor.tokenizerError')}
+                {tokenizerStatus === 'unloaded' && t('painting.tools.promptEditor.tokensUnavailable')}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap', ml: 'auto' }}>
+                {selection.start === selection.end
+                  ? `${t('painting.tools.promptEditor.cursor')}: ${selection.start}`
+                  : t('painting.tools.promptEditor.selectedCharacters', { count: selection.end - selection.start })}
+              </Typography>
+            </Box>
             <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, border: '1px solid', borderColor: 'divider', borderRadius: 2, overflow: 'hidden', '&:focus-within': { borderColor: 'primary.main' } }}>
               <Box sx={{ position: 'relative', flex: 1, minHeight: 0 }}>
                 {previewIsOverlay && (
                   <Box sx={{ position: 'absolute', inset: 0, visibility: isComposing ? 'hidden' : 'visible' }}>
-                    <EnhancedPreview text={text} randomPromptConfig={randomPromptConfig} scrollRef={previewRef} overlay enabled={open} />
+                    <EnhancedPreview text={text} randomPromptConfig={randomPromptConfig} scrollRef={previewRef} overlay
+                      tags={translationPreview.tags} translations={translationPreview.translations} underline={translationPreview.underline} activeTag={translationPreview.active} />
                   </Box>
                 )}
                 <Box
                   component="textarea"
                   {...suggestions.inputProps}
+                  {...translationPreview.inputProps}
                   id={`${suggestions.listId}-input`}
                   ref={textFieldRef}
                   value={text}
@@ -503,18 +503,24 @@ const ExpandedPromptDialog = ({
                   spellCheck={false}
                   onChange={handleTextChange}
                   onSelect={handleSelectText}
-                  onScroll={(event) => { syncScroll(event.currentTarget, previewRef.current); suggestions.inputProps.onScroll(event); }}
-                  onCompositionStart={(event) => { setIsComposing(true); suggestions.inputProps.onCompositionStart(event); }}
-                  onCompositionEnd={(event) => { setIsComposing(false); suggestions.inputProps.onCompositionEnd(event); }}
-                  onMouseMove={(event) => {
-                    if (!previewIsOverlay || isComposing) return;
-                    // 上层 textarea 始终接收输入；通过下层文本的真实矩形查找悬浮释义，不拦截点击和拖选。
-                    const hit = [...previewRef.current.querySelectorAll('[data-preview-translation]')].find((tag) => (
-                      [...tag.getClientRects()].some((rect) => event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom)
-                    ));
-                    event.currentTarget.title = hit?.dataset.previewTranslation || '';
+                  onScroll={(event) => {
+                    syncScroll(event.currentTarget, previewRef.current);
+                    suggestions.inputProps.onScroll(event);
+                    translationPreview.close();
                   }}
-                  onMouseLeave={(event) => { event.currentTarget.title = ''; }}
+                  onPointerDown={(event) => { suggestions.inputProps.onPointerDown(event); translationPreview.inputProps.onPointerDown(event); }}
+                  onKeyDown={(event) => {
+                    if (weightShortcuts.onKeyDown(event)) return;
+                    suggestions.inputProps.onKeyDown(event);
+                    translationPreview.inputProps.onKeyDown(event);
+                  }}
+                  onBlur={(event) => { suggestions.inputProps.onBlur(event); translationPreview.close(); }}
+                  onCompositionStart={(event) => {
+                    setIsComposing(true);
+                    translationPreview.inputProps.onCompositionStart(event);
+                    suggestions.inputProps.onCompositionStart(event);
+                  }}
+                  onCompositionEnd={(event) => { setIsComposing(false); suggestions.inputProps.onCompositionEnd(event); }}
                   sx={{
                     ...PROMPT_TEXT_STYLE,
                     display: 'block',
@@ -535,35 +541,23 @@ const ExpandedPromptDialog = ({
                 />
                 <PromptSuggestions suggestions={suggestions} />
               </Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, height: 32, flexShrink: 0, borderTop: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
-                <Typography variant="caption" sx={{ flex: 1, whiteSpace: 'nowrap', color: tokenizerStatus === 'error' || (tokenLimit && totalTokenCount > tokenLimit) ? 'error.main' : 'text.secondary' }}>
-                  {tokenizerStatus === 'loading' && t('painting.tools.promptEditor.tokensLoading')}
-                  {tokenizerStatus === 'loaded' && (tokenLimit
-                    ? t('painting.tools.promptEditor.tokenCountWithTotalAndLimit', { count: tokenCount, direction: t(isPositive ? 'painting.tools.promptEditor.positiveDirection' : 'painting.tools.promptEditor.negativeDirection'), total: totalTokenCount, limit: tokenLimit })
-                    : t('painting.tools.promptEditor.tokenCount', { count: tokenCount }))}
-                  {tokenizerStatus === 'error' && t('painting.tools.promptEditor.tokenizerError')}
-                  {tokenizerStatus === 'unloaded' && t('painting.tools.promptEditor.tokensUnavailable')}
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
-                  {selection.start === selection.end
-                    ? `${t('painting.tools.promptEditor.cursor')}: ${selection.start}`
-                    : t('painting.tools.promptEditor.selectedCharacters', { count: selection.end - selection.start })}
-                </Typography>
-              </Box>
             </Box>
           </Box>
           {showPreview && !previewIsOverlay && (
             <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ height: 28, flexShrink: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-                {t('painting.tools.promptEditor.preview.title')}
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minHeight: 28, mb: 0.5, flexShrink: 0 }}>
+                <Typography variant="caption" color="text.secondary">{t('painting.tools.promptEditor.preview.title')}</Typography>
+                <Tooltip title={t('painting.tools.promptEditor.translationHelp')} arrow>
+                  <IconButton size="small" aria-label={t('painting.tools.promptEditor.translationHelp')}><InfoIcon fontSize="small" /></IconButton>
+                </Tooltip>
+              </Box>
               <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, border: '1px solid', borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
                 <Box sx={{ flex: 1, minHeight: 0, '& ::selection': { backgroundColor: selectionBackgroundColor, color: theme.palette.primary.contrastText } }}>
-                  <EnhancedPreview text={text} randomPromptConfig={randomPromptConfig} scrollRef={previewRef} onScroll={(event) => syncScroll(event.currentTarget, textFieldRef.current)} enabled={open} />
+                  <EnhancedPreview text={text} randomPromptConfig={randomPromptConfig} scrollRef={previewRef}
+                    onScroll={(event) => { syncScroll(event.currentTarget, textFieldRef.current); translationPreview.close(); }}
+                    tags={translationPreview.tags} translations={translationPreview.translations}
+                    underline={translationPreview.underline} previewProps={translationPreview.previewProps} activeTag={translationPreview.active} />
                 </Box>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', px: 1.5, height: 32, flexShrink: 0, borderTop: '1px solid', borderColor: 'divider' }}>
-                  {t('painting.tools.promptEditor.translationHelp')}
-                </Typography>
               </Box>
             </Box>
           )}
@@ -576,19 +570,6 @@ const ExpandedPromptDialog = ({
         // 移动端减少内边距
         p: isDesktop ? undefined : 1
       }}>
-        {/* 桌面端显示解释性文本，移动端隐藏 */}
-        {isDesktop && (
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ flex: 1, pl: 2 }}
-          >
-            {randomPromptEnabled
-              ? t('painting.tools.promptEditor.randomPreviewHelp')
-              : t('painting.tools.promptEditor.commentHelp')}
-          </Typography>
-        )}
-
         <Button
           onClick={onClose}
           color="inherit"
@@ -606,6 +587,7 @@ const ExpandedPromptDialog = ({
           {t('painting.tools.promptEditor.applyChanges')}
         </Button>
       </DialogActions>
+      <PromptTranslationFeedback preview={translationPreview} />
 
       {/* 随机提示词对话框 */}
       <RandomPromptConfig

@@ -8,7 +8,7 @@ import { getPromptTagRange, insertPromptTag } from './promptTagCompletion.mjs';
  * @param {number} position 光标在文本中的位置。
  * @returns {DOMRect} 视口内可见的光标矩形。
  */
-function getCaretRect(input, position) {
+export function getCaretRect(input, position) {
   const style = getComputedStyle(input);
   const mirror = document.createElement('div');
   for (const property of ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'lineHeight', 'letterSpacing',

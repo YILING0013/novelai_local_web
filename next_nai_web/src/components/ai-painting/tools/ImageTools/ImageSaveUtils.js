@@ -6,7 +6,7 @@ export const DOWNLOAD_NAMING_METHODS = [
   { value: 'seed', labelKey: 'settings.naming.seed' },
   { value: 'prompt32', labelKey: 'settings.naming.prompt32' },
   { value: 'timestamp', labelKey: 'settings.naming.timestamp' },
-  { value: 'datetime', labelKey: 'settings.naming.datetime' },
+  { value: 'localDateTime', labelKey: 'settings.naming.localDateTime' },
   { value: 'random', labelKey: 'settings.naming.random' },
 ];
 
@@ -131,7 +131,8 @@ export const generateFileName = (image = {}, imageSettings = {}, options = {}) =
     case 'timestamp':
       coreName = Date.now();
       break;
-    case 'datetime':
+    case 'datetime': // 保留旧版已保存的规则。
+    case 'localDateTime':
       coreName = formatDate(new Date(), 'yyyy-MM-dd_HH-mm-ss');
       break;
     case 'random':

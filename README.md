@@ -25,16 +25,19 @@ NovelAI Local Web 是面向 Windows 个人用户的本地 Web 客户端。提示
 | 功能 | 可以做什么 |
 | --- | --- |
 | 图像创作 | 文生图、图生图、局部重绘、连续生成、Upscale 放大、Enhance 增强与 Augment；显示官方 Anlas 预估 |
-| 模型与角色 | V3 / Furry V3、V4、V4.5、V5 系列，角色提示词与位置控制，以及模型支持的 Vibe / Director 工具 |
-| 提示词 | 正负提示词编辑、中英文标签联想与中文预览、V4 / V5 Tokenizer、随机提示词和提示词笔记 |
+| 模型与角色 | V3 / Furry V3、V4、V4.5、V5 / V5 Medium，角色提示词与位置控制，以及模型支持的 Vibe / Director 工具 |
+| 提示词 | 标签联想、词库与机器翻译预览、权重快捷键、V4 / V5 Tokenizer、随机提示词和三级分组笔记 |
+| Python 本地推理 | SwinV2、PixAI v1.0 FP32 / FP16 / INT8 反推；五种本地放大模型；后端自动下载和校验，结果保存到本地图库 |
 | 参考图库 | 拖入或多图上传，读取每张图的元数据，保存画风片段，建立个人参考集合 |
-| 本地图库 | 浏览生成保存目录，分页瀑布流、搜索、虚拟分组、批量选择和可恢复的回收站 |
+| 本地图库 | 浏览生成保存目录，分页瀑布流、搜索、虚拟分组、批量选择、恢复及确认后彻底删除 |
 | 元数据处理 | 分层查看和编辑 PNG、EXIF、隐写内容；批量选图作为模板，编辑或清除后另存 PNG |
 | 账户与界面 | 官方账户、订阅、Anlas 与 V5 额度；中英文、亮暗主题、主题色与背景设置 |
 
 不同模型支持的参数有所区别，界面会按模型调整可用工具。参考图库与本地图库是两个独立入口，共用详情、分组与元数据编辑操作。
 
-标签联想查询 NovelAI 官方接口，并结合随项目附带的词库补充中文搜索和翻译。提示词编辑设置可控制联想和中文预览；手机端可滚动建议列表并直接选词。图片工具中的点数为 Anlas 预估，实际扣费以官方为准。
+标签联想查询 NovelAI 官方接口，并结合随项目附带的词库补充中文搜索和翻译。新增的机器翻译优先查词库，未命中的文本由浏览器发送到 Index-Translate 在线服务；可在提示词设置中关闭或指定目标语言，原文及权重不被替换。手机端可滚动建议列表并直接选词。官方图片工具中的点数为 Anlas 预估，实际扣费以官方为准。
+
+本地反推与放大由电脑上的 Python 执行，不调用 NovelAI 图像接口或消耗 Anlas。页面仍沿用本地会话登录。详见 [本地推理配置](docs/local-inference.md) 和 [本轮同步清单](docs/sync-2026-10-10.md)。
 
 ## 界面与使用流程
 
@@ -179,7 +182,9 @@ Copy-Item .\nai_flask\config.example.json .\nai_flask\config.local.json
 | `data/image-library.db` | 图库索引、提示词、画风、虚拟分组和迁移记录 |
 | `data/gallery-thumbnails/` | 图库缩略图缓存 |
 | `data/settings.json` | 界面偏好、输出目录与灵感来源 |
-| `data/notes.json`、`data/random-prompts.json` | 提示词笔记和随机提示词资料 |
+| `data/notebook.json`、`data/random-prompts.json` | 词条与分组在同一个文件中原子保存；随机提示词单独保存 |
+| `data/notes.json` | 旧笔记来源；首次读取兼容，首次修改写入 notebook.json，旧文件保留 |
+| `data/models/` | 默认 Python 模型目录，可通过 inference_models_dir 指定其他位置 |
 | `data/novelai-tls-bindings.json` | 账号或 Token 的 SHA-256 摘要与 TLS 配置编号，供重启后恢复绑定 |
 | 浏览器存储 | 提示词草稿、部分界面偏好和 Vibe 缓存 |
 

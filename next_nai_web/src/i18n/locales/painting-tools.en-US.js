@@ -170,7 +170,9 @@ const paintingToolsenUS = {
           "MEDIA_ASSET_URL_REQUIRED": "No downloadable resource URL was provided.",
           "MEDIA_ASSET_DOWNLOAD_FAILED": "The resource could not be downloaded. Please try again later.",
           "MEDIA_ASSET_CONTENT_REQUIRED": "No downloadable resource content was provided.",
-          "MEDIA_ASSET_OBJECT_URL_FAILED": "A local download URL could not be created."
+          "MEDIA_ASSET_OBJECT_URL_FAILED": "A local download URL could not be created.",
+          "NOTE_TOKEN_LIMIT_EXCEEDED": "The note exceeds 2942 tokens in total. Shorten the main or character prompts.",
+          "NOTE_TRANSFER_GROUP_CONFLICT": "The target account has a group with the same ID. Export a backup and resolve the group conflict first."
         },
         "editDialog": {
           "title": "Edit note",
@@ -370,7 +372,7 @@ const paintingToolsenUS = {
           "configuredCategoryStart": "Configured category starting position: {position}",
           "processAllSelected": "Process all selected categories",
           "noRelatedCategories": "No related categories",
-          "title": "Preview with bionic reading, weight highlighting, and random-tag details"
+          "title": "Preview"
         },
         "editing": "Editing",
         "tokensLoading": "Loading tokens…",
@@ -385,9 +387,9 @@ const paintingToolsenUS = {
         "randomPromptInserted": "Random prompt tag inserted",
         "editPositivePrompt": "Edit positive prompt",
         "editNegativePrompt": "Edit negative prompt",
-        "weightUpTooltip": "Increase weight: wrap the selection in {}",
-        "weightDownTooltip": "Decrease weight: remove {} or wrap the selection in []",
-        "commentTooltip": "Comment: exclude the selection from processing",
+        "weightUpTooltip": "Increase weight · Alt + ↑ / Shift + wheel up",
+        "weightDownTooltip": "Decrease weight · Alt + ↓ / Shift + wheel down",
+        "commentTooltip": "Comment: wrap the selection in /* */ to exclude it from generation.",
         "uncommentTooltip": "Uncomment: remove /* */",
         "insertRandomPrompt": "Insert random prompt",
         "randomPreviewEnabled": "Random prompt preview is enabled",
@@ -402,8 +404,27 @@ const paintingToolsenUS = {
         "suggestionsHelp": "Suggestions appear after typing at least 2 English letters or digits, or 1 Chinese character. Clicking, selecting, and copying do not trigger them.",
         "overlayPreview": "Overlay preview",
         "sideBySidePreview": "Separate preview",
-        "translationHelp": "Hover over an underlined tag to see its Chinese meaning",
-        "translationFailed": "Tag meanings failed to load. Edit the text to retry."
+        "translationHelp": "Click a prompt or move the cursor into it to see its translation. Click the same prompt again to close it. Hover also works on desktop.",
+        "translationFailed": "Translation unavailable. Retry later or turn it off.",
+        "defaultWeightMode": "Default weight format",
+        "weightModes": {
+          "numeric": "Numeric · 1.2::prompt::",
+          "brackets": "Brackets · {prompt} / [prompt]"
+        },
+        "weightModeHelp": "Numeric weights change by 0.1 and can be negative. Weight markers are removed at 1.0; existing {} or [] keep their bracket format. Select text or place the caret in a prompt, then use Alt + arrow keys or Shift + wheel.",
+        "translationEnabled": "Enable translation",
+        "translationUnderline": "Dotted underline for translations",
+        "translationTarget": "Translation language",
+        "translationTargetHelp": "Auto translates Chinese into English and other languages into Chinese, after 3 seconds without typing.",
+        "translationLanguages": {
+          "auto": "Auto",
+          "zh": "Chinese",
+          "en": "English",
+          "ja": "Japanese",
+          "ko": "Korean"
+        },
+        "translationRetry": "Retry",
+        "translationDisable": "Turn off"
       },
       "batch": {
         "errors": {

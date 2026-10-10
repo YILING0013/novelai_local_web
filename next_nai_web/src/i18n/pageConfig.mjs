@@ -2,6 +2,8 @@ export const PAGE_IDS = Object.freeze({
   AI_PAINTING: 'ai-painting',
   REFERENCE_GALLERY: 'reference-gallery',
   LOCAL_GALLERY: 'local-gallery',
+  IMAGE_TAGGING: 'image-tagging',
+  LOCAL_UPSCALING: 'local-upscaling',
   SETTINGS: 'settings',
 });
 
@@ -9,6 +11,8 @@ export const PAGE_COLOR_DEFAULTS = Object.freeze({
   [PAGE_IDS.AI_PAINTING]: '#58779A',
   [PAGE_IDS.REFERENCE_GALLERY]: '#53678E',
   [PAGE_IDS.LOCAL_GALLERY]: '#527D80',
+  [PAGE_IDS.IMAGE_TAGGING]: '#81688E',
+  [PAGE_IDS.LOCAL_UPSCALING]: '#637F67',
   [PAGE_IDS.SETTINGS]: '#66717D',
 });
 

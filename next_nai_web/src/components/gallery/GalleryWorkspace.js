@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Box, Button, ButtonBase, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, InputAdornment, LinearProgress, Menu, MenuItem, Snackbar, Stack, TextField, Tooltip, Typography, useMediaQuery, useTheme } from '@mui/material';
-import { AddPhotoAlternateOutlined, CheckBoxOutlined, Close, CreateNewFolderOutlined, DeleteOutline, DescriptionOutlined, DriveFileMoveOutlined, ImageOutlined, PaletteOutlined, Refresh, RestoreFromTrashOutlined, Search } from '@mui/icons-material';
+import { AddPhotoAlternateOutlined, CheckBoxOutlined, Close, CreateNewFolderOutlined, DeleteOutline, DeleteForeverOutlined, ArrowBack, DescriptionOutlined, DriveFileMoveOutlined, ImageOutlined, PaletteOutlined, Refresh, RestoreFromTrashOutlined, Search } from '@mui/icons-material';
 import apiClient from '@/utils/ApiClient';
 import { useI18n } from '@/i18n/I18nProvider';
 import GalleryDetailDialog from './GalleryDetailDialog';
@@ -45,6 +45,7 @@ export default function GalleryWorkspace({ source = 'references' }) {
   const [newGroupOpen, setNewGroupOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [trashIds, setTrashIds] = useState(null);
+  const [deleteIds, setDeleteIds] = useState(null);
   const [metadataTarget, setMetadataTarget] = useState(null);
   const fileInputRef = useRef(null);
   const scrollRef = useRef(null);
@@ -170,9 +171,9 @@ export default function GalleryWorkspace({ source = 'references' }) {
         result.errors.push(...page.errors);
       }
       if (result.errors.length) setError(t('gallery.operationErrors', { count: result.errors.length }) + '\n' + result.errors.map((item) => item.error).join('\n'));
-      const message = action === 'export' ? 'gallery.copiesSaved' : action === 'trash' ? 'gallery.trashed' : action === 'restore' ? 'gallery.restored' : 'gallery.moved';
+      const message = action === 'delete' ? 'gallery.deleted' : action === 'export' ? 'gallery.copiesSaved' : action === 'trash' ? 'gallery.trashed' : action === 'restore' ? 'gallery.restored' : 'gallery.moved';
       setNotice(t(message, { count: result.succeeded.length }));
-      if ((action === 'trash' || action === 'restore') && result.succeeded.includes(detailId)) setDetailId(null);
+      if ((['trash', 'restore', 'delete'].includes(action)) && result.succeeded.includes(detailId)) setDetailId(null);
       return result;
     } catch (requestError) { setError(requestError.data?.error || requestError.message); return null; }
     finally { if (result.succeeded.length) setRevision((value) => value + 1); setBusy(false); }
@@ -241,21 +242,24 @@ export default function GalleryWorkspace({ source = 'references' }) {
           <Tooltip title={t('gallery.newGroup')}><IconButton size="small" aria-label={t('gallery.newGroup')} disabled={busy || trash} onClick={() => { setError(''); setNewGroupOpen(true); }}><CreateNewFolderOutlined fontSize="small" /></IconButton></Tooltip>
           <Button size="small" sx={actionButtonSx} variant={selecting ? 'outlined' : 'text'} startIcon={selecting ? <Close /> : <CheckBoxOutlined />} onClick={() => { setSelecting(!selecting); setSelected(new Set()); }}>{t(selecting ? 'gallery.doneSelecting' : 'gallery.select')}</Button>
           <Tooltip title={t('gallery.refresh')}><IconButton size="small" aria-label={t('gallery.refresh')} disabled={loading || busy} onClick={() => { setError(''); setRevision((value) => value + 1); }}><Refresh fontSize="small" /></IconButton></Tooltip>
-          <Tooltip title={t(trash ? 'gallery.returnToGallery' : 'gallery.recycleBin')}><IconButton size="small" aria-label={t(trash ? 'gallery.returnToGallery' : 'gallery.recycleBin')} color={trash ? 'primary' : 'default'} onClick={() => { setTrash(!trash); setError(''); }}><DeleteOutline fontSize="small" /></IconButton></Tooltip>
+          <Tooltip title={t(trash ? 'gallery.returnToGallery' : 'gallery.recycleBin')}><IconButton size="small" aria-label={t(trash ? 'gallery.returnToGallery' : 'gallery.recycleBin')} color={trash ? 'primary' : 'default'} onClick={() => { setTrash(!trash); setError(''); }} >{trash ? <ArrowBack fontSize="small" /> : <DeleteOutline fontSize="small" />}</IconButton></Tooltip>
         </Box>
       </Box>
-      {trash && <Alert severity="info">{t('gallery.trashHint')}</Alert>}
+      {trash && <Alert severity="info" action={<Button startIcon={<ArrowBack />} onClick={() => setTrash(false)}>{t('gallery.returnToGallery')}</Button>}>{t('gallery.trashHint')}</Alert>}
       {selecting && <Stack direction="row" flexWrap="wrap" alignItems="center" gap={0.75} sx={{ px: 1, py: 0.5, bgcolor: 'action.hover', borderRadius: 1 }}>
         <Checkbox size="small" checked={items.length > 0 && selected.size === items.length} indeterminate={selected.size > 0 && selected.size < items.length}
           inputProps={{ 'aria-label': t('gallery.selectLoaded') }} onChange={(_, checked) => setSelected(new Set(checked ? items.map((item) => item.id) : []))} />
         <Typography variant="body2" sx={{ mr: 'auto' }}>{t('gallery.selectedCount', { count: selected.size })}</Typography>
-        {trash ? <Button size="small" sx={actionButtonSx} startIcon={<RestoreFromTrashOutlined />} disabled={!selected.size || busy} onClick={() => batch('restore', selectedIds)}>{t('gallery.restore')}</Button> : <>
+        {trash ? <>
+          <Button size="small" sx={actionButtonSx} startIcon={<RestoreFromTrashOutlined />} disabled={!selected.size || busy} onClick={() => batch('restore', selectedIds)}>{t('gallery.restore')}</Button>
+          <Button size="small" sx={actionButtonSx} color="error" startIcon={<DeleteForeverOutlined />} disabled={!selected.size || busy} onClick={() => { setError(''); setDeleteIds(selectedIds); }}>{t('gallery.deleteForever')}</Button>
+        </> : <>
           <Button size="small" sx={actionButtonSx} startIcon={<DriveFileMoveOutlined />} disabled={!selected.size || busy} onClick={(event) => setGroupMenu(event.currentTarget)}>{t('gallery.moveGroup')}</Button>
           <Button size="small" sx={actionButtonSx} startIcon={<DescriptionOutlined />} disabled={!selected.size || busy} onClick={() => { setError(''); setMetadataTarget({ ids: selectedIds, parameters: {}, templates: items.filter((item) => selected.has(item.id)) }); }}>{t('gallery.metadata')}</Button>
           <Button size="small" sx={actionButtonSx} color="error" startIcon={<DeleteOutline />} disabled={!selected.size || busy} onClick={() => { setError(''); setTrashIds(selectedIds); }}>{t('gallery.trash')}</Button>
         </>}
       </Stack>}
-      {error && !newGroupOpen && !metadataTarget && !trashIds && <Alert severity="error" onClose={() => setError('')} sx={{ whiteSpace: 'pre-wrap' }}>{error}</Alert>}
+      {error && !newGroupOpen && !metadataTarget && !trashIds && !deleteIds && <Alert severity="error" onClose={() => setError('')} sx={{ whiteSpace: 'pre-wrap' }}>{error}</Alert>}
       {busy && <LinearProgress />}
     </Stack>
     <input hidden ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/bmp" multiple onChange={(event) => { void importImages(Array.from(event.target.files)); event.target.value = ''; }} />
@@ -295,10 +299,21 @@ export default function GalleryWorkspace({ source = 'references' }) {
       <DialogContent>{error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}<Typography variant="body2">{t('gallery.trashConfirmHint')}</Typography></DialogContent>
       <DialogActions><Button disabled={busy} onClick={() => setTrashIds(null)}>{t('gallery.cancel')}</Button><Button variant="contained" color="error" disabled={busy} onClick={async () => { const result = await batch('trash', trashIds); if (result) setTrashIds(null); }}>{t('gallery.trash')}</Button></DialogActions></Dialog>
     {detailId && <GalleryDetailDialog key={detailId} entryId={detailId} groups={groups} operationError={error} operationBusy={busy} onClose={() => setDetailId(null)} onChanged={() => setRevision((value) => value + 1)}
+      onDelete={(entry) => { setError(''); setDeleteIds([entry.id]); }}
       onApply={apply} onTrash={(entry) => { setError(''); setTrashIds([entry.id]); }} onRestore={(entry) => batch('restore', [entry.id])}
       onMetadata={(entry) => { setError(''); setMetadataTarget({ ids: [entry.id], parameters: { ...entry.parameters, positivePrompt: entry.prompt || '', negativePrompt: entry.negative_prompt || '' }, document: entry.metadata_document, sharedPaths: entry.metadata_shared_paths }); }}
       onPrevious={detailIndex > 0 ? () => setDetailId(items[detailIndex - 1].id) : null}
       onNext={detailIndex >= 0 && detailIndex < items.length - 1 ? () => setDetailId(items[detailIndex + 1].id) : null} />}
+    <Dialog open={Boolean(deleteIds)} onClose={() => !busy && setDeleteIds(null)} fullWidth maxWidth="xs" aria-labelledby="gallery-delete-title">
+      <DialogTitle id="gallery-delete-title">{t('gallery.deleteConfirm', { count: deleteIds?.length || 0 })}</DialogTitle>
+      <DialogContent>{error && <Alert severity="error" sx={{ mb: 2, whiteSpace: 'pre-wrap' }}>{error}</Alert>}<Typography>{t('gallery.deleteConfirmHint')}</Typography></DialogContent>
+      <DialogActions><Button disabled={busy} onClick={() => setDeleteIds(null)}>{t('gallery.cancel')}</Button>
+        <Button color="error" disabled={busy} onClick={async () => {
+          const result = await batch('delete', deleteIds);
+          if (result && !result.errors.length) setDeleteIds(null);
+          else if (result) setDeleteIds(result.errors.map((item) => item.id));
+        }}>{t('gallery.deleteForever')}</Button></DialogActions>
+    </Dialog>
     {metadataTarget && <GalleryMetadataDialog count={metadataTarget.ids.length} initialParameters={metadataTarget.parameters} initialDocument={metadataTarget.document} metadataSharedPaths={metadataTarget.sharedPaths} templateEntries={metadataTarget.templates} busy={busy} error={error} onClose={() => setMetadataTarget(null)}
       onSubmit={async (options) => { const result = await batch('export', metadataTarget.ids, options); if (result && !result.errors.length) setMetadataTarget(null); else if (result) setMetadataTarget({ ...metadataTarget, ids: result.errors.map((item) => item.id) }); }} />}
     <Snackbar open={Boolean(notice)} autoHideDuration={3500} onClose={() => setNotice('')} message={notice} />

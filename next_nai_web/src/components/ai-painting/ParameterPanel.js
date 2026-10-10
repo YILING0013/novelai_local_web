@@ -6,6 +6,8 @@ import MetadataDialog from './tools/ImageTools/MetadataDialog';
 import { extractActiveContent, ExpandedPromptDialog } from './PromptEditor';
 import {
   NOVELAI_V5_DEFAULT_PARAMS,
+  NOVELAI_V5_MEDIUM_DEFAULT_PARAMS,
+  NOVELAI_V5_MEDIUM_MODEL_ID,
   NOVELAI_V5_CHARACTER_WARNING_THRESHOLD,
   NOVELAI_DIRECTOR_REFERENCE_PARAM_KEYS,
   buildNovelAIV5CharacterControl,
@@ -66,7 +68,8 @@ import { getPublicToolErrorMessageKey } from '@/utils/publicToolErrors.mjs';
 
 // 模型选项
 const modelOptions = [
-  { value: 'nai-diffusion-5-full', label: 'NAI Diffusion V5 Full', descriptionKey: 'painting.workspace.parameters.modelV5Full', icon: <ImageIcon /> },
+  { value: 'nai-diffusion-5-full', label: 'NAI Diffusion V5 Full (High)', descriptionKey: 'painting.workspace.parameters.modelV5Full', icon: <ImageIcon /> },
+  { value: NOVELAI_V5_MEDIUM_MODEL_ID, label: 'NAI Diffusion V5 Full (Medium)', descriptionKey: 'painting.workspace.parameters.modelV5Medium', icon: <ImageIcon /> },
   { value: 'nai-diffusion-5-curated', label: 'NAI Diffusion V5 Curated', descriptionKey: 'painting.workspace.parameters.modelV5Curated', icon: <ImageIcon /> },
   { value: 'nai-diffusion-4-5-full', label: 'NAI Diffusion V4.5', descriptionKey: 'painting.workspace.parameters.modelV45Full', icon: <ImageIcon /> },
   { value: 'nai-diffusion-4-5-curated', label: 'NAI Diffusion V4.5 Curated', descriptionKey: 'painting.workspace.parameters.modelV45Curated', icon: <ImageIcon /> },
@@ -461,6 +464,11 @@ const ParameterPanel = ({
     const enteringV5 = param === 'model'
       && isNovelAIV5Model(resolvedValue)
       && !isNovelAIV5Model(params.model);
+    const modelDefaults = {
+      ...(enteringV5 ? NOVELAI_V5_DEFAULT_PARAMS : {}),
+      ...(param === 'model' && resolvedValue === NOVELAI_V5_MEDIUM_MODEL_ID
+        ? NOVELAI_V5_MEDIUM_DEFAULT_PARAMS : {}),
+    };
 
     const shouldClearDirectorReference = param === 'model'
       && !isNovelAIDirectorReferenceModel(resolvedValue);
@@ -468,7 +476,7 @@ const ParameterPanel = ({
     setParams((previousParams) => {
       const nextParams = {
         ...previousParams,
-        ...(enteringV5 ? NOVELAI_V5_DEFAULT_PARAMS : {}),
+        ...modelDefaults,
         [param]: resolvedValue,
       };
       if (shouldClearDirectorReference) {
@@ -479,11 +487,9 @@ const ParameterPanel = ({
 
     try {
       localStorage.setItem(`aiImageParams_${param}`, JSON.stringify(resolvedValue));
-      if (enteringV5) {
-        Object.entries(NOVELAI_V5_DEFAULT_PARAMS).forEach(([key, defaultValue]) => {
-          localStorage.setItem(`aiImageParams_${key}`, JSON.stringify(defaultValue));
-        });
-      }
+      Object.entries(modelDefaults).forEach(([key, defaultValue]) => {
+        localStorage.setItem(`aiImageParams_${key}`, JSON.stringify(defaultValue));
+      });
       if (shouldClearDirectorReference) {
         // 切离 4.5 时立即清除所有角色参考派生状态，避免隐藏数据继续影响请求与 Vibe。
         NOVELAI_DIRECTOR_REFERENCE_PARAM_KEYS.forEach((key) => localStorage.removeItem(`aiImageParams_${key}`));
@@ -500,11 +506,9 @@ const ParameterPanel = ({
         return;
       }
       onParamChange(param, resolvedValue);
-      if (enteringV5) {
-        Object.entries(NOVELAI_V5_DEFAULT_PARAMS).forEach(([key, defaultValue]) => {
-          onParamChange(key, defaultValue);
-        });
-      }
+      Object.entries(modelDefaults).forEach(([key, defaultValue]) => {
+        onParamChange(key, defaultValue);
+      });
       if (shouldClearDirectorReference) {
         NOVELAI_DIRECTOR_REFERENCE_PARAM_KEYS.forEach((key) => onParamChange(key, undefined));
       }

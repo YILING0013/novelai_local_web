@@ -69,8 +69,9 @@ def migrate_reference_library(library, legacy_store, local_store):
                 )
 
     if text_entries:
-        def append_legacy_notes(notes):
+        def append_legacy_notes(notebook):
             """按稳定来源标记追加无图记录，保留已有笔记及重试期间的编辑。"""
+            notes = notebook["notes"]
             existing_ids = {note["id"] for note in notes}
             existing_sources = {note.get("legacy_reference_id") for note in notes}
             existing_titles = {note["title"] for note in notes}
@@ -97,9 +98,9 @@ def migrate_reference_library(library, legacy_store, local_store):
                     "legacy_reference_id": reference_key,
                 })
                 existing_titles.add(title)
-            return notes
+            return notebook
 
-        local_store.mutate("notes", append_legacy_notes)
+        local_store.mutate_notebook(append_legacy_notes)
 
     # 图片和笔记都保存成功后才完成迁移，重启不会复活用户后来删除的条目。
     library.mark_migration(MIGRATION_NAME)

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Chip, CircularProgress, Dialog, IconButton, MenuItem, Stack, TextField, Tooltip, Typography } from '@mui/material';
-import { ChevronLeft, ChevronRight, Close, ContentCopy, DeleteOutline, DescriptionOutlined, EditOutlined, ExpandMore, ImageOutlined, PaletteOutlined, RestoreFromTrashOutlined, SaveOutlined } from '@mui/icons-material';
+import { ChevronLeft, ChevronRight, Close, ContentCopy, DeleteForeverOutlined, DeleteOutline, DescriptionOutlined, EditOutlined, ExpandMore, ImageOutlined, PaletteOutlined, RestoreFromTrashOutlined, SaveOutlined } from '@mui/icons-material';
 import apiClient from '@/utils/ApiClient';
 import { copyTextToClipboard } from '@/utils/browserCapabilities.mjs';
 import { useI18n } from '@/i18n/I18nProvider';
@@ -15,7 +15,7 @@ const basicFields = ['model', 'seed', 'steps', 'guidanceScale', 'sampler', 'widt
  * @param {object} props 详情 ID、分组以及图库的应用、回收、另存和切图回调。
  * @returns {React.ReactElement} 桌面左右分栏、手机上下分栏的全屏详情。
  */
-export default function GalleryDetailDialog({ entryId, groups, onClose, onChanged, onApply, onTrash, onRestore, onMetadata, onPrevious, onNext, operationError = '', operationBusy = false }) {
+export default function GalleryDetailDialog({ entryId, groups, onClose, onChanged, onApply, onTrash, onRestore, onDelete, onMetadata, onPrevious, onNext, operationError = '', operationBusy = false }) {
   const { t } = useI18n();
   const [entry, setEntry] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -183,7 +183,10 @@ export default function GalleryDetailDialog({ entryId, groups, onClose, onChange
           </Box>}
           <Box sx={{ p: 1.25, pb: 'max(10px, env(safe-area-inset-bottom))', borderTop: 1, borderColor: 'divider', flexShrink: 0 }}>
             <Stack direction="row" flexWrap="wrap" justifyContent="flex-end" gap={0.75}>
-              {trashed ? <Button size="small" disabled={actionBusy} startIcon={<RestoreFromTrashOutlined />} onClick={() => onRestore(entry)}>{t('gallery.restore')}</Button> : <>
+              {trashed ? <>
+                <Button size="small" disabled={actionBusy} startIcon={<RestoreFromTrashOutlined />} onClick={() => onRestore(entry)}>{t('gallery.restore')}</Button>
+                <Button size="small" color="error" disabled={actionBusy} startIcon={<DeleteForeverOutlined />} onClick={() => onDelete(entry)}>{t('gallery.deleteForever')}</Button>
+              </> : <>
                 <Button size="small" variant="contained" disabled={actionBusy || editing || (!entry.prompt && !Object.keys(parameters).length)} onClick={() => onApply(entry, 'parameters')}>{t('gallery.applyAll')}</Button>
                 <Button size="small" variant="outlined" disabled={actionBusy || editing || (!entry.prompt && !entry.negative_prompt)} onClick={() => onApply(entry, 'prompt')}>{t('gallery.applyPrompt')}</Button>
                 <Tooltip title={t('gallery.trash')}><IconButton size="small" color="error" aria-label={t('gallery.trash')} disabled={actionBusy || editing} onClick={() => onTrash(entry)}><DeleteOutline fontSize="small" /></IconButton></Tooltip>

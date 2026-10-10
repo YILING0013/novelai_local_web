@@ -38,7 +38,7 @@ def test_supported_models_derive_official_inpaint_model_and_one_sample(model):
         "mask": PNG_BASE64,
         "inpaint_strength": 0.75,
     })
-    assert len(ALL_MODELS) == 8
+    assert "nai-diffusion-5-full-medium" in ALL_MODELS
     assert official["model"] == INPAINTING_MODELS[model]
     assert official["action"] == "infill"
     assert official["parameters"]["n_samples"] == 1
@@ -84,3 +84,21 @@ def test_v5_rejects_unsupported_vibe_and_never_adds_site_verification_fields():
     assert "recaptcha_token" not in official
     assert "captcha_token" not in official
     assert "turnstile_token" not in official
+
+
+def test_v5_medium_overrides_stale_ui_parameters_and_character_negatives():
+    official = _build({
+        "model": "nai-diffusion-5-full-medium", "steps": 40, "sampler": "k_euler",
+        "negativePrompt": "custom negative", "cfg_rescale": .7, "noise_schedule": "native",
+        "characterPrompts": [{"prompt": "hero", "uc": "custom character negative"}],
+        "v4_negative_prompt_char_captions": [{"char_caption": "bad", "centers": [{"x": .5, "y": .5}]}],
+    })
+    params = official["parameters"]
+    assert params["steps"] == 14
+    assert params["sampler"] == "k_euler_ancestral"
+    assert params["noise_schedule"] == "karras"
+    assert params["ucPresetId"] == "heavy"
+    assert "custom negative" not in params["negative_prompt"]
+    assert "cfg_rescale" not in params
+    assert params["characterPrompts"][0]["uc"] == ""
+    assert params["v4_negative_prompt"]["caption"]["char_captions"][0]["char_caption"] == ""

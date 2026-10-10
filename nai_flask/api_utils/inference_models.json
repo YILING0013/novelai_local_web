@@ -1,0 +1,292 @@
+[
+  {
+    "id": "wd-swinv2-tagger-v3",
+    "name": "SwinV2 v3",
+    "kind": "tagger",
+    "sizeLabel": "467.8 MB",
+    "sourceUrl": "https://huggingface.co/SmilingWolf/wd-swinv2-tagger-v3/tree/627aef95638667ddcaa3ac8ae625e88ea5b02f51",
+    "license": "Apache-2.0",
+    "modelFile": "model.onnx",
+    "labelsFile": "selected_tags.csv",
+    "inputSize": 448,
+    "inputLayout": "NHWC",
+    "preprocessing": "wd-swinv2",
+    "outputKind": "probabilities",
+    "labelCount": 10861,
+    "defaultThresholds": {
+      "general": 0.35,
+      "character": 0.85
+    },
+    "files": [
+      {
+        "name": "model.onnx",
+        "url": "https://huggingface.co/SmilingWolf/wd-swinv2-tagger-v3/resolve/627aef95638667ddcaa3ac8ae625e88ea5b02f51/model.onnx?download=true",
+        "bytes": 467460978,
+        "sha256": "e6774bff34d43bd49f75a47db4ef217dce701c9847b546523eb85ff6dbba1db1"
+      },
+      {
+        "name": "selected_tags.csv",
+        "url": "https://huggingface.co/SmilingWolf/wd-swinv2-tagger-v3/resolve/627aef95638667ddcaa3ac8ae625e88ea5b02f51/selected_tags.csv?download=true",
+        "bytes": 308468,
+        "sha256": "298633d94d0031d2081c0893f29c82eab7f0df00b08483ba8f29d1e979441217"
+      }
+    ],
+    "revision": "627aef95638667ddcaa3ac8ae625e88ea5b02f51"
+  },
+  {
+    "id": "pixai-tagger-v1-fp32",
+    "name": "PixAI v1.0 · FP32",
+    "kind": "tagger",
+    "sizeLabel": "1984.9 MB",
+    "sourceUrl": "https://huggingface.co/Mexes/pixai-tagger-v1.0-onnx-fp32-fp16-int8/tree/0800778563144a0e6fdf41ddadd84aae3cb0dbcf",
+    "upstreamUrl": "https://huggingface.co/pixai-labs/pixai-tagger-v1.0",
+    "license": "Apache-2.0",
+    "modelFile": "model.onnx",
+    "labelsFile": "selected_tags.csv",
+    "inputSize": 1008,
+    "inputLayout": "NCHW",
+    "preprocessing": "pixai-v1",
+    "outputKind": "probabilities",
+    "labelCount": 30877,
+    "defaultThresholds": {
+      "general": 0.17,
+      "character": 0.27,
+      "style": 0.15,
+      "copyright": 0.24,
+      "meta": 0.17
+    },
+    "files": [
+      {
+        "name": "model.onnx",
+        "url": "https://huggingface.co/Mexes/pixai-tagger-v1.0-onnx-fp32-fp16-int8/resolve/0800778563144a0e6fdf41ddadd84aae3cb0dbcf/model.onnx?download=true",
+        "bytes": 1984062544,
+        "sha256": "1cae6083f07be1e1757125802566c767005ae883e4504c00db4ee1ef93486dad"
+      },
+      {
+        "name": "selected_tags.csv",
+        "url": "https://huggingface.co/Mexes/pixai-tagger-v1.0-onnx-fp32-fp16-int8/resolve/0800778563144a0e6fdf41ddadd84aae3cb0dbcf/selected_tags.csv?download=true",
+        "bytes": 804671,
+        "sha256": "a9455cbf0a910d4a3890739f2f70bd986278f4594285ef1049121a03896e2a6d"
+      }
+    ],
+    "precision": "FP32",
+    "revision": "0800778563144a0e6fdf41ddadd84aae3cb0dbcf"
+  },
+  {
+    "id": "pixai-tagger-v1-fp16",
+    "name": "PixAI v1.0 · FP16",
+    "kind": "tagger",
+    "sizeLabel": "993.7 MB",
+    "sourceUrl": "https://huggingface.co/Mexes/pixai-tagger-v1.0-onnx-fp32-fp16-int8/tree/0800778563144a0e6fdf41ddadd84aae3cb0dbcf",
+    "upstreamUrl": "https://huggingface.co/pixai-labs/pixai-tagger-v1.0",
+    "license": "Apache-2.0",
+    "modelFile": "model_fp16.onnx",
+    "labelsFile": "selected_tags.csv",
+    "inputSize": 1008,
+    "inputLayout": "NCHW",
+    "preprocessing": "pixai-v1",
+    "outputKind": "probabilities",
+    "labelCount": 30877,
+    "defaultThresholds": {
+      "general": 0.17,
+      "character": 0.27,
+      "style": 0.15,
+      "copyright": 0.24,
+      "meta": 0.17
+    },
+    "files": [
+      {
+        "name": "model_fp16.onnx",
+        "url": "https://huggingface.co/Mexes/pixai-tagger-v1.0-onnx-fp32-fp16-int8/resolve/0800778563144a0e6fdf41ddadd84aae3cb0dbcf/model_fp16.onnx?download=true",
+        "bytes": 992916002,
+        "sha256": "cd668e6760bb58ec400ce1b0286e5c9133f83b543caac6a378406b7d56f8c303"
+      },
+      {
+        "name": "selected_tags.csv",
+        "url": "https://huggingface.co/Mexes/pixai-tagger-v1.0-onnx-fp32-fp16-int8/resolve/0800778563144a0e6fdf41ddadd84aae3cb0dbcf/selected_tags.csv?download=true",
+        "bytes": 804671,
+        "sha256": "a9455cbf0a910d4a3890739f2f70bd986278f4594285ef1049121a03896e2a6d"
+      }
+    ],
+    "precision": "FP16",
+    "revision": "0800778563144a0e6fdf41ddadd84aae3cb0dbcf"
+  },
+  {
+    "id": "pixai-tagger-v1-int8",
+    "name": "PixAI v1.0 · INT8",
+    "kind": "tagger",
+    "sizeLabel": "549.1 MB",
+    "sourceUrl": "https://huggingface.co/Mexes/pixai-tagger-v1.0-onnx-fp32-fp16-int8/tree/0800778563144a0e6fdf41ddadd84aae3cb0dbcf",
+    "upstreamUrl": "https://huggingface.co/pixai-labs/pixai-tagger-v1.0",
+    "license": "Apache-2.0",
+    "modelFile": "model_int8.onnx",
+    "labelsFile": "selected_tags.csv",
+    "inputSize": 1008,
+    "inputLayout": "NCHW",
+    "preprocessing": "pixai-v1",
+    "outputKind": "probabilities",
+    "labelCount": 30877,
+    "defaultThresholds": {
+      "general": 0.17,
+      "character": 0.27,
+      "style": 0.15,
+      "copyright": 0.24,
+      "meta": 0.17
+    },
+    "files": [
+      {
+        "name": "model_int8.onnx",
+        "url": "https://huggingface.co/Mexes/pixai-tagger-v1.0-onnx-fp32-fp16-int8/resolve/0800778563144a0e6fdf41ddadd84aae3cb0dbcf/model_int8.onnx?download=true",
+        "bytes": 548285507,
+        "sha256": "71b78283846a3a5e6f9ad5a492f50bcf68013faee6e9e5ad8847c5cee4c79f8b"
+      },
+      {
+        "name": "selected_tags.csv",
+        "url": "https://huggingface.co/Mexes/pixai-tagger-v1.0-onnx-fp32-fp16-int8/resolve/0800778563144a0e6fdf41ddadd84aae3cb0dbcf/selected_tags.csv?download=true",
+        "bytes": 804671,
+        "sha256": "a9455cbf0a910d4a3890739f2f70bd986278f4594285ef1049121a03896e2a6d"
+      }
+    ],
+    "precision": "INT8",
+    "revision": "0800778563144a0e6fdf41ddadd84aae3cb0dbcf"
+  },
+  {
+    "id": "waifu2x-swin-unet-art",
+    "name": "waifu2x Swin_UNet Art ×4",
+    "kind": "upscale",
+    "sizeLabel": "18.91 MB",
+    "sourceUrl": "https://github.com/nagadomi/nunif/blob/master/waifu2x/docs/gui.md",
+    "license": "MIT",
+    "revision": "20250502-333b95cc",
+    "modelFile": "scale4x.onnx",
+    "files": [
+      {
+        "name": "scale4x.onnx",
+        "url": "https://huggingface.co/deepghs/waifu2x_onnx/resolve/333b95cc88a6a9f39abb6426ab580f0d673f1185/20250502/onnx_models/swin_unet/art/scale4x.onnx?download=true",
+        "bytes": 18905524,
+        "sha256": "b3a03d52fb71c86485f354aa07236c2c8ecdd6615d84cbc446e23c43d056b68a"
+      }
+    ],
+    "scale": 4,
+    "tileSize": 112,
+    "tileContext": 16,
+    "outputOffset": 32,
+    "inputName": "x",
+    "outputName": "y",
+    "inputLayout": "NCHW"
+  },
+  {
+    "id": "quicksrnet-small",
+    "name": "QuickSRNet Small ×4",
+    "kind": "upscale",
+    "sizeLabel": "0.153 MB",
+    "sourceUrl": "https://huggingface.co/qualcomm/QuickSRNetSmall",
+    "license": "BSD-3-Clause",
+    "revision": "qualcomm-v0.63.0",
+    "modelFile": "quicksrnetsmall.onnx",
+    "externalData": [
+      {
+        "path": "quicksrnetsmall.data",
+        "file": "quicksrnetsmall.data"
+      }
+    ],
+    "files": [
+      {
+        "name": "quicksrnetsmall.onnx",
+        "url": "https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/quicksrnetsmall/releases/v0.63.0/quicksrnetsmall-onnx-float.zip",
+        "archivePath": "quicksrnetsmall-onnx-float/quicksrnetsmall.onnx",
+        "bytes": 20268,
+        "sha256": "8ef99aecf6ea37c3da18eef6bcac94327cc3ead7069e55743425eb912dc2d941"
+      },
+      {
+        "name": "quicksrnetsmall.data",
+        "url": "https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/quicksrnetsmall/releases/v0.63.0/quicksrnetsmall-onnx-float.zip",
+        "archivePath": "quicksrnetsmall-onnx-float/quicksrnetsmall.data",
+        "bytes": 132480,
+        "sha256": "e377c1bfc040561b28b4931e7c4b27e6df39d8848addb25ebdeee3071b45dd64"
+      }
+    ],
+    "scale": 4,
+    "tileSize": 128,
+    "tileContext": 8,
+    "outputOffset": 0,
+    "inputName": "image",
+    "outputName": "upscaled_image",
+    "inputLayout": "NCHW"
+  },
+  {
+    "id": "realesrgan-anime-6b",
+    "name": "Real-ESRGAN Anime 6B ×4",
+    "kind": "upscale",
+    "sizeLabel": "17.94 MB",
+    "sourceUrl": "https://huggingface.co/skillsafe-ai/realesrgan-x4plus-anime-6b",
+    "license": "BSD-3-Clause",
+    "revision": "c001be50fae1c7a2bae8b2b4dec5e6fcbdbcca96",
+    "modelFile": "model.onnx",
+    "files": [
+      {
+        "name": "model.onnx",
+        "url": "https://huggingface.co/skillsafe-ai/realesrgan-x4plus-anime-6b/resolve/c001be50fae1c7a2bae8b2b4dec5e6fcbdbcca96/model.onnx?download=true",
+        "bytes": 17939975,
+        "sha256": "9a029dae374b2cd4c3eb2dbbed857e22e6d785687c767aa12828e7356b9fb378"
+      }
+    ],
+    "scale": 4,
+    "tileSize": 128,
+    "tileContext": 24,
+    "outputOffset": 0,
+    "inputName": "input",
+    "outputName": "output",
+    "inputLayout": "NCHW"
+  },
+  {
+    "id": "realesr-general-x4v3",
+    "name": "Real-ESRGAN General x4v3",
+    "kind": "upscale",
+    "sizeLabel": "4.87 MB",
+    "sourceUrl": "https://huggingface.co/skillsafe-ai/realesr-general-x4v3",
+    "license": "BSD-3-Clause",
+    "revision": "042a40bc4c918349ad3e2e607a68ae509a4c27b5",
+    "modelFile": "model.onnx",
+    "files": [
+      {
+        "name": "model.onnx",
+        "url": "https://huggingface.co/skillsafe-ai/realesr-general-x4v3/resolve/042a40bc4c918349ad3e2e607a68ae509a4c27b5/model.onnx?download=true",
+        "bytes": 4866428,
+        "sha256": "a946f7a9397021b9b6b7e71df3d2821b04cc09ff244423b7ca79cb191ce4a00e"
+      }
+    ],
+    "scale": 4,
+    "tileSize": 128,
+    "tileContext": 32,
+    "outputOffset": 0,
+    "inputName": "input",
+    "outputName": "output",
+    "inputLayout": "NCHW"
+  },
+  {
+    "id": "realesr-animevideov3",
+    "name": "Real-ESRGAN AnimeVideo v3 ×4",
+    "kind": "upscale",
+    "sizeLabel": "2.49 MB",
+    "sourceUrl": "https://huggingface.co/skillsafe-ai/realesr-animevideov3",
+    "license": "BSD-3-Clause",
+    "revision": "185e9142d439d17e3fb99395600fb7d08af09de5",
+    "modelFile": "model.onnx",
+    "files": [
+      {
+        "name": "model.onnx",
+        "url": "https://huggingface.co/skillsafe-ai/realesr-animevideov3/resolve/185e9142d439d17e3fb99395600fb7d08af09de5/model.onnx?download=true",
+        "bytes": 2492908,
+        "sha256": "78baa685a1a92cac6e14ab2af2a8ad0ef56fa48629563b1414e3a7acc54d86e2"
+      }
+    ],
+    "scale": 4,
+    "tileSize": 128,
+    "tileContext": 24,
+    "outputOffset": 0,
+    "inputName": "input",
+    "outputName": "output",
+    "inputLayout": "NCHW"
+  }
+]

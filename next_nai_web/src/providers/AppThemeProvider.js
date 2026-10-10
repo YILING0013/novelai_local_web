@@ -66,7 +66,10 @@ function readThemeSettings(storage) {
  *   React.ReactElement: 主题上下文与 MUI ThemeProvider。
  */
 export function AppThemeProvider({ children }) {
-  const [settings, setSettings] = useState(DEFAULT_THEME_SETTINGS);
+  const [savedSettings, setSettings] = useState(DEFAULT_THEME_SETTINGS);
+  // 设置页的试色只影响显示；离开设置页后继续使用已保存的主题。
+  const [previewSettings, previewTheme] = useState(null);
+  const settings = previewSettings || savedSettings;
   const [ready, setReady] = useState(false);
 
   const reloadFromStorage = useCallback(() => {
@@ -122,16 +125,8 @@ export function AppThemeProvider({ children }) {
   }, []);
 
   const toggleTheme = useCallback(() => {
-    setSettings((current) => {
-      const nextMode = current.mode === 'light' ? 'dark' : 'light';
-      try {
-        window.localStorage.setItem('themeMode', nextMode);
-      } catch (error) {
-        console.warn('Unable to persist theme mode:', error);
-      }
-      return { ...current, mode: nextMode };
-    });
-  }, []);
+    setMode(settings.mode === 'light' ? 'dark' : 'light');
+  }, [settings.mode, setMode]);
 
   const theme = useMemo(() => createTheme({
     shape: { borderRadius: 4 },
@@ -290,11 +285,13 @@ export function AppThemeProvider({ children }) {
 
   const contextValue = useMemo(() => ({
     ...settings,
+    savedSettings,
+    previewTheme,
     setMode,
     toggleTheme,
     reloadFromStorage,
     ready,
-  }), [settings, setMode, toggleTheme, reloadFromStorage, ready]);
+  }), [settings, savedSettings, setMode, toggleTheme, reloadFromStorage, ready]);
 
   return (
     <AppThemeContext.Provider value={contextValue}>

@@ -15,7 +15,7 @@ const gallery = {
     "refresh": "Refresh gallery",
     "returnToGallery": "Back to gallery",
     "recycleBin": "Recycle bin",
-    "trashHint": "Deleted images stay in the local recycle bin and can be restored here.",
+    "trashHint": "Restore images here, or confirm permanent deletion.",
     "selectLoaded": "Select all loaded images",
     "selectedCount": "{count} selected",
     "restore": "Restore",
@@ -139,8 +139,11 @@ const gallery = {
     "useDirectory": "Use this directory",
     "batchTemplate": "Batch template",
     "noTemplate": "No template · only replace changed fields",
-    "templateHint": "Use this image’s metadata as the defaults for every copy, then apply your edits. Switching templates resets the current edits."
+    "templateHint": "Use this image’s metadata as the defaults for every copy, then apply your edits. Switching templates resets the current edits.",
+    "deleteForever": "Delete permanently",
+    "deleteConfirm": "Permanently delete {count} images?",
+    "deleteConfirmHint": "This removes original files, thumbnails and gallery records from the recycle bin. This cannot be undone.",
+    "deleted": "Permanently deleted {count} images"
   }
 };
-
 export default gallery;

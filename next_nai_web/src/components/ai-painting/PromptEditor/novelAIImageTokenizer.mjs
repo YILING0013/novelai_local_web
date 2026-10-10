@@ -7,6 +7,8 @@ const V5_CURATED_MODELS = new Set([
 const V5_FULL_MODELS = new Set([
   'nai-diffusion-5-full',
   'nai-diffusion-5-full-inpainting',
+  'nai-diffusion-5-full-medium',
+  'nai-diffusion-5-full-medium-inpainting',
 ]);
 const V4_MODELS = new Set([
   'nai-diffusion-4-curated-preview',
@@ -180,26 +182,6 @@ export class NovelAIQwenTokenizer {
     return words;
   }
 
-  insertRankedPair(pairs, pair) {
-    let index = 0;
-    while (index < pairs.length && pairs[index].rank < pair.rank) index += 1;
-    if (index >= pairs.length || pairs[index].rank !== pair.rank) {
-      pairs.splice(index, 0, pair);
-    }
-  }
-
-  getRankedPairs(tokens) {
-    const pairs = [];
-    let left = tokens[0];
-    for (let index = 1; index < tokens.length; index += 1) {
-      const right = tokens[index];
-      const rank = this.bpeRanks.get(`${left}\0${right}`) ?? Number.POSITIVE_INFINITY;
-      this.insertRankedPair(pairs, { rank, left, right });
-      left = right;
-    }
-    return pairs;
-  }
-
   encodeWord(word) {
     if (this.config.ignoreMerges && this.encoder[word] !== undefined) {
       return [this.encoder[word]];
@@ -207,47 +189,76 @@ export class NovelAIQwenTokenizer {
     const cached = this.cache.get(word);
     if (cached) return cached;
 
-    let pieces = [...word];
-    let rankedPairs = this.getRankedPairs(pieces);
-    if (rankedPairs.length === 0) {
-      const tokenIds = this.encoder[word] === undefined ? [] : [this.encoder[word]];
-      this.cache.set(word, tokenIds);
-      return tokenIds;
-    }
+    const pieces = [...word];
+    const previous = pieces.map((_, index) => index - 1);
+    const following = pieces.map((_, index) => index + 1 < pieces.length ? index + 1 : -1);
+    const candidates = [];
+    const precedes = (left, right) => left.rank < right.rank
+      || (left.rank === right.rank && left.index < right.index);
 
-    while (rankedPairs.length > 0) {
-      const { left, right } = rankedPairs[0];
-      if (!this.bpeRanks.has(`${left}\0${right}`)) break;
-
-      const merged = [];
-      let index = 0;
-      while (index < pieces.length) {
-        const leftIndex = pieces.indexOf(left, index);
-        if (leftIndex === -1) {
-          merged.push(...pieces.slice(index));
-          break;
-        }
-        merged.push(...pieces.slice(index, leftIndex));
-        if (leftIndex < pieces.length - 1 && pieces[leftIndex + 1] === right) {
-          merged.push(left + right);
-          index = leftIndex + 2;
-        } else {
-          merged.push(pieces[leftIndex]);
-          index = leftIndex + 1;
-        }
+    // 小根堆只维护当前相邻词对，合并后不再重新扫描整个长提示词。
+    const addPair = (index) => {
+      if (index < 0 || pieces[index] === null || following[index] < 0) return;
+      const rightIndex = following[index];
+      const left = pieces[index];
+      const right = pieces[rightIndex];
+      const rank = this.bpeRanks.get(`${left}\0${right}`);
+      if (rank === undefined) return;
+      const pair = { rank, index, rightIndex, left, right };
+      let position = candidates.length;
+      candidates.push(pair);
+      while (position > 0) {
+        const parent = Math.floor((position - 1) / 2);
+        if (!precedes(pair, candidates[parent])) break;
+        candidates[position] = candidates[parent];
+        position = parent;
       }
-      pieces = merged;
-      if (pieces.length === 1) break;
-      rankedPairs = this.getRankedPairs(pieces);
+      candidates[position] = pair;
+    };
+    const popPair = () => {
+      const pair = candidates[0];
+      const last = candidates.pop();
+      if (candidates.length > 0) {
+        let position = 0;
+        while (position * 2 + 1 < candidates.length) {
+          let child = position * 2 + 1;
+          if (child + 1 < candidates.length && precedes(candidates[child + 1], candidates[child])) child += 1;
+          if (!precedes(candidates[child], last)) break;
+          candidates[position] = candidates[child];
+          position = child;
+        }
+        candidates[position] = last;
+      }
+      return pair;
+    };
+    for (let index = 0; index < pieces.length - 1; index += 1) addPair(index);
+
+    while (candidates.length > 0) {
+      const rank = candidates[0].rank;
+      const sameRank = [];
+      while (candidates.length > 0 && candidates[0].rank === rank) sameRank.push(popPair());
+      const affected = new Set();
+      for (const { index, rightIndex, left, right } of sameRank) {
+        if (pieces[index] !== left || pieces[rightIndex] !== right || following[index] !== rightIndex) continue;
+        pieces[index] = left + right;
+        pieces[rightIndex] = null;
+        following[index] = following[rightIndex];
+        if (following[index] >= 0) previous[following[index]] = index;
+        affected.add(previous[index]);
+        affected.add(index);
+      }
+      // 与官方逐轮合并一致：这一轮的相同词对全部合并后，才参与下一轮排名。
+      // 不能逐个立即插入，因为词表中有少量新词对的 rank 比生成它的词对更小。
+      for (const index of affected) addPair(index);
     }
 
     const tokenIds = pieces
+      .filter((piece) => piece !== null)
       .map((piece) => this.encoder[piece])
       .filter((tokenId) => tokenId !== undefined);
     this.cache.set(word, tokenIds);
     return tokenIds;
   }
-
   encode(text) {
     const normalizedText = this.config.normalization
       ? String(text ?? '').normalize(this.config.normalization)

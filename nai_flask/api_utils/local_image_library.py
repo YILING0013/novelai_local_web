@@ -61,6 +61,7 @@ def normalize_image_parameters(values):
         "smea": ("smea", "sm"), "dyn": ("dyn", "sm_dyn"),
         "strength": ("strength",), "noise": ("noise",),
         "upscaled_enhance": ("upscaled_enhance",), "image_tool": ("image_tool",),
+        "local_upscale_model": ("local_upscale_model",), "local_upscale_factor": ("local_upscale_factor",),
         "characterTabs": ("characterTabs",), "use_coords": ("use_coords",),
         "v4_prompt": ("v4_prompt",), "v4_negative_prompt": ("v4_negative_prompt",),
         "ucPresetId": ("ucPresetId",), "qualityPresetId": ("qualityPresetId",),
@@ -733,6 +734,31 @@ class LocalImageLibrary:
                 destination.rename(source)
                 raise
             return self._record(self._row(db, image_id))
+
+    def delete_trashed_image(self, image_id):
+        """
+        彻底删除用户已确认的回收站图片，最后删除索引以便文件操作失败后重试。
+
+        Args:
+            image_id: 当前图库内、已经移入回收站的图片 ID。
+
+        Returns:
+            None；失败时保留索引并抛出错误。
+        """
+        with self.lock, self._connect() as db:
+            row = self._row(db, image_id)
+            if not row["trashed_at"]:
+                raise ExposableError("Only images in the recycle bin can be permanently deleted.", 409, "LIBRARY_NOT_IN_TRASH")
+            root = self._root(row["source"])
+            trash_root = (root / ".novelai-library/trash").resolve()
+            original = self._contained(root, row["trash_path"])
+            if not original.is_relative_to(trash_root):
+                raise ExposableError("The image is outside the recycle directory.", 403, "LIBRARY_PATH_INVALID")
+            thumbnail = self._contained(self.thumbnail_dir, f"{image_id}.png")
+            # 两次操作均为已校验的单文件删除，缺失文件允许重试，不删除目录。
+            original.unlink(missing_ok=True)
+            thumbnail.unlink(missing_ok=True)
+            db.execute("DELETE FROM library_images WHERE id=?", (image_id,))
 
     def list_groups(self, source="references"):
         """

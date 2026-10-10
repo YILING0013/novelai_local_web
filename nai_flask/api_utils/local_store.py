@@ -28,6 +28,7 @@ class LocalJsonStore:
             "enabled": True,
         },
         "notes": [],
+        "notebook": {"notes": [], "groups": []},
     }
     DEFAULT_MAX_BYTES = 10 * 1024 * 1024
     SCHEMA_VERSION = 1
@@ -62,7 +63,7 @@ class LocalJsonStore:
     def _validate(self, name: str, value: Any) -> None:
         """校验三个固定集合的顶层 JSON 结构。"""
 
-        expected_type = dict if name in {"settings", "random-prompts"} else list
+        expected_type = dict if name in {"settings", "random-prompts", "notebook"} else list
         if not isinstance(value, expected_type):
             expected_name = "object" if expected_type is dict else "array"
             raise LocalStoreError(f"Local data file '{name}' must contain a JSON {expected_name}.")
@@ -73,6 +74,12 @@ class LocalJsonStore:
             or not isinstance(value["enabled"], bool)
         ):
             raise LocalStoreError("Local data file 'random-prompts' has an invalid schema.")
+        if name == "notebook" and (
+            set(value) != {"notes", "groups"}
+            or not isinstance(value["notes"], list)
+            or not isinstance(value["groups"], list)
+        ):
+            raise LocalStoreError("Local notebook has an invalid schema.")
 
     def _reject_credentials(self, value: Any, field_name: str | None = None) -> None:
         """递归拒绝敏感字段名和实际 PAT、JWT、access key 或 Authorization 值。"""
@@ -269,3 +276,23 @@ class LocalJsonStore:
                 current = copy.deepcopy(self.DEFAULTS[name])
             updated = mutator(copy.deepcopy(current))
             return self.write(name, updated)
+
+    def read_notebook(self) -> dict[str, Any]:
+        """读取词条和分组；首次更新前兼容旧 notes.json，原文件始终保留。"""
+        with self._locks["notebook"]:
+            if self._path("notebook").exists():
+                return self.read("notebook")
+            return {"notes": self.read("notes"), "groups": []}
+
+    def mutate_notebook(self, mutator: Callable[[dict], dict]) -> dict[str, Any]:
+        """
+        在同一把锁和同一个文件中保存词条与分组，导入或移动失败不留下部分更改。
+
+        Args:
+            mutator: 接收完整笔记本并返回新数据的函数。
+
+        Returns:
+            已原子保存的笔记本。
+        """
+        with self._locks["notebook"]:
+            return self.write("notebook", mutator(self.read_notebook()))

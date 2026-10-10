@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 import React from 'react';
-import { NOVELAI_V5_STANDARD_MAX_STEPS } from '../../utils/novelAIV5Params.mjs';
+import * as novelAIV5Params from '../../utils/novelAIV5Params.mjs';
 
 const require = createRequire(import.meta.url);
 const { transformSync } = require('next/dist/build/swc');
@@ -52,7 +52,7 @@ function createControls(file, initialProps) {
     '@/components/muiWrappers/LockableSlider': { __esModule: true, default: 'LockableSlider' },
     '@/i18n/I18nProvider': { useI18n: () => ({ t: (key) => key }) },
     '../../utils/parameterMapping': parameterMapping,
-    '../../utils/modelUtils': { NOVELAI_V5_STANDARD_MAX_STEPS },
+    '../../utils/modelUtils': novelAIV5Params,
   };
   const { code } = transformSync(readFileSync(new URL(file, import.meta.url), 'utf8'), {
     filename: file,
@@ -120,6 +120,29 @@ function createPanel(overrides = {}, controlProps = {}) {
     },
   };
 }
+
+test('Medium 普通和大图模式均固定 14 步和采样器，保留 CFG，隐藏无效控件', () => {
+  for (const use_upscale_credits of [false, true]) {
+    const { panel, getParams } = createPanel({
+      model: 'nai-diffusion-5-full-medium', steps: 50, sampler: 'k_euler',
+      promptGuidanceRescale: 0.8, use_upscale_credits,
+    }, { isV5Model: true });
+    const tree = panel.render();
+    assert.equal(getParams().steps, 14);
+    assert.equal(getParams().sampler, 'k_euler_ancestral');
+    assert.equal(getParams().promptGuidanceRescale, 0);
+    assert.ok(!slider(tree, 'samplingSteps'));
+    assert.ok(!slider(tree, 'promptGuidanceRescale'));
+    assert.ok(slider(tree, 'cfgScale'));
+    const steps = findNode(tree, (node) => node.type === 'TextField'
+      && node.props.label === 'painting.workspace.parameters.samplingSteps');
+    assert.equal(steps.props.value, 14);
+    assert.equal(steps.props.slotProps.input.readOnly, true);
+    const sampler = findNode(tree, (node) => node.type === 'Select'
+      && node.props.label === 'painting.workspace.parameters.sampler');
+    assert.equal(sampler.props.disabled, true);
+  }
+});
 
 test('启用大图、拖动步数至 50、切回普通模式后数值与实际参数立即恢复', () => {
   const { panel, getParams } = createPanel();

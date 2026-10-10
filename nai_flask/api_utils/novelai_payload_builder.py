@@ -23,12 +23,24 @@ V4_MODELS = {
 
 V5_MODELS = {
     "nai-diffusion-5-full",
+    "nai-diffusion-5-full-medium",
     "nai-diffusion-5-curated",
 }
 V5_INPAINTING_MODELS = {
     "nai-diffusion-5-full-inpainting",
+    "nai-diffusion-5-full-medium-inpainting",
 }
 V5_MODEL_FAMILY = V5_MODELS | V5_INPAINTING_MODELS
+V5_MEDIUM_MODELS = frozenset({
+    "nai-diffusion-5-full-medium",
+    "nai-diffusion-5-full-medium-inpainting",
+})
+# Medium 在蒸馏时固定使用官方 Heavy 负向，不能混入用户或角色的负向提示词。
+V5_MEDIUM_NEGATIVE_PROMPT = (
+    "lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, "
+    "jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, "
+    "screentone, multiple views, logo, too many watermarks, negative space, blank page"
+)
 NOVELAI_MAX_COST_PER_IMAGE = 140
 V5_TEXT_TO_IMAGE_DEFAULTS = {
     "width": 832,
@@ -63,6 +75,7 @@ LEGACY_NONE_UC_PRESET_BY_MODEL = {
     "nai-diffusion-4-5-full": 4,
     "nai-diffusion-5-curated": 4,
     "nai-diffusion-5-full": 4,
+    "nai-diffusion-5-full-medium": 4,
 }
 V5_TAG_HINT_UC_PRESET_IDS = {
     "none": 0,
@@ -121,6 +134,7 @@ INPAINTING_MODELS = {
     "nai-diffusion-4-5-curated": "nai-diffusion-4-5-curated-inpainting",
     "nai-diffusion-4-5-full": "nai-diffusion-4-5-full-inpainting",
     "nai-diffusion-5-full": "nai-diffusion-5-full-inpainting",
+    "nai-diffusion-5-full-medium": "nai-diffusion-5-full-medium-inpainting",
 }
 
 
@@ -161,7 +175,7 @@ def validate_novelai_request_capabilities(model_name, values, official_format=Fa
     if is_v5 and model_name not in V5_MODEL_FAMILY:
         raise ExposableError(
             f"Model '{model_name}' is not supported. Use nai-diffusion-5-curated, "
-            "nai-diffusion-5-full, or nai-diffusion-5-full-inpainting.",
+            "nai-diffusion-5-full, nai-diffusion-5-full-medium, or their inpainting models.",
             code="MODEL_NOT_SUPPORTED",
         )
 
@@ -217,6 +231,8 @@ def normalize_v5_request(request_data):
             code="SITE_SECURITY_FIELD_NOT_ALLOWED",
         )
 
+    if request_data["model"] in V5_MEDIUM_MODELS:
+        parameters["steps"] = 14
     for field_name, default_value in V5_TEXT_TO_IMAGE_DEFAULTS.items():
         parameters.setdefault(field_name, default_value)
 
@@ -316,6 +332,29 @@ def normalize_v5_request(request_data):
         "noise_schedule": parameters.get("noise_schedule") or "karras",
         "image_format": "png",
     })
+
+    if normalized_request["model"] in V5_MEDIUM_MODELS:
+        # JSON、multipart 和网页统一采用官方 Medium 设置，防止旧控件参数改变结果。
+        medium_negative = V5_MEDIUM_NEGATIVE_PROMPT
+        if "nsfw" not in str(positive_caption.get("base_caption", positive_prompt)).lower():
+            medium_negative = "nsfw, " + medium_negative
+        parameters.update({
+            "steps": 14,
+            "sampler": "k_euler_ancestral",
+            "noise_schedule": "karras",
+            "ucPresetId": "heavy",
+            "tag_hint_uc_preset": 2,
+            "negative_prompt": medium_negative,
+            "characterPrompts": [{**character, "uc": ""} for character in character_prompts],
+            "v4_negative_prompt": {
+                "caption": {
+                    "base_caption": medium_negative,
+                    "char_captions": [{**caption, "char_caption": ""} for caption in negative_char_captions],
+                },
+                "legacy_uc": False,
+            },
+        })
+        parameters.pop("cfg_rescale", None)
 
     action = normalized_request.get("action") or "generate"
     model_name = normalized_request.get("model")
@@ -471,6 +510,11 @@ def calculate_nai_cost(
     """
     coeff_1 = 2951823174884865e-21
     coeff_2 = 5.753298233447344e-7
+    if model_name in V5_MEDIUM_MODELS:
+        # 官方 Medium 固定 14 步，且只折算按步数产生的成本部分。
+        steps = 14
+        coeff_2 /= 1.06521739
+        enable_smea = False
     pixels = width * height
     base_cost = math.ceil(
         (coeff_1 * pixels) + (coeff_2 * pixels * steps)
@@ -534,7 +578,7 @@ def estimate_novelai_image_tool(data, source_width, source_height):
     if amount == "max" and model not in V5_MODELS:
         raise ExposableError("Max Enhance requires a V5 model.", 400)
     strength, noise = data.get("strength", 0.2), data.get("noise", 0)
-    steps = data.get("steps", 28)
+    steps = 14 if model in V5_MEDIUM_MODELS else data.get("steps", 28)
     for value, name in ((strength, "strength"), (noise, "noise")):
         if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 1:
             raise ExposableError(f"Enhance {name} must be between 0 and 1.", 400)
@@ -631,6 +675,9 @@ def build_novelai_payload(
     validate_novelai_request_capabilities(model_name, data)
     data = filter_director_reference_fields(model_name, data)
     if model_name in V5_MODELS:
+        if model_name in V5_MEDIUM_MODELS:
+            # 在成本估算和额度预留前应用官方固定步数，不能用调用方旧设置计费。
+            data["steps"] = 14
         for field_name, default_value in V5_TEXT_TO_IMAGE_DEFAULTS.items():
             data.setdefault(field_name, default_value)
 

@@ -747,7 +747,8 @@ const ItemDisplay = ({
                   justifyContent: 'space-between', gap: 1, pointerEvents: 'none',
                 }}>
                   {onImageTool && (
-                    <Paper elevation={0} sx={toolbarPaperSx}>
+                    <Fade in={hoverToolbar} timeout={200}>
+                      <Paper elevation={0} sx={toolbarPaperSx}>
                       <Tooltip title={!upscaleCost
                         ? t(sourcePixels > 0 ? 'painting.workspace.imageTools.upscaleTooLarge' : 'painting.workspace.imageTools.sourceDimensionsUnavailable')
                         : upscaleLabel} arrow placement="bottom">
@@ -768,7 +769,8 @@ const ItemDisplay = ({
                           </IconButton>
                         </span>
                       </Tooltip>
-                    </Paper>
+                      </Paper>
+                    </Fade>
                   )}
                   <Fade in={hoverToolbar} timeout={200}>
                     <Paper elevation={0} sx={{ ...toolbarPaperSx, ml: 'auto' }}>

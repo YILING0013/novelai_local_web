@@ -26,6 +26,10 @@ data/
 **/data/
 **/runtime_data/
 **/output/
+**/models/
+**/*.onnx
+**/*.safetensors
+**/*.part
 **/signatures/
 **/static/user_images/
 **/static/temp_images/

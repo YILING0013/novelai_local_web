@@ -3,6 +3,9 @@ import { Box, TextareaAutosize } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import EnhancedPreview from './EnhancedPreview';
 import { PROMPT_TEXT_STYLE } from './previewTags.mjs';
+import usePromptTranslationPreview, { PromptTranslationFeedback } from './usePromptTranslationPreview';
+import usePromptEditorSettings from './usePromptEditorSettings';
+import usePromptWeightShortcuts from './usePromptWeightShortcuts';
 
 const INLINE_TEXT_STYLE = { fontSize: '1rem', lineHeight: 1.65 };
 
@@ -14,6 +17,17 @@ const INLINE_TEXT_STYLE = { fontSize: '1rem', lineHeight: 1.65 };
 export default function InlinePromptInput({ value, onChange, inputRef, inputProps, placeholder, previewEnabled, randomPromptConfig }) {
   const previewRef = useRef(null);
   const [isComposing, setIsComposing] = useState(false);
+  const translationPreview = usePromptTranslationPreview({ text: value, previewRef, overlay: previewEnabled && !isComposing, enabled: !isComposing });
+  const { defaultWeightMode } = usePromptEditorSettings();
+  const weightShortcuts = usePromptWeightShortcuts({
+    inputRef, value, defaultWeightMode, enabled: !isComposing,
+    onChange: (text, selection) => {
+      const input = { value: text, selectionStart: selection.start, selectionEnd: selection.end };
+      onChange({ target: input, currentTarget: input,
+        nativeEvent: { type: 'change', inputType: 'formatSetBlockText', isComposing: false } });
+    },
+    onAdjust: translationPreview.close,
+  });
 
   useLayoutEffect(() => {
     if (previewRef.current) previewRef.current.scrollTop = inputRef.current.scrollTop;
@@ -28,15 +42,18 @@ export default function InlinePromptInput({ value, onChange, inputRef, inputProp
     }}>
       {previewEnabled && (
         <Box sx={{ position: 'absolute', inset: 0, visibility: isComposing ? 'hidden' : 'visible' }}>
-          <EnhancedPreview text={value} randomPromptConfig={randomPromptConfig} scrollRef={previewRef} overlay textStyle={INLINE_TEXT_STYLE} />
+          <EnhancedPreview text={value} randomPromptConfig={randomPromptConfig} scrollRef={previewRef} overlay textStyle={INLINE_TEXT_STYLE}
+            tags={translationPreview.tags} translations={translationPreview.translations} underline={translationPreview.underline}
+            activeTag={translationPreview.active} />
         </Box>
       )}
       <Box
         component={TextareaAutosize}
         {...inputProps}
+        {...translationPreview.inputProps}
         ref={inputRef}
         value={value}
-        onChange={onChange}
+        onChange={(event) => { translationPreview.inputProps.onChange(event); onChange(event); }}
         placeholder={placeholder}
         aria-label={placeholder}
         minRows={5}
@@ -45,18 +62,22 @@ export default function InlinePromptInput({ value, onChange, inputRef, inputProp
         onScroll={(event) => {
           if (previewRef.current) previewRef.current.scrollTop = event.currentTarget.scrollTop;
           inputProps.onScroll?.(event);
+          translationPreview.close();
         }}
-        onCompositionStart={(event) => { setIsComposing(true); inputProps.onCompositionStart(event); }}
+        onPointerDown={(event) => { inputProps.onPointerDown?.(event); translationPreview.inputProps.onPointerDown(event); }}
+        onSelect={(event) => { inputProps.onSelect?.(event); translationPreview.inputProps.onSelect(event); }}
+        onKeyDown={(event) => {
+          if (weightShortcuts.onKeyDown(event)) return;
+          inputProps.onKeyDown?.(event);
+          translationPreview.inputProps.onKeyDown(event);
+        }}
+        onBlur={(event) => { inputProps.onBlur?.(event); translationPreview.close(); }}
+        onCompositionStart={(event) => {
+          setIsComposing(true);
+          translationPreview.inputProps.onCompositionStart(event);
+          inputProps.onCompositionStart(event);
+        }}
         onCompositionEnd={(event) => { setIsComposing(false); inputProps.onCompositionEnd(event); }}
-        onMouseMove={(event) => {
-          if (!previewEnabled || isComposing) return;
-          // 释义来自可见文字的位置，输入框始终接收点击、拖选和键盘事件。
-          const hit = [...previewRef.current.querySelectorAll('[data-preview-translation]')].find((tag) => (
-            [...tag.getClientRects()].some((rect) => event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom)
-          ));
-          event.currentTarget.title = hit?.dataset.previewTranslation || '';
-        }}
-        onMouseLeave={(event) => { event.currentTarget.title = ''; }}
         sx={{
           ...PROMPT_TEXT_STYLE, ...INLINE_TEXT_STYLE,
           display: 'block', position: 'relative', height: 'auto', resize: 'none', outline: 'none',
@@ -72,6 +93,7 @@ export default function InlinePromptInput({ value, onChange, inputRef, inputProp
           },
         }}
       />
+      <PromptTranslationFeedback preview={translationPreview} />
     </Box>
   );
 }

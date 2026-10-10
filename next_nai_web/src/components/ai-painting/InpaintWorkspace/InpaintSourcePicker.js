@@ -67,7 +67,7 @@ const InpaintSourcePicker = ({ open, items, onClose, onSelect }) => {
                     display: 'block',
                     width: '100%',
                     height: 120,
-                    objectFit: 'cover',
+                    objectFit: 'contain',
                   }}
                 />
                 <Box sx={{ p: 1 }}>

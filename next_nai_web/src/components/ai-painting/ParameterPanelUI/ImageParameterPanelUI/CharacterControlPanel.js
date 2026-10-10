@@ -163,6 +163,7 @@ const CharacterControlTab = ({
   canMoveUp,
   canMoveDown,
   isV5Model,
+  isV5Medium,
   characterPositionMode,
 }) => {
   const { t } = useI18n();
@@ -226,10 +227,10 @@ const CharacterControlTab = ({
   };
 
   useEffect(() => {
-    if (isV5Model && activeTab > 1) {
+    if ((isV5Model && activeTab > 1) || (isV5Medium && activeTab === 1)) {
       setActiveTab(0);
     }
-  }, [activeTab, isV5Model]);
+  }, [activeTab, isV5Medium, isV5Model]);
 
   const renderTextFieldWithEditButton = (field, label, placeholder) => (
     <TextField
@@ -416,29 +417,41 @@ const CharacterControlTab = ({
 
       {expanded && (
         <Box sx={{ p: 1.25, opacity: isTemporarilyDisabled ? 0.74 : 1, transition: 'opacity 0.2s ease' }}>
-          <Tabs
-            value={activeTab}
-            onChange={(_, newValue) => setActiveTab(newValue)}
-            variant="scrollable"
-            scrollButtons="auto"
-            sx={{
-              mb: 1,
-              minHeight: 32,
-              '& .MuiTab-root': {
-                ...compactTabSx,
-                color: 'text.secondary',
-              },
-              '& .Mui-selected': { color: color.main },
-              '& .MuiTabs-indicator': {
-                backgroundColor: color.main,
-                height: 2,
-              },
-            }}
-          >
-            <Tab disableRipple label={t('painting.workspace.parameters.characterPromptTab')} />
-            <Tab disableRipple label={t('painting.workspace.parameters.characterAvoidTab')} />
-            {!isV5Model && <Tab disableRipple label={t('painting.workspace.parameters.characterPositionTab')} />}
-          </Tabs>
+          <Stack direction="row" alignItems="center" spacing={0.5} sx={{ mb: 1 }}>
+            <Tabs
+              value={activeTab}
+              onChange={(_, newValue) => setActiveTab(newValue)}
+              variant="scrollable"
+              scrollButtons="auto"
+              sx={{
+                flex: 1,
+                minWidth: 0,
+                minHeight: 32,
+                '& .MuiTab-root': {
+                  ...compactTabSx,
+                  color: 'text.secondary',
+                },
+                '& .Mui-selected': { color: color.main },
+                '& .MuiTabs-indicator': {
+                  backgroundColor: color.main,
+                  height: 2,
+                },
+              }}
+            >
+              <Tab disableRipple label={t('painting.workspace.parameters.characterPromptTab')} />
+              <Tab disableRipple label={t(isV5Medium
+                ? 'painting.workspace.parameters.fixedNegativeTab'
+                : 'painting.workspace.parameters.characterAvoidTab')} disabled={isV5Medium} />
+              {!isV5Model && <Tab disableRipple label={t('painting.workspace.parameters.characterPositionTab')} />}
+            </Tabs>
+            {isV5Medium && (
+              <Tooltip title={t('painting.workspace.parameters.modelV5MediumNegativeHelp')} arrow>
+                <IconButton size="small" aria-label={t('painting.workspace.parameters.fixedNegativeTab')}>
+                  <InfoIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            )}
+          </Stack>
 
           {activeTab === 0 && renderTextFieldWithEditButton(
             'prompt',
@@ -626,6 +639,7 @@ const CharacterControlPanel = ({
                 canMoveUp={index > 0}
                 canMoveDown={index < characterTabs.length - 1}
                 isV5Model={isV5Model}
+                isV5Medium={params.model === 'nai-diffusion-5-full-medium'}
                 characterPositionMode={characterPositionMode}
               />
             ))

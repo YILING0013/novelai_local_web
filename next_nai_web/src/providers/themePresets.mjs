@@ -51,3 +51,31 @@ export const DEFAULT_THEME_SETTINGS = Object.freeze({
   animationEnabled: true,
   animationSpeed: 300,
 });
+
+// 每张配色卡是一套完整主题，选择时一起应用强调色与三个背景层级。
+export const THEME_PRESETS = Object.freeze([
+  { id: 'takoma', name: 'Takoma Dark', mode: 'dark', primary: '#F4F0BB', background: { default: '#0E0F20', paper: '#191A30', drawer: '#121325' } },
+  { id: 'graphite', name: 'Graphite', mode: 'dark', primary: '#8EAAC8', background: BACKGROUND_PRESETS.dark.graphite },
+  { id: 'nord', name: 'Nord', mode: 'dark', primary: '#88C0D0', background: { default: '#242933', paper: '#2E3440', drawer: '#292F3A' } },
+  { id: 'everforest', name: 'Everforest', mode: 'dark', primary: '#A7C080', background: { default: '#232A2E', paper: '#2D353B', drawer: '#272F33' } },
+  { id: 'tokyo', name: 'Tokyo Night', mode: 'dark', primary: '#BB9AF7', background: { default: '#1A1B26', paper: '#24283B', drawer: '#1F2335' } },
+  { id: 'gruvbox', name: 'Gruvbox', mode: 'dark', primary: '#FABD2F', background: { default: '#1D2021', paper: '#282828', drawer: '#242424' } },
+  { id: 'rosePine', name: 'Rosé Pine', mode: 'dark', primary: '#EBBCBA', background: { default: '#191724', paper: '#26233A', drawer: '#1F1D2E' } },
+  { id: 'slate', name: 'Slate', mode: 'dark', primary: '#64B5F6', background: { default: '#20252E', paper: '#2B323E', drawer: '#252C36' } },
+  { id: 'dune', name: 'Dune', mode: 'dark', primary: '#E5B567', background: { default: '#27231F', paper: '#36302A', drawer: '#2E2924' } },
+  { id: 'sage', name: 'Sage', mode: 'dark', primary: '#9DBF97', background: { default: '#202923', paper: '#303D34', drawer: '#27322B' } },
+  { id: 'cobalt', name: 'Cobalt Clash', mode: 'dark', primary: '#FF895C', background: { default: '#0E1733', paper: '#1A2852', drawer: '#142041' } },
+  { id: 'coral', name: 'Coral Reef', mode: 'dark', primary: '#FF916B', background: { default: '#0D282B', paper: '#173B3E', drawer: '#123236' } },
+  { id: 'snow', name: 'Snow', mode: 'light', primary: '#58779A', background: BACKGROUND_PRESETS.light.graphite },
+  { id: 'solar', name: 'Solar', mode: 'light', primary: '#8A6500', background: { default: '#FAF4E3', paper: '#FFFBF0', drawer: '#EEE5CB' } },
+  { id: 'sakura', name: 'Sakura', mode: 'light', primary: '#B74F6D', background: { default: '#F6ECF0', paper: '#FFF8FA', drawer: '#EFDDE4' } },
+  { id: 'celadon', name: 'Celadon', mode: 'light', primary: '#447B58', background: { default: '#EDF3EB', paper: '#F8FCF6', drawer: '#DFE9DC' } },
+  { id: 'iris', name: 'Iris', mode: 'light', primary: '#7058C5', background: { default: '#F0ECFA', paper: '#FAF8FF', drawer: '#E3DDF2' } },
+  { id: 'apricot', name: 'Apricot', mode: 'light', primary: '#A96828', background: { default: '#F7EDDF', paper: '#FFFAF2', drawer: '#EEDCC5' } },
+  { id: 'kokomi', name: 'Kokomi', mode: 'light', primary: '#B8507F', background: { default: '#ECF0FA', paper: '#FCFCFF', drawer: '#DEE5F4' } },
+  { id: 'parchment', name: 'Parchment', mode: 'light', primary: '#80561A', background: { default: '#ECE4D1', paper: '#F6F0E0', drawer: '#DDD3BB' } },
+  { id: 'linen', name: 'Linen', mode: 'light', primary: '#446D60', background: { default: '#EBE9E2', paper: '#F7F6F0', drawer: '#DBD9CF' } },
+  { id: 'cement', name: 'Cement', mode: 'light', primary: '#38658E', background: { default: '#E4E8EB', paper: '#F3F5F6', drawer: '#D4DADF' } },
+  { id: 'matcha', name: 'Matcha', mode: 'light', primary: '#456D3E', background: { default: '#E6ECDD', paper: '#F3F7EE', drawer: '#D3DDC8' } },
+  { id: 'mist', name: 'Mist', mode: 'light', primary: '#566EB0', background: { default: '#EBEFF7', paper: '#F8FAFE', drawer: '#DBE2F0' } },
+]);

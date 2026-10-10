@@ -49,8 +49,10 @@ from api_utils.account_change import (
     RecoveryJournal,
 )
 from api_utils.local_store import LocalJsonStore, LocalStoreError
+from api_utils.notebook import NotebookValidationError, validate_groups, validate_note_groups
 from api_utils.reference_store import ReferenceStore
 from api_utils.local_image_library import LocalImageLibrary
+from api_utils.local_inference import LocalInference
 from api_utils.migrate_reference_library import migrate_reference_library
 from api_utils.image_validation import validate_base64_image, validate_generation_images
 from api_utils.novelai_client import NovelAIClient, NovelAIUpstreamError
@@ -82,6 +84,9 @@ LOCAL_CONFIG_KEYS = frozenset({
     "data_dir",
     "upstream_timeout_seconds",
     "allow_lan",
+    "inference_models_dir",
+    "inference_device",
+    "inference_threads",
 })
 
 
@@ -749,7 +754,7 @@ def _save_generated_images(images: list[dict], parameters: dict) -> None:
                 label = str(metadata.get("prompt") or metadata.get("positivePrompt") or "image").strip()[:32]
             elif method == "random":
                 label = "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(8))
-            elif method == "datetime":
+            elif method in {"datetime", "localDateTime"}:
                 label = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
             elif method == "seed" and image.get("seed") is not None:
                 label = str(image["seed"])
@@ -896,6 +901,9 @@ def create_app(
         BATCH_STATE_TTL_SECONDS=5 * 60,
         UPSTREAM_TIMEOUT_SECONDS=120.0,
         LOCAL_STORE_MAX_BYTES=10 * 1024 * 1024,
+        INFERENCE_MODELS_DIR="",
+        INFERENCE_DEVICE="auto",
+        INFERENCE_THREADS=4,
         MAX_CONTENT_LENGTH=80 * 1024 * 1024,
         MONOTONIC_CLOCK=time.monotonic,
     )
@@ -955,6 +963,16 @@ def create_app(
     )
     settings = app.extensions["local_store"].read("settings")
     app.extensions["image_library"] = LocalImageLibrary(app.config["DATA_DIR"], settings.get("outputDirectory"))
+    model_directory = app.config["INFERENCE_MODELS_DIR"]
+    if not isinstance(model_directory, str):
+        raise ValueError("inference_models_dir must be a path string.")
+    model_directory = Path(model_directory) if model_directory else Path(app.config["DATA_DIR"]) / "models"
+    if not model_directory.is_absolute():
+        model_directory = BASE_DIR / model_directory
+    app.extensions["local_inference"] = LocalInference(
+        model_directory, app.extensions["image_library"],
+        app.config["INFERENCE_DEVICE"], app.config["INFERENCE_THREADS"],
+    )
     migrate_reference_library(app.extensions["image_library"], app.extensions["reference_store"], app.extensions["local_store"])
     app.extensions["local_sessions"] = {}
     app.extensions["session_lock"] = threading.RLock()
@@ -1111,6 +1129,11 @@ def create_app(
             _delete_session(request.cookies.get(app.config["SESSION_COOKIE_NAME"]))
             _expire_session_cookie(response)
         return response, status_code
+
+    @app.errorhandler(NotebookValidationError)
+    def handle_notebook_validation(error: NotebookValidationError) -> tuple[Response, int]:
+        """向界面返回可修正的分组或导入错误。"""
+        return _error_response(ApiError(str(error), 400, "NOTE_GROUP_INVALID"))
 
     @app.errorhandler(LocalStoreError)
     def handle_local_store_error(error: LocalStoreError) -> tuple[Response, int]:
@@ -1968,11 +1991,9 @@ def create_app(
     def get_notes() -> Response:
         """读取全部本地笔记。"""
 
-        notes = app.extensions["local_store"].read("notes")
-        if not isinstance(notes, list):
-            raise LocalStoreError("notes has an invalid shape")
-        _log_local_json("read", "notes", notes)
-        return jsonify({"notes": notes})
+        notebook = app.extensions["local_store"].read_notebook()
+        _log_local_json("read", "notes", notebook["notes"])
+        return jsonify(notebook)
 
     @app.get("/api/local/gallery")
     @session_required()
@@ -2095,7 +2116,7 @@ def create_app(
         action = body.get("action")
         if not isinstance(ids, list) or not ids or len(ids) > 200 or any(not isinstance(value, str) for value in ids):
             raise ApiError("Select between 1 and 200 images.")
-        if action not in {"group", "trash", "restore", "export"}:
+        if action not in {"group", "trash", "restore", "export", "delete"}:
             raise ApiError("Invalid gallery action.")
         if action == "export" and body.get("mode") not in {"edit", "strip"}:
             raise ApiError("Choose edit or strip for metadata export.")
@@ -2109,6 +2130,8 @@ def create_app(
                     result = library.trash_image(image_id)
                 elif action == "restore":
                     result = library.restore_image(image_id)
+                elif action == "delete":
+                    result = library.delete_trashed_image(image_id)
                 else:
                     result = library.save_metadata_copy(
                         image_id, parameters=body.get("parameters"), clear=body["mode"] == "strip",
@@ -2124,12 +2147,135 @@ def create_app(
                 errors.append({"id": image_id, "error": str(exc)})
         return jsonify({"items": items, "succeeded": succeeded, "errors": errors})
 
+    @app.get("/api/local/inference")
+    @session_required()
+    def inference_status() -> Response:
+        """返回本机 Python 推理环境和模型缓存状态。"""
+        return jsonify(app.extensions["local_inference"].status(g.local_session_id))
+
+    @app.post("/api/local/inference/jobs")
+    @session_required(csrf=True)
+    def start_inference_job() -> tuple[Response, int]:
+        """启动下载、加载、反推或放大任务，立即返回可轮询的任务 ID。"""
+        job = app.extensions["local_inference"].start(g.local_session_id, _request_json())
+        return jsonify(job), 202
+
+    @app.get("/api/local/inference/jobs/<job_id>")
+    @session_required()
+    def get_inference_job(job_id: str) -> Response:
+        """读取本会话的后台任务及结果。"""
+        return jsonify(app.extensions["local_inference"].get_job(job_id, g.local_session_id))
+
+    @app.post("/api/local/inference/jobs/<job_id>/cancel")
+    @session_required(csrf=True)
+    def cancel_inference_job(job_id: str) -> Response:
+        """取消本会话任务，保存阶段已开始时等待保存完成。"""
+        return jsonify(app.extensions["local_inference"].cancel(job_id, g.local_session_id))
+
+    @app.post("/api/local/inference/release")
+    @session_required(csrf=True)
+    def release_inference_model() -> Response:
+        """释放空闲模型内存，不删除已下载的模型文件。"""
+        app.extensions["local_inference"].release()
+        return jsonify({"released": True})
+
+    @app.post("/api/local/note-groups")
+    @app.put("/api/local/note-groups/<group_id>")
+    @app.delete("/api/local/note-groups/<group_id>")
+    @session_required(csrf=True)
+    def change_note_group(group_id: str | None = None) -> Response:
+        """原子创建、重命名或删除分组；删除时保留词条并移回未分组。"""
+        payload = _request_json() if request.method != "DELETE" else {}
+        action = request.method
+
+        def change(book: dict) -> dict:
+            groups = book["groups"]
+            if action == "POST":
+                groups.append({"id": uuid.uuid4().hex, "name": payload.get("name"), "parent_id": payload.get("parent_id")})
+            else:
+                target = next((group for group in groups if group["id"] == group_id), None)
+                if target is None:
+                    raise ApiError("The group was not found.", 404, "NOTE_GROUP_NOT_FOUND")
+                if action == "PUT":
+                    target["name"] = payload.get("name")
+                else:
+                    removed = {group_id}
+                    # 最大三级，但导入数组无需父级在前，按完整树寻找后代。
+                    for _ in range(3):
+                        removed.update(group["id"] for group in groups if group.get("parent_id") in removed)
+                    book["groups"] = [group for group in groups if group["id"] not in removed]
+                    for note in book["notes"]:
+                        if note.get("group_id") in removed:
+                            note["group_id"] = None
+            return validate_note_groups(book)
+
+        return jsonify(app.extensions["local_store"].mutate_notebook(change))
+
+    @app.post("/api/local/notes/batch")
+    @session_required(csrf=True)
+    def batch_notes() -> Response:
+        """批量移动或删除词条，任一标题不存在时整次操作失败。"""
+        payload = _request_json()
+        titles = payload.get("titles")
+        action = payload.get("action")
+        if action not in {"move", "delete"} or not isinstance(titles, list) or not titles or not all(isinstance(title, str) for title in titles):
+            raise ApiError("Choose note titles and a move or delete action.")
+
+        def change(book: dict) -> dict:
+            selected = set(titles)
+            if not selected.issubset({note["title"] for note in book["notes"]}):
+                raise ApiError("A selected note was not found.", 404, "NOTE_NOT_FOUND")
+            if action == "delete":
+                book["notes"] = [note for note in book["notes"] if note["title"] not in selected]
+            else:
+                for note in book["notes"]:
+                    if note["title"] in selected:
+                        note["group_id"] = payload.get("group_id")
+            return validate_note_groups(book)
+
+        return jsonify(app.extensions["local_store"].mutate_notebook(change))
+
+    @app.post("/api/local/notes/import")
+    @session_required(csrf=True)
+    def import_notes() -> Response:
+        """一次合并旧数组或含分组的导出文件；冲突和无效引用不会部分导入。"""
+        content = _request_json().get("content")
+        if isinstance(content, list):
+            content = {"texts": content, "groups": []}
+        if not isinstance(content, dict) or not isinstance(content.get("texts"), list):
+            raise ApiError("Import a notes array or an object containing texts and groups.")
+        imported_groups = copy.deepcopy(content.get("groups", []))
+        validate_groups(imported_groups)
+        prepared = [_prepare_note(note) for note in content["texts"]]
+
+        def change(book: dict) -> dict:
+            # 导入的新分组使用本地 ID，避免两份文件恰好用了相同 ID 后错误归组。
+            group_ids = {group["id"]: uuid.uuid4().hex for group in imported_groups}
+            for group in imported_groups:
+                book["groups"].append({**group, "id": group_ids[group["id"]], "parent_id": group_ids.get(group.get("parent_id"))})
+            titles = {note["title"] for note in book["notes"]}
+            for note in prepared:
+                if note["title"] in titles:
+                    raise ApiError("A note with this title already exists.", 409, "NOTE_TITLE_EXISTS")
+                titles.add(note["title"])
+                note["id"] = uuid.uuid4().hex
+                original_group = note.get("group_id")
+                if original_group is not None:
+                    if not isinstance(original_group, str) or original_group not in group_ids:
+                        raise NotebookValidationError("The imported note group does not exist.")
+                    note["group_id"] = group_ids[original_group]
+                book["notes"].append(note)
+            return validate_note_groups(book)
+
+        return jsonify(app.extensions["local_store"].mutate_notebook(change))
+
     @app.post("/api/local/notes")
     @session_required(csrf=True)
     def create_note() -> tuple[Response, int]:
         """新增一条带 opaque ID 的本地笔记。"""
 
         note = _prepare_note(_request_json().get("note"))
+        note.setdefault("created_at", time.time())
 
         def append_note(notes: Any) -> list[Any]:
             """在 notes 集合锁内完成唯一性检查与追加。"""
@@ -2143,7 +2289,9 @@ def create_app(
             notes.append(note)
             return notes
 
-        saved_notes = app.extensions["local_store"].mutate("notes", append_note)
+        saved_notes = app.extensions["local_store"].mutate_notebook(
+            lambda book: validate_note_groups({"notes": append_note(book["notes"]), "groups": book["groups"]})
+        )["notes"]
         _log_local_json("create", "notes", saved_notes)
         return jsonify({"note": note}), 201
 
@@ -2164,9 +2312,12 @@ def create_app(
                 raise ApiError("Imported note ids must be unique.", 409, "NOTE_ALREADY_EXISTS")
             if len(set(note_titles)) != len(note_titles):
                 raise ApiError("Imported note titles must be unique.", 409, "NOTE_TITLE_EXISTS")
-            saved_notes = app.extensions["local_store"].write("notes", prepared_notes)
+            saved_book = app.extensions["local_store"].mutate_notebook(
+                lambda book: validate_note_groups({"notes": prepared_notes, "groups": payload.get("groups", book["groups"])})
+            )
+            saved_notes = saved_book["notes"]
             _log_local_json("import", "notes", saved_notes)
-            return jsonify({"notes": saved_notes})
+            return jsonify(saved_book)
 
         note_payload = payload.get("note")
         if not isinstance(note_payload, dict):
@@ -2201,7 +2352,7 @@ def create_app(
 
             position = positions[0]
             existing = notes[position]
-            saved_note = _prepare_note(note_payload, existing.get("id"))
+            saved_note = _prepare_note({**existing, **note_payload}, existing.get("id"))
             if any(
                 index != position
                 and isinstance(item, dict)
@@ -2213,7 +2364,9 @@ def create_app(
             updated["note"] = saved_note
             return notes
 
-        saved_notes = app.extensions["local_store"].mutate("notes", replace_note)
+        saved_notes = app.extensions["local_store"].mutate_notebook(
+            lambda book: validate_note_groups({"notes": replace_note(book["notes"]), "groups": book["groups"]})
+        )["notes"]
         _log_local_json("update", "notes", saved_notes)
         return jsonify({"note": updated["note"]})
 
@@ -2251,7 +2404,9 @@ def create_app(
                 raise ApiError("The note selector is ambiguous.", 409, "NOTE_AMBIGUOUS")
             return notes[:positions[0]] + notes[positions[0] + 1:]
 
-        saved_notes = app.extensions["local_store"].mutate("notes", remove_note)
+        saved_notes = app.extensions["local_store"].mutate_notebook(
+            lambda book: validate_note_groups({"notes": remove_note(book["notes"]), "groups": book["groups"]})
+        )["notes"]
         _log_local_json("delete", "notes", saved_notes)
         return jsonify({"deleted": True})
 

@@ -1,12 +1,19 @@
 export const NOVELAI_V5_MODEL_IDS = Object.freeze([
   'nai-diffusion-5-curated',
   'nai-diffusion-5-full',
+  'nai-diffusion-5-full-medium',
 ]);
 
 const NOVELAI_V5_MODEL_ID_SET = new Set(NOVELAI_V5_MODEL_IDS);
 export const NOVELAI_V5_CHARACTER_WARNING_THRESHOLD = 25;
 export const NOVELAI_V5_STANDARD_MAX_STEPS = 28;
 export const NOVELAI_V5_LARGE_MAX_STEPS = 50;
+export const NOVELAI_V5_MEDIUM_MODEL_ID = 'nai-diffusion-5-full-medium';
+export const NOVELAI_V5_MEDIUM_DEFAULT_PARAMS = Object.freeze({
+  steps: 14,
+  sampler: 'k_euler_ancestral',
+  promptGuidanceRescale: 0,
+});
 
 export const NOVELAI_V5_DEFAULT_PARAMS = Object.freeze({
   width: 832,
@@ -65,7 +72,7 @@ const normalizeCoordinate = (value, fallback) => {
  * 判断当前模型是否为 NovelAI V5 模型。
  *
  * @param {unknown} modelName 待判断的完整模型 ID。
- * @returns {boolean} V5 Curated 或 V5 Full 返回 true。
+ * @returns {boolean} V5 Curated、Full 或 Full Medium 返回 true。
  */
 export const isNovelAIV5Model = (modelName) => (
   NOVELAI_V5_MODEL_ID_SET.has(String(modelName || ''))
@@ -137,7 +144,7 @@ export const buildNovelAIV5CharacterControl = (characterTabs = [], useCoords = f
 };
 
 /**
- * 删除 NovelAI V5 当前不支持的角色参考与 Vibe 参数。
+ * 删除 V5 不支持的参考参数，并应用 Medium 的固定生成设置。
  *
  * @param {object} params 当前生成参数。
  * @returns {object} V5 返回净化后的新对象，其他模型保持原对象不变。
@@ -155,6 +162,25 @@ export const sanitizeNovelAIV5GenerationParams = (params = {}) => {
       ? NOVELAI_V5_LARGE_MAX_STEPS
       : NOVELAI_V5_STANDARD_MAX_STEPS;
     sanitizedParams.steps = Math.min(steps, maxSteps);
+  }
+  if (params.model === NOVELAI_V5_MEDIUM_MODEL_ID) {
+    // Medium 使用蒸馏模型的固定采样器，不接受手写负向提示或 CFG Rescale。
+    sanitizedParams.steps = NOVELAI_V5_MEDIUM_DEFAULT_PARAMS.steps;
+    sanitizedParams.sampler = 'k_euler_ancestral';
+    sanitizedParams.promptGuidanceRescale = 0;
+    sanitizedParams.negativePrompt = '';
+    if (sanitizedParams.characterControl) {
+      sanitizedParams.characterControl = { ...sanitizedParams.characterControl };
+    }
+    for (const target of [sanitizedParams, sanitizedParams.characterControl]) {
+      if (!target) continue;
+      if (target.characterPrompts) {
+        target.characterPrompts = target.characterPrompts.map((character) => ({ ...character, uc: '' }));
+      }
+      if (target.v4_negative_prompt_char_captions) {
+        target.v4_negative_prompt_char_captions = [];
+      }
+    }
   }
   return sanitizedParams;
 };

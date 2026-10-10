@@ -24,9 +24,11 @@ test('NovelAI V5 exposes both supported model IDs and the verified text-to-image
   assert.deepEqual(NOVELAI_V5_MODEL_IDS, [
     'nai-diffusion-5-curated',
     'nai-diffusion-5-full',
+    'nai-diffusion-5-full-medium',
   ]);
   assert.equal(isNovelAIV5Model('nai-diffusion-5-curated'), true);
   assert.equal(isNovelAIV5Model('nai-diffusion-5-full'), true);
+  assert.equal(isNovelAIV5Model('nai-diffusion-5-full-medium'), true);
   assert.equal(isNovelAIV5Model('nai-diffusion-4-5-full'), false);
   assert.deepEqual(NOVELAI_V5_DEFAULT_PARAMS, {
     width: 832,
@@ -54,11 +56,15 @@ test('NovelAI V5 exposes both supported model IDs and the verified text-to-image
 });
 
 test('NovelAI V5 normalizes old cached steps according to standard and large-image modes', () => {
-  assert.equal(sanitizeNovelAIV5GenerationParams({
-    model: 'nai-diffusion-5-full',
-    steps: 28,
-    use_upscale_credits: false,
-  }).steps, 28);
+  for (const model of ['nai-diffusion-5-curated', 'nai-diffusion-5-full']) {
+    for (const [steps, expectedSteps] of [[23, 23], [24, 24], [28, 28], [29, 28], [50, 28]]) {
+      assert.equal(sanitizeNovelAIV5GenerationParams({
+        model,
+        steps,
+        use_upscale_credits: false,
+      }).steps, expectedSteps);
+    }
+  }
   assert.equal(sanitizeNovelAIV5GenerationParams({
     model: 'nai-diffusion-5-full',
     steps: 50,
@@ -69,6 +75,28 @@ test('NovelAI V5 normalizes old cached steps according to standard and large-ima
     steps: 51,
     use_upscale_credits: true,
   }).steps, 50);
+});
+
+test('Medium 的外部和缓存参数固定 14 步、Euler A，移除自定义负向且不改变源数据', () => {
+  for (const use_upscale_credits of [false, true]) {
+    const params = {
+      model: 'nai-diffusion-5-full-medium', steps: 50, sampler: 'k_euler',
+      promptGuidanceRescale: 0.7, negativePrompt: 'custom negative', use_upscale_credits,
+      characterControl: {
+        characterPrompts: [{ prompt: 'red hair', uc: 'blue hair' }],
+        v4_negative_prompt_char_captions: [{ char_caption: 'blue hair' }],
+      },
+    };
+    const result = sanitizeNovelAIV5GenerationParams(params);
+    assert.equal(result.steps, 14);
+    assert.equal(result.sampler, 'k_euler_ancestral');
+    assert.equal(result.promptGuidanceRescale, 0);
+    assert.equal(result.negativePrompt, '');
+    assert.equal(result.characterControl.characterPrompts[0].uc, '');
+    assert.deepEqual(result.characterControl.v4_negative_prompt_char_captions, []);
+    assert.equal(params.characterControl.characterPrompts[0].uc, 'blue hair');
+    assert.equal(params.negativePrompt, 'custom negative');
+  }
 });
 
 test('NovelAI V5 strips only Character Reference and Vibe fields', () => {

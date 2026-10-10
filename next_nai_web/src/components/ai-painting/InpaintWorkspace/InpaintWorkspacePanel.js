@@ -63,6 +63,7 @@ import {
   mergePatchIntoContentCanvas,
 } from '../tools/InpaintTools/exportUtils';
 import { createInpaintMaskCanvas, createInpaintMaskData } from '../tools/InpaintTools/maskUtils';
+import { createMaskGrid, drawMaskGrid, drawMaskBrushCursor, snapPoint, MASK_CELL_SIZE } from '../tools/InpaintTools/maskBrush';
 import { useI18n } from '@/i18n/I18nProvider';
 
 const DESKTOP_DEFAULT_MODE = 'paint';
@@ -469,10 +470,13 @@ const EmptyStateCard = ({ generatedItems, onOpenUpload, onOpenSourcePicker, onQu
       onDrop={onDrop}
       sx={{
         flex: 1,
+        minHeight: 0,
+        overflowY: 'auto',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: 'center',
+        justifyContent: 'safe center',
+        '& > *': { flexShrink: 0 },
         borderRadius: 2,
         border: (theme) => `1px dashed ${dragActive ? theme.palette.primary.main : theme.palette.divider}`,
         backgroundColor: (theme) => dragActive ? alpha(theme.palette.primary.main, 0.08) : theme.palette.background.paper,
@@ -512,7 +516,7 @@ const EmptyStateCard = ({ generatedItems, onOpenUpload, onOpenSourcePicker, onQu
                   '&:hover': { transform: 'translateY(-2px)' },
                 }}
               >
-                <Box component="img" src={item.src} alt={t('painting.workspace.inpaint.recentImageAlt', { index: index + 1 })} sx={{ width: '100%', height: 76, display: 'block', objectFit: 'cover' }} />
+                <Box component="img" src={item.src} alt={t('painting.workspace.inpaint.recentImageAlt', { index: index + 1 })} sx={{ width: '100%', height: 120, display: 'block', objectFit: 'contain' }} />
               </Paper>
             ))}
           </Box>
@@ -559,6 +563,9 @@ const InpaintWorkspacePanel = forwardRef(({
   const historyResetAfterFitRef = useRef(false);
   const displayCanvasRef = useRef(null);
   const overlayCanvasRef = useRef(null);
+  const brushCursorCanvasRef = useRef(null);
+  const brushPointerRef = useRef(null);
+  const paintPointerIdRef = useRef(null);
   const fileInputRef = useRef(null);
   const pinchRef = useRef(null);
   const sessionBaseCanvasRef = useRef(null);
@@ -572,7 +579,8 @@ const InpaintWorkspacePanel = forwardRef(({
   const [toolMode, setToolMode] = useState(DESKTOP_DEFAULT_MODE);
   const [paintTarget, setPaintTarget] = useState(MASK_DRAW_TARGET);
   const [interactionMode, setInteractionMode] = useState(isMobile ? MOBILE_DEFAULT_MODE : DESKTOP_DEFAULT_MODE);
-  const [maskBrushSize, setMaskBrushSize] = useState(28);
+  const [maskBrushSize, setMaskBrushSize] = useState(32);
+  const [maskBrushShape, setMaskBrushShape] = useState('circle');
   const [imageBrushSize, setImageBrushSize] = useState(28);
   const [maskOverlayColor, setMaskOverlayColor] = useState('#ff4d4f');
   const [maskOverlayOpacity, setMaskOverlayOpacity] = useState(0.35);
@@ -670,7 +678,7 @@ const InpaintWorkspacePanel = forwardRef(({
       return;
     }
 
-    setMaskBrushSize(value);
+    setMaskBrushSize(Math.max(8, Math.min(520, Math.round(value / MASK_CELL_SIZE) * MASK_CELL_SIZE)));
   }, [paintTarget]);
 
   const handleActiveOverlayOpacityChange = useCallback((value) => {
@@ -1049,6 +1057,28 @@ const InpaintWorkspacePanel = forwardRef(({
       y: event.clientY - rect.top,
     };
   }, []);
+
+  const updateBrushCursor = useCallback((point) => {
+    brushPointerRef.current = point;
+    const ctx = configureStageCanvas(brushCursorCanvasRef.current, stageSize.width, stageSize.height);
+    const mode = isMobile ? interactionMode : toolMode;
+    if (!ctx || !point || paintTarget !== MASK_DRAW_TARGET || !['paint', 'erase'].includes(mode)
+      || pendingPatch || isGenerationLocked || dragState) return;
+
+    drawMaskBrushCursor({
+      ctx,
+      point: screenToWorldPoint(point, sceneTransform),
+      size: maskBrushSize,
+      shape: maskBrushShape,
+      sceneTransform,
+      color: maskOverlayColor,
+      erase: mode === 'erase',
+    });
+  }, [dragState, interactionMode, isGenerationLocked, isMobile, maskBrushShape, maskBrushSize, maskOverlayColor, paintTarget, pendingPatch, sceneTransform, stageSize, toolMode]);
+
+  useEffect(() => {
+    updateBrushCursor(brushPointerRef.current);
+  }, [updateBrushCursor]);
 
   const zoomScene = useCallback((factor, anchorPoint) => {
     setSceneTransform((prev) => {
@@ -1468,7 +1498,7 @@ const InpaintWorkspacePanel = forwardRef(({
   }, [importFile, showNotification, t]);
 
   const handleStagePointerDown = useCallback((event) => {
-    if (!hasSourceImage || isGenerationLocked) {
+    if (!hasSourceImage || isGenerationLocked || stateRef.current.draftStroke || event.isPrimary === false) {
       return;
     }
 
@@ -1557,20 +1587,24 @@ const InpaintWorkspacePanel = forwardRef(({
     const activeMode = isMobile ? interactionMode : toolMode;
 
     if (activeMode === 'paint' || activeMode === 'erase') {
-      setDraftStroke({
+      const nextStroke = {
         type: 'path',
         target: paintTarget,
+        shape: maskBrushShape,
         mode: activeMode === 'erase' ? 'erase' : 'paint',
         size: activeBrushSize,
         color: activeOverlayColor,
         opacity: activeOverlayOpacity,
         points: [worldPoint],
-      });
+      };
+      paintPointerIdRef.current = event.pointerId;
+      stateRef.current.draftStroke = nextStroke;
+      setDraftStroke(nextStroke);
       return;
     }
 
     if (activeMode === 'rect') {
-      setDraftStroke({
+      const nextStroke = {
         type: 'rect',
         target: paintTarget,
         mode: 'paint',
@@ -1584,11 +1618,15 @@ const InpaintWorkspacePanel = forwardRef(({
           width: 0,
           height: 0,
         },
-      });
+      };
+      paintPointerIdRef.current = event.pointerId;
+      stateRef.current.draftStroke = nextStroke;
+      setDraftStroke(nextStroke);
     }
-  }, [activeBrushSize, activeOverlayColor, activeOverlayOpacity, getPointerPoint, hasSourceImage, interactionMode, isGenerationLocked, isMobile, paintTarget, pendingPatch, sceneTransform, toolMode, viewportRect]);
+  }, [activeBrushSize, activeOverlayColor, activeOverlayOpacity, getPointerPoint, hasSourceImage, interactionMode, isGenerationLocked, isMobile, maskBrushShape, paintTarget, pendingPatch, sceneTransform, toolMode, viewportRect]);
 
   const handleGlobalPointerMove = useCallback((event) => {
+    if (paintPointerIdRef.current !== null && paintPointerIdRef.current !== event.pointerId) return;
     const point = getPointerPoint(event);
     const {
       dragState: currentDragState,
@@ -1642,17 +1680,28 @@ const InpaintWorkspacePanel = forwardRef(({
     }
 
     if (currentDraftStroke?.type === 'path') {
-      const worldPoint = screenToWorldPoint(point, currentSceneTransform);
-      setDraftStroke((prev) => {
-        if (!prev?.points) {
-          return prev;
+      // 蒙版保留浏览器合并的采样点，快速移动也能沿完整轨迹补齐网格。
+      const samples = getStrokeTarget(currentDraftStroke) === MASK_DRAW_TARGET
+        ? event.getCoalescedEvents?.() : null;
+      const worldPoints = (samples?.length ? samples : [event]).map((sample) => (
+        screenToWorldPoint(getPointerPoint(sample), currentSceneTransform)
+      ));
+      const points = [...currentDraftStroke.points];
+      for (const worldPoint of worldPoints) {
+        if (getStrokeTarget(currentDraftStroke) === MASK_DRAW_TARGET) {
+          const diameter = currentDraftStroke.size / MASK_CELL_SIZE;
+          const previous = points[points.length - 1];
+          const previousCell = snapPoint(previous.x, previous.y, diameter);
+          const nextCell = snapPoint(worldPoint.x, worldPoint.y, diameter);
+          if (previousCell.x === nextCell.x && previousCell.y === nextCell.y) continue;
         }
-
-        return {
-          ...prev,
-          points: [...prev.points, worldPoint],
-        };
-      });
+        points.push(worldPoint);
+      }
+      if (points.length === currentDraftStroke.points.length) return;
+      const nextStroke = { ...currentDraftStroke, points };
+      // 高频 move 后可能还没渲染；松手时必须读到完整的最后一段。
+      stateRef.current.draftStroke = nextStroke;
+      setDraftStroke(nextStroke);
       return;
     }
 
@@ -1663,20 +1712,18 @@ const InpaintWorkspacePanel = forwardRef(({
       const width = Math.abs(worldPoint.x - currentDraftStroke.start.x);
       const height = Math.abs(worldPoint.y - currentDraftStroke.start.y);
 
-      setDraftStroke((prev) => {
-        if (!prev) {
-          return prev;
-        }
-
-        return {
-          ...prev,
-          rect: { x, y, width, height },
-        };
-      });
+      const nextStroke = { ...currentDraftStroke, rect: { x, y, width, height } };
+      stateRef.current.draftStroke = nextStroke;
+      setDraftStroke(nextStroke);
     }
   }, [getPointerPoint]);
 
-  const handleGlobalPointerUp = useCallback(() => {
+  const handleGlobalPointerUp = useCallback((event) => {
+    if (event?.type === 'pointerup') {
+      if (paintPointerIdRef.current !== null && paintPointerIdRef.current !== event.pointerId) return;
+      // 浏览器可能在新坐标直接发出 up，不能依赖额外一次 move 补齐笔迹。
+      if (stateRef.current.draftStroke) handleGlobalPointerMove(event);
+    }
     const {
       dragState: currentDragState,
       draftStroke: currentDraftStroke,
@@ -1715,7 +1762,10 @@ const InpaintWorkspacePanel = forwardRef(({
 
     setDraftStroke(null);
     setDragState(null);
-  }, [applySnapAfterSceneMove, applySnapAfterViewportMove, commitHistorySnapshot]);
+    paintPointerIdRef.current = null;
+    stateRef.current.draftStroke = null;
+    stateRef.current.dragState = null;
+  }, [applySnapAfterSceneMove, applySnapAfterViewportMove, commitHistorySnapshot, handleGlobalPointerMove]);
 
   const updateCompareSliderFromClientX = useCallback((clientX) => {
     const stageRect = stageContainerRef.current?.getBoundingClientRect();
@@ -1788,10 +1838,29 @@ const InpaintWorkspacePanel = forwardRef(({
 
     window.addEventListener('pointermove', handleGlobalPointerMove);
     window.addEventListener('pointerup', handleGlobalPointerUp);
+    const cancelPointer = () => {
+      const activeDrag = stateRef.current.dragState;
+      if (activeDrag?.startSceneTransform) setSceneTransform(activeDrag.startSceneTransform);
+      if (activeDrag?.startRect) setViewportRect(activeDrag.startRect);
+      stateRef.current.draftStroke = null;
+      stateRef.current.dragState = null;
+      paintPointerIdRef.current = null;
+      setDraftStroke(null);
+      setDragState(null);
+    };
+    const cancelOnEscape = (event) => {
+      if (event.key === 'Escape') cancelPointer();
+    };
+    window.addEventListener('pointercancel', cancelPointer);
+    window.addEventListener('blur', handleGlobalPointerUp);
+    window.addEventListener('keydown', cancelOnEscape);
 
     return () => {
       window.removeEventListener('pointermove', handleGlobalPointerMove);
       window.removeEventListener('pointerup', handleGlobalPointerUp);
+      window.removeEventListener('pointercancel', cancelPointer);
+      window.removeEventListener('blur', handleGlobalPointerUp);
+      window.removeEventListener('keydown', cancelOnEscape);
     };
   }, [handleGlobalPointerMove, handleGlobalPointerUp, isPointerInteractionActive]);
 
@@ -1838,6 +1907,12 @@ const InpaintWorkspacePanel = forwardRef(({
     const handleTouchStart = (event) => {
       if (event.touches.length === 2) {
         event.preventDefault();
+        // 双指只用于缩放，不把第二根手指接到未完成的笔迹上。
+        paintPointerIdRef.current = null;
+        stateRef.current.draftStroke = null;
+        stateRef.current.dragState = null;
+        setDraftStroke(null);
+        setDragState(null);
         const rect = container.getBoundingClientRect();
         const center = getTouchCenter(event.touches[0], event.touches[1]);
         pinchRef.current = {
@@ -2036,23 +2111,18 @@ const InpaintWorkspacePanel = forwardRef(({
         overlayCtx.restore();
       }
     } else {
-      const previewCanvas = createOffscreenCanvas(stageSize.width, stageSize.height);
-      const previewCtx = previewCanvas.getContext('2d');
-
-      maskPreviewStrokes.forEach((stroke) => {
-        drawPreviewStroke({
-          ctx: previewCtx,
-          stroke,
-          sceneTransform,
-          overlayColor: maskOverlayColor,
-          overlayOpacity: maskOverlayOpacity,
-        });
+      const visibleWorldRect = screenRectToWorldRect({ x: 0, y: 0, width: stageSize.width, height: stageSize.height }, sceneTransform);
+      const grid = createMaskGrid(maskPreviewStrokes, visibleWorldRect);
+      drawMaskGrid({
+        ctx: overlayCtx,
+        mask: grid,
+        worldRect: visibleWorldRect,
+        outputWidth: stageSize.width,
+        outputHeight: stageSize.height,
+        color: maskOverlayColor,
+        opacity: maskOverlayOpacity,
+        outline: true,
       });
-
-      overlayCtx.save();
-      overlayCtx.globalAlpha = maskOverlayOpacity;
-      overlayCtx.drawImage(previewCanvas, 0, 0, stageSize.width, stageSize.height);
-      overlayCtx.restore();
     }
   }, [buildSourceContentSnapshot, compareSliderPosition, draftStroke, expandPixels, hasSourceImage, imageOverlayColor, imageOverlayOpacity, maskOverlayColor, maskOverlayOpacity, outputResolution, patchFeather, pendingPatch, sceneTransform, showMaskPreview, stageSize, strokes, theme.palette.background.default, theme.palette.info.main, viewportRect]);
 
@@ -2258,6 +2328,9 @@ const InpaintWorkspacePanel = forwardRef(({
             ref={handleStageContainerRef}
             data-drop-zone="inpaint"
             onPointerDown={handleStagePointerDown}
+            onPointerUp={handleGlobalPointerUp}
+            onPointerMove={(event) => updateBrushCursor(event.target.tagName === 'CANVAS' ? getPointerPoint(event) : null)}
+            onPointerLeave={() => updateBrushCursor(null)}
             onContextMenu={(event) => event.preventDefault()}
             onWheel={handleStageWheel}
             sx={{
@@ -2266,6 +2339,7 @@ const InpaintWorkspacePanel = forwardRef(({
               position: 'relative',
               overflow: 'hidden',
               touchAction: 'none',
+              cursor: paintTarget === MASK_DRAW_TARGET && ['paint', 'erase'].includes(isMobile ? interactionMode : toolMode) && !pendingPatch && !isGenerationLocked && !dragState ? 'none' : undefined,
               overscrollBehavior: 'contain',
               borderRadius: 2,
               backgroundColor: 'background.default',
@@ -2280,6 +2354,7 @@ const InpaintWorkspacePanel = forwardRef(({
           >
             <canvas ref={displayCanvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} />
             <canvas ref={overlayCanvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} />
+            <canvas ref={brushCursorCanvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }} />
 
             {previewGenerationActive && (
               <Paper
@@ -2871,6 +2946,8 @@ const InpaintWorkspacePanel = forwardRef(({
         interactionMode={interactionMode}
         onInteractionModeChange={setInteractionMode}
         brushSize={activeBrushSize}
+        brushShape={maskBrushShape}
+        onBrushShapeChange={setMaskBrushShape}
         onBrushSizeChange={handleActiveBrushSizeChange}
         brushSizeLabel={activeBrushSizeLabel}
         overlayColor={activeOverlayColor}

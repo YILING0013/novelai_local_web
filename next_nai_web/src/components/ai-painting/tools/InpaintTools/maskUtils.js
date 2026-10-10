@@ -1,4 +1,5 @@
 import { cropWorldRectToCanvas } from './exportUtils';
+import { createMaskGrid, drawMaskGrid } from './maskBrush';
 
 const createCanvas = (width, height) => {
   const canvas = document.createElement('canvas');
@@ -67,57 +68,11 @@ const dilateWhiteMask = (baseCanvas, radius) => {
   return expandedCanvas;
 };
 
-const applyStrokeToMask = ({ ctx, stroke, worldRect, width, height }) => {
-  const scaleX = width / worldRect.width;
-  const scaleY = height / worldRect.height;
-
-  ctx.save();
-  ctx.globalCompositeOperation = stroke.mode === 'erase' ? 'destination-out' : 'source-over';
-  ctx.strokeStyle = '#ffffff';
-  ctx.fillStyle = '#ffffff';
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  ctx.lineWidth = Math.max(stroke.size * scaleX, 1);
-
-  if (stroke.type === 'rect') {
-    const x = (stroke.rect.x - worldRect.x) * scaleX;
-    const y = (stroke.rect.y - worldRect.y) * scaleY;
-    const rectWidth = stroke.rect.width * scaleX;
-    const rectHeight = stroke.rect.height * scaleY;
-    ctx.fillRect(x, y, rectWidth, rectHeight);
-    ctx.restore();
-    return;
-  }
-
-  if (!stroke.points || stroke.points.length === 0) {
-    ctx.restore();
-    return;
-  }
-
-  if (stroke.points.length === 1) {
-    const point = stroke.points[0];
-    ctx.beginPath();
-    ctx.arc((point.x - worldRect.x) * scaleX, (point.y - worldRect.y) * scaleY, Math.max((stroke.size * scaleX) / 2, 1), 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-    return;
-  }
-
-  ctx.beginPath();
-  stroke.points.forEach((point, index) => {
-    const x = (point.x - worldRect.x) * scaleX;
-    const y = (point.y - worldRect.y) * scaleY;
-
-    if (index === 0) {
-      ctx.moveTo(x, y);
-    } else {
-      ctx.lineTo(x, y);
-    }
-  });
-  ctx.stroke();
-  ctx.restore();
-};
-
+/**
+ * 合并自动扩图范围与用户网格笔迹，生成透明底白色蒙版。
+ * @param {object} options 原图画布与坐标范围、输出尺寸、笔迹及边缘扩展像素数。
+ * @returns {HTMLCanvasElement} 保留擦除结果且与生成图同尺寸的蒙版。
+ */
 export const createInpaintMaskCanvas = ({
   contentCanvas,
   contentBounds,
@@ -160,19 +115,20 @@ export const createInpaintMaskCanvas = ({
   const maskCtx = maskCanvas.getContext('2d');
   maskCtx.drawImage(dilatedCanvas, 0, 0);
 
-  strokes.forEach((stroke) => {
-    applyStrokeToMask({
-      ctx: maskCtx,
-      stroke,
-      worldRect,
-      width: outputWidth,
-      height: outputHeight,
-    });
-  });
-
+  const grid = createMaskGrid(strokes, worldRect);
+  // 笔刷操作覆盖自动扩图蒙版；擦过的空白格也必须清除。
+  maskCtx.globalCompositeOperation = 'destination-out';
+  drawMaskGrid({ ctx: maskCtx, mask: { ...grid, data: grid.touched }, worldRect, outputWidth, outputHeight });
+  maskCtx.globalCompositeOperation = 'source-over';
+  drawMaskGrid({ ctx: maskCtx, mask: grid, worldRect, outputWidth, outputHeight });
   return maskCanvas;
 };
 
+/**
+ * 将蒙版规范为二值透明度，显示颜色和描边不会进入请求。
+ * @param {object} options 与 createInpaintMaskCanvas 相同的画布和笔迹参数。
+ * @returns {object} 用于贴回的 canvas 和发送请求的 dataUrl。
+ */
 export const createInpaintMaskData = (options) => {
   const maskCanvas = createInpaintMaskCanvas(options);
   const binaryMaskCanvas = createHardBinaryMaskCanvas(maskCanvas);

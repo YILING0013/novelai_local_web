@@ -1,6 +1,7 @@
 // EnhancedPreview.js
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { Box, Typography, Tooltip, Paper, Chip } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 // formatPromptWithHighlighting from promptUtils is not used here directly for main formatting,
 // but enhancedFormatPromptWithHighlighting is defined and used within this file.
 // import { formatPromptWithHighlighting } from './promptUtils'; 
@@ -12,7 +13,6 @@ import {
   Shuffle as ShuffleIcon // 新增图标
 } from '@mui/icons-material';
 import { useI18n } from '@/i18n/I18nProvider';
-import apiClient from '@/utils/ApiClient';
 import { getPreviewTagRanges, PROMPT_TEXT_STYLE } from './previewTags.mjs';
 
 /** 保留原始字符并识别注释、权重和随机标签，返回可逐段渲染的高亮信息。 */
@@ -541,8 +541,8 @@ const processBionicText = (text) => {
     if (match[1]) { 
       parts.push(<span key={`word-${match.index}`}>{bionicRead(match[0])}</span>);
     } else if (match[2]) { 
-      const chars = match[0].split('');
-      parts.push(<span key={`word-${match.index}`}>{chars.map((char, i) => <span key={i}>{bionicRead(char)}</span>)}</span>);
+      // 非英文内容无需拆字加粗，保留 emoji 的代理对和连接符组合。
+      parts.push(<span key={`word-${match.index}`}>{match[2]}</span>);
     }
     lastIndex = match.index + match[0].length;
   }
@@ -552,68 +552,66 @@ const processBionicText = (text) => {
   return parts;
 };
 
-/** 渲染不改变字符位置的提示词预览，并向 CSV 词库批量查询标签的中文释义。 */
-const EnhancedPreview = ({ text, randomPromptConfig, scrollRef, onScroll, overlay = false, enabled = true, textStyle }) => {
+/** 渲染不改变字符位置的提示词预览，全文标签范围由翻译查询与输入交互共同使用。 */
+const EnhancedPreview = ({ text, randomPromptConfig, scrollRef, onScroll, overlay = false, textStyle,
+  tags = getPreviewTagRanges(text), translations = {}, underline = true, activeTag = null, previewProps }) => {
   const { t } = useI18n();
-  const [translations, setTranslations] = useState({});
-  const [translationError, setTranslationError] = useState(false);
-  const segments = useMemo(() => (
-    enhancedFormatPromptWithHighlighting(text, randomPromptConfig).map((segment) => ({
-      ...segment,
-      tags: ['normal', 'weight-up', 'weight-down', 'weight-negative'].includes(segment.type)
-        ? getPreviewTagRanges(segment.text)
-        : [],
-    }))
-  ), [text, randomPromptConfig]);
-  const tagQuery = JSON.stringify([...new Set(segments.flatMap((segment) => segment.tags.map((tag) => tag.key)))]);
-
-  useEffect(() => {
-    const tags = JSON.parse(tagQuery);
-    setTranslationError(false);
-    if (!enabled || tags.length === 0) return;
-    const controller = new AbortController();
-    // 连续输入只发最后一次查询；关闭编辑器或继续输入后，过时响应不能覆盖当前预览。
-    const timer = setTimeout(async () => {
-      try {
-        const results = [];
-        for (let offset = 0; offset < tags.length; offset += 1000) {
-          results.push(await apiClient.translatePromptTags(tags.slice(offset, offset + 1000), { signal: controller.signal }));
-        }
-        if (!controller.signal.aborted) {
-          setTranslations(Object.assign({}, ...results.map((result) => result.translations)));
-        }
-      } catch (error) {
-        if (!controller.signal.aborted) setTranslationError(true);
-      }
-    }, 300);
-    return () => {
-      controller.abort();
-      clearTimeout(timer);
-    };
-  }, [tagQuery, enabled]);
+  const segments = useMemo(() => {
+    let offset = 0;
+    return enhancedFormatPromptWithHighlighting(text, randomPromptConfig).map((segment) => {
+      const start = offset;
+      offset += segment.text.length;
+      return { ...segment, start, end: offset };
+    });
+  }, [text, randomPromptConfig]);
 
   return (
     <Box sx={{ position: 'relative', height: '100%', minHeight: 0, pointerEvents: overlay ? 'none' : undefined }}>
-      <Box ref={scrollRef} onScroll={onScroll} aria-hidden={overlay || undefined} data-prompt-preview="true" sx={{
-        ...PROMPT_TEXT_STYLE, ...textStyle, color: 'text.primary',
-        // 叠加预览必须与 textarea 保持同一字重，避免回退字体的粗体字宽影响光标位置。
-        '& b': overlay ? { fontWeight: 'inherit' } : undefined,
-      }}>
+      <Box ref={scrollRef} {...(!overlay ? previewProps : {})} onScroll={onScroll}
+        aria-hidden={overlay || undefined} data-prompt-preview="true" sx={{
+          ...PROMPT_TEXT_STYLE, ...textStyle, color: 'text.primary',
+          // 叠加预览必须与 textarea 保持同一字重，避免回退字体的粗体字宽影响光标位置。
+          '& b': overlay ? { fontWeight: 'inherit' } : undefined,
+          // 只改变底色，不放大文字或增加边距；跨行和跨权重片段仍对应同一份原文。
+          '--prompt-translation-highlight': (theme) => alpha(theme.palette.primary.main, 0.14),
+          '--prompt-translation-pulse': (theme) => alpha(theme.palette.primary.main, 0.32),
+          '& [data-preview-active="true"]': {
+            backgroundColor: 'var(--prompt-translation-highlight)',
+            borderRadius: '3px', boxDecorationBreak: 'clone', WebkitBoxDecorationBreak: 'clone',
+            animation: 'promptTranslationHighlight 450ms ease-out',
+            '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
+          },
+          '@keyframes promptTranslationHighlight': {
+            from: { backgroundColor: 'var(--prompt-translation-pulse)' },
+            to: { backgroundColor: 'var(--prompt-translation-highlight)' },
+          },
+        }}>
         {segments.map((segment, index) => {
           const content = [];
           let cursor = 0;
-          for (const tag of segment.tags) {
-            content.push(<React.Fragment key={`before-${tag.start}`}>{processBionicText(segment.text.slice(cursor, tag.start))}</React.Fragment>);
-            const original = segment.text.slice(tag.start, tag.end);
+          // 先解析全文再与高亮段相交，artist: 和多层权重不会被高亮拆段误当成新词。
+          const segmentTags = tags.filter((tag) => tag.start < segment.end && tag.end > segment.start);
+          for (const tag of segmentTags) {
+            const start = Math.max(tag.start, segment.start) - segment.start;
+            const end = Math.min(tag.end, segment.end) - segment.start;
+            content.push(<React.Fragment key={`before-${start}`}>{processBionicText(segment.text.slice(cursor, start))}</React.Fragment>);
+            const original = segment.text.slice(start, end);
             const translated = translations[tag.key];
+            const isActive = activeTag?.start === tag.start && activeTag?.end === tag.end;
             content.push(translated ? (
-              <Tooltip key={tag.start} title={`${original} · ${translated}`} arrow placement="top" disableInteractive>
-                <Box component="span" data-preview-translation={`${original} · ${translated}`} sx={{ textDecoration: 'underline dotted', textUnderlineOffset: '3px', cursor: 'help' }}>
-                  {processBionicText(original)}
-                </Box>
-              </Tooltip>
-            ) : <React.Fragment key={tag.start}>{processBionicText(original)}</React.Fragment>);
-            cursor = tag.end;
+              <Box component="span" key={start} data-preview-translation={translated}
+                data-preview-start={tag.start} data-preview-end={tag.end}
+                data-preview-active={isActive || undefined}
+                role={overlay ? undefined : 'button'} tabIndex={overlay ? undefined : 0}
+                aria-pressed={overlay ? undefined : isActive}
+                aria-label={overlay ? undefined : `${text.slice(tag.start, tag.end)} · ${translated}`}
+                sx={{ textDecoration: underline ? 'underline dotted' : 'none', textUnderlineOffset: '3px', cursor: 'help',
+                  textDecorationColor: (theme) => alpha(theme.palette.text.primary, 0.32),
+                  '&:focus-visible': { outline: '1px solid', outlineColor: 'primary.main', borderRadius: '2px' } }}>
+                {processBionicText(original)}
+              </Box>
+            ) : <React.Fragment key={start}>{processBionicText(original)}</React.Fragment>);
+            cursor = end;
           }
           content.push(<React.Fragment key="tail">{processBionicText(segment.text.slice(cursor))}</React.Fragment>);
           return <SegmentRenderer key={index} segment={segment} randomPromptConfig={randomPromptConfig} t={t}>{content}</SegmentRenderer>;
@@ -621,11 +619,6 @@ const EnhancedPreview = ({ text, randomPromptConfig, scrollRef, onScroll, overla
         {/* textarea 会为末尾换行保留新一行，预览也必须保留相同的行高。 */}
         {text.endsWith('\n') ? <span>{'\u200b'}</span> : null}
       </Box>
-      {translationError && (
-        <Typography role="status" variant="caption" color="error" sx={{ position: 'absolute', bottom: 4, right: 8, bgcolor: 'background.paper' }}>
-          {t('painting.tools.promptEditor.translationFailed')}
-        </Typography>
-      )}
     </Box>
   );
 };

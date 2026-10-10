@@ -49,6 +49,7 @@ import ItemDisplay from './ItemDisplay';
 import ImageEnhanceDialog from './ImageEnhanceDialog';
 import ItemPreview from './ItemPreview';
 import PromptPanel from './PromptPanel';
+import { normalizeNoteCharacters } from './NoteBook/noteCharacters.mjs';
 import ParameterPanel from './ParameterPanel';
 import InpaintWorkspacePanel from './InpaintWorkspace/InpaintWorkspacePanel';
 import { GenerationProvider, useGeneration } from './Generation/GenerationContext';
@@ -873,10 +874,17 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
 
   // 处理应用笔记元数据（包括提示词和角色卡片）
   const handleApplyMetadataFromNote = (note) => {
+    let characters;
+    try {
+      characters = normalizeNoteCharacters(note.character_tabs);
+    } catch {
+      showNotification(t('painting.tools.notebook.errors.NOTE_CHARACTER_JSON_INVALID'), 'error');
+      return false;
+    }
     setPositivePrompt(note.text_content1 || '');
     setNegativePrompt(note.text_content2 || '');
     // 更新 ParameterPanel 的 characterTabs
-    setCharacterTabsFromNote(note.character_tabs || []); // 如果没有则传空数组
+    setCharacterTabsFromNote(characters);
 
     // 可以在这里展开 ParameterPanel 中的角色控制区域
     // onExpandedPanelsChange('character', true); // 假设有这个函数
@@ -884,23 +892,22 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
 
 
     showNotification(t('painting.workspace.notifications.noteApplied'), 'success');
+    return true;
   };
 
   // 这个函数会作为 prop 传递给 PromptPanel，再由 PromptPanel 传递给 SaveNoteDialog
-  const handleSaveCurrentNote = async (title, imageUrl) => {
+  const handleSaveCurrentNote = async (title, imageUrl, characterTabsToSave, groupId) => {
     if (!title.trim()) {
       showNotification(t('painting.workspace.errors.noteTitleRequired'), 'warning');
       return false; // 指示保存失败
     }
     try {
-      const allParams = getAllParametersRef.current ? getAllParametersRef.current() : {};
       const activePositive = extractActiveContent(positivePrompt, {
       });
       const activeNegative = extractActiveContent(negativePrompt, {
       });
-      // 从 ParameterPanel 的 getAllParameters 获取 characterTabs
-      const characterTabsToSave = allParams.characterControl?.characterTabs || [];
-      await apiClient.saveTexts(title, activePositive, activeNegative, imageUrl, characterTabsToSave);
+      // 保存对话框已解析过的角色卡，确保预览内容与实际保存一致。
+      await apiClient.saveTexts(title, activePositive, activeNegative, imageUrl, characterTabsToSave, groupId);
       showNotification(t('painting.workspace.notifications.noteSaved'), 'success');
       return true; // 指示保存成功
     } catch (error) {
@@ -1257,14 +1264,23 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
 
   // 处理应用图像参数
   const handleApplyImageParameters = useCallback((parsedParams) => {
-    console.log('应用图像参数:', parsedParams);
-    applyMetadataToCurrentParams(parsedParams, {
+    const applied = applyMetadataToCurrentParams(parsedParams, {
       successMessage: t('painting.workspace.notifications.imageParametersLoaded'),
       warningMessage: t('painting.workspace.errors.partialParameterApply'),
     });
+    // 个人图库的空角色列表也代表用户的明确选择，不能残留上一张图的角色。
+    if (Object.hasOwn(parsedParams, 'characterTabs')) setCharacterTabsFromNote(parsedParams.characterTabs);
+    return applied;
   }, [applyMetadataToCurrentParams, t]);
 
   useEffect(() => {
+    const applyInferencePrompt = (event) => {
+      setPositivePrompt(event.detail);
+      window.localStorage.removeItem('novelai:pending-inference-prompt');
+    };
+    window.addEventListener('novelai:inference-prompt', applyInferencePrompt);
+    const pendingInference = window.localStorage.getItem('novelai:pending-inference-prompt');
+    if (pendingInference) applyInferencePrompt({ detail: pendingInference });
     const applyReferenceParameters = (event) => {
       const parameters = event.detail;
       if (!parameters) return;
@@ -1290,6 +1306,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
 
     return () => {
       window.removeEventListener('novelai:reference-parameters', applyReferenceParameters);
+      window.removeEventListener('novelai:inference-prompt', applyInferencePrompt);
       window.removeEventListener('novelai:artist-prompt', applyArtistPrompt);
     };
   }, [handleApplyImageParameters, setPositivePrompt, showNotification, t]);
@@ -2646,6 +2663,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                   getAllParametersRef={getAllParametersRef}
                   expandedPanels={expandedPanels}
                   onExpandedPanelsChange={(panel, isExpanded) => handleMobileExpandPanel(panel, isExpanded)}
+                  externalCharacterTabs={characterTabsFromNote}
                   fileInputRef={fileInputRef}
                   vibeFileInputRef={vibeFileInputRef}
                   vibeImages={vibeImages}

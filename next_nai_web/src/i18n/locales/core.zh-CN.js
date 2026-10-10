@@ -1,4 +1,4 @@
-const corezhCN = {
+const messages = {
   "librarySettings": {
     "outputDirectory": "生成图像保存目录",
     "outputHint": "填写本机绝对路径；留空使用后端 data/generated-images。保存设置后生效，生成成功即写入本机，无需浏览器自动下载。",
@@ -11,7 +11,7 @@ const corezhCN = {
     "sourceFailed": "无法切换灵感图库，请检查本地服务。",
     "styleApplied": "画风已添加到正面提示词。",
     "loadMore": "加载更多"
-},
+  },
   "login": {
     "invalidCredentials": "登录失败，请检查账号或密码",
     "logoAlt": "NovelAI Local 标志",
@@ -132,6 +132,8 @@ const corezhCN = {
   },
   "pages": {
     "aiPainting": "AI 绘画",
+    "imageTagging": "提示词反推",
+    "localUpscaling": "本地放大",
     "artistReference": "画师串参考",
     "imageReference": "图片参考",
     "promptTemplate": "提示词模板",
@@ -160,8 +162,8 @@ const corezhCN = {
     "naming": {
       "seed": "种子号",
       "prompt32": "正面提示词前 32 位",
+      "localDateTime": "日期时间（当前时区）",
       "timestamp": "时间戳",
-      "datetime": "当前时间（年-月-日_时-分-秒）",
       "random": "随机字符串"
     },
     "backgroundPresets": {
@@ -200,11 +202,11 @@ const corezhCN = {
       "indigo": "靛青",
       "cocoa": "可可"
     },
-    "savedMessage": "设置已保存，部分设置在刷新页面后生效",
-    "saveFailed": "设置保存失败，请重试。",
-    "resetMessage": "设置已重置为默认值",
+    "savedMessage": "设置已保存并应用",
+    "saveFailed": "保存失败，请检查浏览器是否允许本地存储后重试。",
+    "resetMessage": "已恢复默认草稿，点击保存后生效。画廊存储位置和灵感来源保持不变。",
     "title": "系统设置",
-    "intro": "在此页面调整应用外观和功能偏好。设置保存于本机，浏览器只缓存界面偏好以加快显示。",
+    "intro": "在此页面调整应用外观和功能偏好，所有设置将保存在本地浏览器中。",
     "themeSettings": "主题设置",
     "themeMode": "主题模式",
     "currentDark": "当前使用暗色模式",
@@ -239,10 +241,10 @@ const corezhCN = {
     "animationDescription": "控制界面过渡和动画效果",
     "transitionSpeed": "界面过渡速度 {speed}ms",
     "imageSettings": "图像设置",
-    "downloadImage": "图像保存与图库",
-    "downloadSharedRule": "浏览器手动下载和后端自动保存共用同一套文件名规则",
-    "autoDownload": "生成完成后自动下载",
-    "autoDownloadHint": "关闭后，手动点击下载仍会使用下面的命名规则",
+    "downloadImage": "图像保存",
+    "downloadSharedRule": "保存生成图片和手动下载使用以下文件名规则。",
+    "autoDownload": "自动下载到浏览器",
+    "autoDownloadHint": "生成完成后触发浏览器下载，可与保存到画廊同时开启。保存位置由浏览器设置决定；批量生成时可能需要允许多个文件下载。更改后请保存设置。",
     "filenameRules": "文件名规则",
     "customPrefix": "自定义前缀",
     "prefixExample": "例如：AI_Image、作品集、draft",
@@ -251,8 +253,43 @@ const corezhCN = {
     "reset": "重置",
     "saved": "已保存",
     "saving": "保存中...",
-    "save": "保存设置"
+    "save": "保存设置",
+    "navigation": "设置分类",
+    "localSettings": "保存在本地后端",
+    "sidebarHint": "试色即时预览；保存后写入本地配置。",
+    "sections": {
+      "appearance": {
+        "title": "外观配色",
+        "description": "选择一套完整配色，立即预览背景、侧栏和按钮的变化。保存后保留。"
+      },
+      "pages": {
+        "title": "页面颜色",
+        "description": "单独设置各页面的导航图标和标签强调色，保存后应用。"
+      },
+      "interface": {
+        "title": "界面动画",
+        "description": "调整工作区的动画效果和过渡时长。"
+      },
+      "gallery": {
+        "title": "画廊与保存",
+        "description": "管理本机输出目录、灵感来源和文件名规则。"
+      }
+    },
+    "colorSchemes": "配色方案",
+    "currentScheme": "当前配色 · {name}",
+    "customizeScheme": "微调当前配色",
+    "customizeHint": "预设已包含主题色。你也可以单独调整当前模式的颜色。",
+    "pickColor": "选择{name}",
+    "storageImmediate": "存储位置和灵感来源修改后立即生效，其余选项请点击底部保存。",
+    "unsaved": "有未保存的更改",
+    "upToDate": "设置已保存",
+    "discard": "撤销更改",
+    "darkDescription": "适合夜间使用，减少眼睛疲劳",
+    "lightDescription": "适合日间使用，界面清晰明亮",
+    "autoSaveToGallery": "自动保存到生成画廊",
+    "autoSaveToGalleryHint": "生成完成后保存到上方选择的浏览器存储或本地目录，可与自动下载同时开启。更改后请保存设置。",
+    "loadFailed": "本地设置加载失败，请重试后保存。"
   }
 };
 
-export default corezhCN;
+export default messages;

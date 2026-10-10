@@ -273,7 +273,7 @@ class ApiClient {
     return this.request('/local/gallery/batch', { method: 'POST', body });
   }
 
-  async saveTexts(title, positivePrompt, negativePrompt, imageUrl, characterTabs) {
+  async saveTexts(title, positivePrompt, negativePrompt, imageUrl, characterTabs, groupId = null) {
     return this.request('/local/notes', {
       method: 'POST',
       body: {
@@ -283,12 +283,13 @@ class ApiClient {
           text_content2: negativePrompt,
           image_url: imageUrl || '',
           character_tabs: characterTabs || [],
+          group_id: groupId,
         },
       },
     });
   }
 
-  async updateText(originalTitle, title, positivePrompt, negativePrompt, imageUrl, characterTabs) {
+  async updateText(originalTitle, title, positivePrompt, negativePrompt, imageUrl, characterTabs, groupId = null) {
     return this.request('/local/notes', {
       method: 'PUT',
       body: {
@@ -299,6 +300,7 @@ class ApiClient {
           text_content2: negativePrompt,
           image_url: imageUrl || '',
           character_tabs: characterTabs || [],
+          group_id: groupId,
         },
       },
     });
@@ -315,14 +317,29 @@ class ApiClient {
     return this.getTexts();
   }
 
-  async importTexts(notes) {
-    for (const note of Array.isArray(notes) ? notes : []) {
-      await this.request('/local/notes', {
-        method: 'POST',
-        body: { note },
-      });
-    }
-    return { imported: true };
+  /** 一次导入旧笔记数组或含分组的导出文件；冲突时整次导入失败。 */
+  async importTexts(content) {
+    return this.request('/local/notes/import', { method: 'POST', body: { content } });
+  }
+
+  /** 创建本地词条分组，data 包含名称和可选父分组。 */
+  async createNoteGroup(data) {
+    return this.request('/local/note-groups', { method: 'POST', body: data });
+  }
+
+  /** 按分组 ID 更新名称。 */
+  async updateNoteGroup(id, data) {
+    return this.request(`/local/note-groups/${encodeURIComponent(id)}`, { method: 'PUT', body: data });
+  }
+
+  /** 删除分组及子分组，词条移回未分组。 */
+  async deleteNoteGroup(id) {
+    return this.request(`/local/note-groups/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
+  /** 原子批量移动或删除选中的词条。 */
+  async batchNotes(action, titles, groupId = null) {
+    return this.request('/local/notes/batch', { method: 'POST', body: { action, titles, group_id: groupId } });
   }
 }
 

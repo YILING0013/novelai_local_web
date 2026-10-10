@@ -1,0 +1,38 @@
+const noteCharacterMessages = {
+  'zh-CN': {
+    group: '所属分组', ungrouped: '未分组', visual: '可视化编辑', json: 'JSON 编辑',
+    jsonHelp: '支持角色数组、JSON 字符串，以及 character_tabs / characterTabs 对象。解析成功后可切回可视化编辑。',
+    fieldsInvalid: '角色卡格式无效：名称和提示词应为文本，位置为 A1–E5，坐标 x、y 应在 0–1 之间。原始 JSON 已保留，请修正后保存。',
+    invalidJson: 'JSON 无法解析。原始内容已保留，请修正后保存。',
+    arrayRequired: '请提供角色卡数组，或包含 character_tabs / characterTabs 数组的对象。',
+    contentCount: '正文与角色提示词合计', characters: '字符', contentLimit: '正文与角色提示词超过 100000 字符存储保护限制，请缩短内容。',
+    structureLimit: '角色卡 JSON 超过 100000 字符，请精简额外字段。',
+    tokenLimit: '提示词合计超过 2942 tokens，应用到绘画时请留意当前模型的输入上限；本地笔记仍可保存。',
+    tokenHelp: '使用 NovelAI V5 Full 分词器逐字段计算，包含所有角色正负提示词。字符数仅供参考。',
+    tokenLoading: '正在加载分词器…', tokenError: '分词器加载失败，暂时无法统计 tokens；仍可保存。', retry: '重新加载',
+    characterName: '角色名称', addCharacter: '添加角色', removeCharacter: '删除角色',
+    position: '网格位置', canvas: '画布编辑位置', center: '精确坐标',
+    enabled: '启用角色', noCharacters: '还没有角色卡，可以直接添加，或在 JSON 编辑中粘贴已有数据。',
+    savedCharacters: '角色控制卡', parsingFailed: '角色卡解析失败，请进入编辑修正 JSON。',
+    saveFailed: '保存失败，请重试。', visualHelp: '名称、正负提示词和位置会随笔记保存，之后仍可继续编辑。',
+  },
+  'en-US': {
+    group: 'Group', ungrouped: 'Ungrouped', visual: 'Visual editor', json: 'JSON editor',
+    jsonHelp: 'Accepts an array, JSON string, or an object with character_tabs / characterTabs. Valid JSON can be edited visually.',
+    fieldsInvalid: 'Invalid character cards: names and prompts must be text, positions A1–E5, and x/y coordinates between 0 and 1. Your JSON is preserved; correct it before saving.',
+    invalidJson: 'Unable to parse JSON. Your original content is preserved; correct it before saving.',
+    arrayRequired: 'Provide a character array or an object with a character_tabs / characterTabs array.',
+    contentCount: 'Main and character prompts combined', characters: 'characters', contentLimit: 'Main and character prompts exceed the 100,000-character storage safeguard. Shorten the content.',
+    structureLimit: 'Character card JSON exceeds 100,000 characters. Remove unnecessary extra fields.',
+    tokenLimit: 'Prompts exceed 2,942 tokens. Check the generation model limit when applying them; you can still save this local note.',
+    tokenHelp: 'Counted per field with the NovelAI V5 Full tokenizer, including all character prompts. Character count is for reference.',
+    tokenLoading: 'Loading tokenizer…', tokenError: 'Unable to count tokens. You can still save this note.', retry: 'Reload',
+    characterName: 'Character name', addCharacter: 'Add character', removeCharacter: 'Delete character',
+    position: 'Grid position', canvas: 'Edit positions on canvas', center: 'Exact coordinates',
+    enabled: 'Enable character', noCharacters: 'No character cards yet. Add one or paste existing data in the JSON editor.',
+    savedCharacters: 'Character control cards', parsingFailed: 'Unable to parse character cards. Open the editor to correct the JSON.',
+    saveFailed: 'Unable to save. Please try again.', visualHelp: 'Names, prompts, and positions are saved with the note and remain editable.',
+  },
+};
+
+export default noteCharacterMessages;

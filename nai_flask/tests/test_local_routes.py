@@ -44,6 +44,7 @@ def test_note_crud_contract(client):
     assert created.status_code == 201
     note = created.get_json()["note"]
     assert note["id"]
+    assert note["created_at"] > 0
 
     listed = client.get("/api/local/notes").get_json()["notes"]
     assert listed == [note]
@@ -62,7 +63,7 @@ def test_note_crud_contract(client):
         headers=headers(csrf),
     )
     assert deleted.get_json() == {"deleted": True}
-    assert client.get("/api/local/notes").get_json() == {"notes": []}
+    assert client.get("/api/local/notes").get_json() == {"notes": [], "groups": []}
 
 
 def test_note_routes_accept_original_title_and_title_delete(client):

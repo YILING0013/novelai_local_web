@@ -2,5 +2,8 @@
   "port": 5000,
   "allow_lan": false,
   "data_dir": "data",
-  "upstream_timeout_seconds": 120
+  "upstream_timeout_seconds": 120,
+  "inference_models_dir": "",
+  "inference_device": "auto",
+  "inference_threads": 4
 }

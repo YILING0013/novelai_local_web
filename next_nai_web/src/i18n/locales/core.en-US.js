@@ -1,4 +1,4 @@
-const coreenUS = {
+const messages = {
   "librarySettings": {
     "outputDirectory": "Generated image folder",
     "outputHint": "Enter an absolute local path, or leave blank for backend data/generated-images. After saving settings, completed images are written directly to disk without browser auto-downloads.",
@@ -11,7 +11,7 @@ const coreenUS = {
     "sourceFailed": "Could not switch the inspiration gallery. Check the local service.",
     "styleApplied": "Style added to the positive prompt.",
     "loadMore": "Load more"
-},
+  },
   "login": {
     "invalidCredentials": "Login failed. Check your account and password.",
     "logoAlt": "NovelAI Local logo",
@@ -132,6 +132,8 @@ const coreenUS = {
   },
   "pages": {
     "aiPainting": "AI Painting",
+    "imageTagging": "Image tagging",
+    "localUpscaling": "Local upscaling",
     "artistReference": "Artist References",
     "imageReference": "Image References",
     "promptTemplate": "Prompt Templates",
@@ -160,8 +162,8 @@ const coreenUS = {
     "naming": {
       "seed": "Seed",
       "prompt32": "First 32 prompt characters",
+      "localDateTime": "Date and time (current time zone)",
       "timestamp": "Timestamp",
-      "datetime": "Current time (YYYY-MM-DD_HH-mm-ss)",
       "random": "Random string"
     },
     "backgroundPresets": {
@@ -200,11 +202,11 @@ const coreenUS = {
       "indigo": "Indigo",
       "cocoa": "Cocoa"
     },
-    "savedMessage": "Settings saved. Some changes take effect after a refresh.",
-    "saveFailed": "The settings could not be saved. Please try again.",
-    "resetMessage": "Settings reset to their defaults.",
+    "savedMessage": "Settings saved and applied.",
+    "saveFailed": "Could not save settings. Check the local backend, folder permissions and browser storage, then retry.",
+    "resetMessage": "Defaults are ready to save. Gallery storage and inspiration source are unchanged.",
     "title": "System settings",
-    "intro": "Customize appearance and behavior. Settings are saved on this computer; the browser caches appearance preferences for faster display.",
+    "intro": "Customize the application appearance and behavior. Settings are stored in this browser.",
     "themeSettings": "Theme settings",
     "themeMode": "Theme mode",
     "currentDark": "Dark mode is active",
@@ -239,10 +241,10 @@ const coreenUS = {
     "animationDescription": "Control transitions and animation effects.",
     "transitionSpeed": "Transition speed: {speed}ms",
     "imageSettings": "Image settings",
-    "downloadImage": "Image storage and gallery",
-    "downloadSharedRule": "Manual browser downloads and automatic local saves share the same filename rules.",
-    "autoDownload": "Download automatically when generation completes",
-    "autoDownloadHint": "When disabled, manual downloads still use the filename rules below.",
+    "downloadImage": "Image saving",
+    "downloadSharedRule": "Saved images and manual downloads use these filename rules.",
+    "autoDownload": "Automatically download in browser",
+    "autoDownloadHint": "Download new results through your browser. Can be enabled together with gallery saving. Your browser controls the save location and may require permission for multiple downloads in a batch. Save settings after changing this switch.",
     "filenameRules": "Filename rules",
     "customPrefix": "Custom prefix",
     "prefixExample": "For example: AI_Image, portfolio, or draft",
@@ -251,8 +253,43 @@ const coreenUS = {
     "reset": "Reset",
     "saved": "Saved",
     "saving": "Saving...",
-    "save": "Save settings"
+    "save": "Save settings",
+    "navigation": "Settings categories",
+    "localSettings": "Saved to the local backend",
+    "sidebarHint": "Preview colors instantly; save changes to local configuration.",
+    "sections": {
+      "appearance": {
+        "title": "Appearance",
+        "description": "Choose a complete palette to preview backgrounds, the sidebar, and buttons instantly. Save to keep it."
+      },
+      "pages": {
+        "title": "Page colors",
+        "description": "Customize each page’s navigation icon and tab accent. Save to apply."
+      },
+      "interface": {
+        "title": "Animation",
+        "description": "Adjust workspace animations and transition duration."
+      },
+      "gallery": {
+        "title": "Gallery & saving",
+        "description": "Manage the local output folder, inspiration sources, and filenames."
+      }
+    },
+    "colorSchemes": "Color schemes",
+    "currentScheme": "Current palette · {name}",
+    "customizeScheme": "Customize this palette",
+    "customizeHint": "Each preset includes an accent color. Fine-tune the colors for the current mode here.",
+    "pickColor": "Choose {name}",
+    "storageImmediate": "Storage and inspiration source changes apply immediately. Save other options using the footer.",
+    "unsaved": "Unsaved changes",
+    "upToDate": "Settings saved",
+    "discard": "Discard",
+    "darkDescription": "Designed for comfortable use in low light.",
+    "lightDescription": "A bright, clear theme for daytime use.",
+    "autoSaveToGallery": "Automatically save to generation gallery",
+    "autoSaveToGalleryHint": "Save new results to the browser storage or local folder selected above. Can be enabled together with automatic downloads. Save settings after changing this switch.",
+    "loadFailed": "Could not load local settings. Retry before saving."
   }
 };
 
-export default coreenUS;
+export default messages;

@@ -20,6 +20,7 @@ import {
   Brush as BrushIcon,
   CleaningServices as EraserIcon,
   CropSquare as CropSquareIcon,
+  CircleOutlined as CircleOutlinedIcon,
   Layers as LayersIcon,
   OpenWith as OpenWithIcon,
   PanTool as PanToolIcon,
@@ -44,6 +45,8 @@ const InpaintControls = ({
   interactionMode,
   onInteractionModeChange,
   brushSize,
+  brushShape,
+  onBrushShapeChange,
   onBrushSizeChange,
   brushSizeLabel,
   overlayColor,
@@ -71,6 +74,17 @@ const InpaintControls = ({
   const currentPaintTargetLabel = paintTarget === 'image'
     ? t('painting.workspace.inpaint.imagePainting')
     : t('painting.workspace.inpaint.maskPainting');
+  const isMask = paintTarget === 'mask';
+  const brushShapeControl = isMask && (
+    <Button
+      size="small"
+      variant="outlined"
+      onClick={() => onBrushShapeChange(brushShape === 'square' ? 'circle' : 'square')}
+      startIcon={brushShape === 'square' ? <CropSquareIcon /> : <CircleOutlinedIcon />}
+    >
+      {t(`painting.workspace.inpaint.${brushShape === 'square' ? 'squareBrush' : 'circleBrush'}`)}
+    </Button>
+  );
 
   const cycleToolMode = () => {
     const currentIndex = TOOL_ORDER.indexOf(toolMode);
@@ -185,6 +199,7 @@ const InpaintControls = ({
 
             <Collapse in={toolsExpanded} timeout="auto" unmountOnExit>
               <Stack spacing={0.75} sx={{ pt: 1, px: 0.5 }}>
+                {brushShapeControl}
                 {/* Brush size and Overlay color in one line */}
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1 }}>
@@ -192,7 +207,9 @@ const InpaintControls = ({
                     <Slider 
                       size="small"
                       value={brushSize} 
-                      min={4} max={128} step={1} 
+                      min={isMask ? 8 : 4} max={isMask ? 520 : 128} step={isMask ? 8 : 1}
+                      valueLabelDisplay="auto"
+                      aria-label={brushSizeLabel}
                       onChange={(_, value) => onBrushSizeChange(value)} 
                     />
                   </Box>
@@ -306,8 +323,10 @@ const InpaintControls = ({
 
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 150, flex: '1 1 150px' }}>
               <Box sx={{ fontSize: 12, color: 'text.secondary', whiteSpace: 'nowrap' }}>{brushSizeLabel}</Box>
-              <Slider value={brushSize} min={4} max={128} step={1} onChange={(_, value) => onBrushSizeChange(value)} />
+              <Slider value={brushSize} min={isMask ? 8 : 4} max={isMask ? 520 : 128} step={isMask ? 8 : 1} valueLabelDisplay="auto" aria-label={brushSizeLabel} onChange={(_, value) => onBrushSizeChange(value)} />
             </Box>
+
+            {brushShapeControl}
 
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
               <Box sx={{ fontSize: 12, color: 'text.secondary', whiteSpace: 'nowrap' }}>{overlayColorLabel}</Box>

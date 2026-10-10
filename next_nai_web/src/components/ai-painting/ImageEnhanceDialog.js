@@ -4,13 +4,13 @@ import React, { useEffect, useId, useState } from 'react';
 import {
   Alert, Box, Button, CircularProgress, Collapse, Dialog, DialogActions,
   DialogContent, DialogTitle, IconButton, Slider, Stack, ToggleButton,
-  ToggleButtonGroup, Typography,
+  ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material';
 import { AutoAwesome, Close, ExpandLess, ExpandMore } from '@mui/icons-material';
 import { useI18n } from '@/i18n/I18nProvider';
 import apiClient from '@/utils/ApiClient';
 import { GENERATION_ERROR_MESSAGE_KEYS, normalizeGenerationErrorCode } from './Generation/errors';
-import { isNovelAIV5Model } from './utils/novelAIV5Params.mjs';
+import { isNovelAIV5Model, NOVELAI_V5_MEDIUM_MODEL_ID } from './utils/novelAIV5Params.mjs';
 
 const MAGNITUDE_PRESETS = [
   { strength: 0.2, noise: 0 },
@@ -30,10 +30,12 @@ export default function ImageEnhanceDialog({
 }) {
   const { t } = useI18n();
   const titleId = useId();
+  const isV5Medium = model === NOVELAI_V5_MEDIUM_MODEL_ID;
   const [upscaleAmount, setUpscaleAmount] = useState(1);
   const [strength, setStrength] = useState(0.5);
   const [noise, setNoise] = useState(0);
-  const [steps, setSteps] = useState(Math.min(50, Math.max(1, initialSteps)));
+  const [steps, setSteps] = useState(isV5Medium ? 14 : Math.min(50, Math.max(1, initialSteps)));
+  const effectiveSteps = isV5Medium ? 14 : steps;
   const [advanced, setAdvanced] = useState(false);
   const [estimateState, setEstimateState] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -44,17 +46,17 @@ export default function ImageEnhanceDialog({
     setUpscaleAmount(1);
     setStrength(0.5);
     setNoise(0);
-    setSteps(Math.min(50, Math.max(1, initialSteps)));
+    setSteps(isV5Medium ? 14 : Math.min(50, Math.max(1, initialSteps)));
     setAdvanced(false);
     setEstimateState(null);
     setSubmitError(null);
-  }, [open, source?.src, model, initialSteps]);
+  }, [open, source?.src, model, initialSteps, isV5Medium]);
 
   const sourceReady = source?.width > 0 && source?.height > 0;
   const requestKey = JSON.stringify({
     image_tool: 'enhance', model,
     source_width: source?.width, source_height: source?.height,
-    upscale_amount: upscaleAmount, strength, noise, steps,
+    upscale_amount: upscaleAmount, strength, noise, steps: effectiveSteps,
   });
 
   useEffect(() => {
@@ -101,7 +103,7 @@ export default function ImageEnhanceDialog({
     setSubmitError(null);
     try {
       await onSubmit({
-        upscale_amount: upscaleAmount, strength, noise, steps,
+        upscale_amount: upscaleAmount, strength, noise, steps: effectiveSteps,
         width: estimate.width, height: estimate.height, cost: estimate.cost,
       });
     } catch (error) {
@@ -193,7 +195,7 @@ export default function ImageEnhanceDialog({
                 {[
                   { name: 'strength', value: strength, setValue: setStrength, max: 1, min: 0, step: 0.01 },
                   { name: 'noise', value: noise, setValue: setNoise, max: 1, min: 0, step: 0.01 },
-                  { name: 'steps', value: steps, setValue: setSteps, max: 50, min: 1, step: 1 },
+                  { name: 'steps', value: effectiveSteps, setValue: setSteps, max: 50, min: 1, step: 1 },
                 ].map((control) => (
                   <Box key={control.name}>
                     <Stack direction="row" justifyContent="space-between">
@@ -204,16 +206,21 @@ export default function ImageEnhanceDialog({
                         {control.name === 'steps' ? control.value : control.value.toFixed(2)}
                       </Typography>
                     </Stack>
-                    <Slider
-                      aria-labelledby={`${titleId}-${control.name}`}
-                      value={control.value}
-                      min={control.min}
-                      max={control.max}
-                      step={control.step}
-                      valueLabelDisplay="auto"
-                      disabled={controlsDisabled}
-                      onChange={(_event, value) => control.setValue(value)}
-                    />
+                    <Tooltip title={isV5Medium && control.name === 'steps'
+                      ? t('painting.workspace.parameters.modelV5MediumSettings') : ''} arrow>
+                      <Box>
+                        <Slider
+                          aria-labelledby={`${titleId}-${control.name}`}
+                          value={control.value}
+                          min={control.min}
+                          max={control.max}
+                          step={control.step}
+                          valueLabelDisplay="auto"
+                          disabled={controlsDisabled || (isV5Medium && control.name === 'steps')}
+                          onChange={(_event, value) => control.setValue(value)}
+                        />
+                      </Box>
+                    </Tooltip>
                   </Box>
                 ))}
                 <Typography variant="caption" color="text.secondary">
