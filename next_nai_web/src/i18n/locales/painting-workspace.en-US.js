@@ -202,6 +202,7 @@ const paintingWorkspaceenUS = {
         "smeaDynUnsupported": "The current model does not support SMEA DYN.",
         "smeaDynHelp": "Dynamically adjust SMEA for high-resolution composition.",
         "imageSize": "Image size",
+        "useRecommendedResolution": "Use recommended size",
         "disableLargeImageMode": "Disable large-image mode",
         "enableLargeImageMode": "Enable large-image mode",
         "widthShort": "W",

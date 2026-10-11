@@ -42,6 +42,9 @@ import {
   Expand as ExpandIcon,
   ChevronLeft as ChevronLeftIcon,
   Image as ImageIcon,
+  Check as CheckIcon,
+  PlayArrow as PlayArrowIcon,
+  ViewQuilt as ComicIcon,
   Warning as WarningIcon,
   MonetizationOn as MonetizationOnIcon,
 } from '@mui/icons-material';
@@ -52,6 +55,7 @@ import PromptPanel from './PromptPanel';
 import { normalizeNoteCharacters } from './NoteBook/noteCharacters.mjs';
 import ParameterPanel from './ParameterPanel';
 import InpaintWorkspacePanel from './InpaintWorkspace/InpaintWorkspacePanel';
+import ComicWorkspace from './ComicWorkspace/ComicWorkspace';
 import { GenerationProvider, useGeneration } from './Generation/GenerationContext';
 import BatchGenerationDialog from './tools/BatchGeneration/BatchGenerationDialog';
 import ErrorSummaryDialog from './tools/BatchGeneration/ErrorSummaryDialog';
@@ -296,7 +300,20 @@ const getResponsiveGenerateButtonContent = ({
 
 // 使用GenerationContext包装的AIPaintingPage内部组件
 const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
-  const { t, formatNumber } = useI18n();
+  const { t, formatNumber, locale } = useI18n();
+  const comicText = locale === 'en-US' ? {
+    title: 'Comic maker', edit: 'Panel parameters', save: 'Save task', close: 'Back to canvas',
+    generate: 'Generate panel', select: 'Select a panel', saved: 'Panel task saved',
+    received: 'Image saved to gallery and added to panel',
+    missing: 'The panel was removed. The generated image is saved in your local gallery.',
+    saving: 'Saving panel image', video: 'Comic panels support image models only.',
+  } : {
+    title: '漫画制作', edit: '分镜生成参数', save: '暂存任务', close: '返回画布',
+    generate: '生成分镜', select: '请选择分镜', saved: '分镜任务已暂存',
+    received: '图像已保存画廊并填入分镜',
+    missing: '目标分镜已删除，生成图像已保存到本地画廊。',
+    saving: '正在保存分镜图像', video: '漫画分镜仅支持图像模型。',
+  };
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const accountDefaultModel = DEFAULT_PAINTING_MODEL_ID;
@@ -332,6 +349,26 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
   // 状态管理
   const hasInitializedRef = useRef(false);
   const getAllParametersRef = useRef(null);
+  const parameterEditorRef = useRef(null);
+  const comicWorkspaceRef = useRef(null);
+  const comicTargetRef = useRef(null);
+  const comicFlightRef = useRef(null);
+  const regularPaintingSnapshotRef = useRef(null);
+  const [comicSelectedTarget, setComicSelectedTarget] = useState(null);
+  const [comicEditorOpen, setComicEditorOpen] = useState(false);
+  const [comicPanelBounds, setComicPanelBounds] = useState(null);
+  const [comicGenerationBusy, setComicGenerationBusy] = useState(false);
+  const [comicWorkspaceVisited, setComicWorkspaceVisited] = useState(false);
+  const [parameterEditorState, setParameterEditorState] = useState(null);
+  const [parameterEditorKey, setParameterEditorKey] = useState(0);
+  const [leftPanelMode, setLeftPanelMode] = useState('generation');
+  useEffect(() => () => {
+    // 退出登录或关闭工作区时，只阻止尚未发送的后续请求。
+    const flight = comicFlightRef.current;
+    if (!flight) return;
+    flight.cancelled = true;
+    if (flight.batchId) void apiClient.cancelImageBatch(flight.batchId, true).catch(() => {});
+  }, []);
   const imageToolBusyRef = useRef(false);
   const [imageToolBusy, setImageToolBusy] = useState(false);
   const [enhanceSource, setEnhanceSource] = useState(null);
@@ -470,8 +507,8 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
   }, [updateActivePrompt]);
 
   useEffect(() => {
-    persistModelPromptCache(promptsByModel);
-  }, [promptsByModel]);
+    if (leftPanelMode !== 'comic') persistModelPromptCache(promptsByModel);
+  }, [promptsByModel, leftPanelMode]);
 
   // 移动端抽屉状态
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
@@ -479,7 +516,6 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
   const [externalImageData, setExternalImageData] = useState(null);
   const [imageToImageCostParameters, setImageToImageCostParameters] = useState(null);
   const [inpaintCostParameters, setInpaintCostParameters] = useState(null);
-  const [leftPanelMode, setLeftPanelMode] = useState('generation');
   const isV5Model = isNovelAIV5Model(generationParams.model);
 
   // 添加通知状态
@@ -532,7 +568,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
   }, []);
 
   useEffect(() => {
-    if (!vibeCacheHydrated) {
+    if (!vibeCacheHydrated || leftPanelMode === 'comic') {
       return;
     }
 
@@ -550,7 +586,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
     };
 
     persistVibePanel();
-  }, [vibeImages, vibeCacheHydrated]);
+  }, [vibeImages, vibeCacheHydrated, leftPanelMode]);
   const [setDesktopGenerateButtonContainer, desktopGenerateButtonWidth] = useObservedWidth();
   const [setMobileGenerateButtonContainer, mobileGenerateButtonWidth] = useObservedWidth();
 
@@ -741,6 +777,15 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
 
   // 获取按钮状态的函数
   const getGenerateButtonState = () => {
+    if (comicGenerationBusy && comicFlightRef.current?.count > 1) {
+      return {
+        text: t('painting.workspace.actions.cancelBatch', {
+          current: comicFlightRef.current.index + 1, total: comicFlightRef.current.count,
+        }),
+        action: () => { comicFlightRef.current.cancelled = true; },
+        color: 'error', icon: <CancelIcon />, disabled: false, cost: null,
+      };
+    }
     const isInpaintMode = leftPanelMode === 'inpaint';
     const isV4 = isV4Model(generationParams.model);
     const hasImageReference = Boolean(
@@ -799,7 +844,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
     }
 
     // 正在进行单次生成
-    if (isGenerating || imageToolBusy) {
+    if (isGenerating || imageToolBusy || comicGenerationBusy) {
       return {
         text: isInpaintMode
           ? t('painting.workspace.actions.inpaintingProgress', {
@@ -846,6 +891,15 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
         costTotal: estimatedCost.total,
         costCount: estimatedCost.count,
         costLabel,
+      };
+    }
+
+    if (leftPanelMode === 'comic') {
+      return {
+        text: comicSelectedTarget ? `${comicText.generate} #${comicSelectedTarget.panelNumber}` : comicText.select,
+        action: handleGenerate, color: 'primary', disabled: !comicSelectedTarget,
+        cost: estimatedCost.perImage, costTotal: estimatedCost.total,
+        costCount: estimatedCost.count, costLabel,
       };
     }
 
@@ -1319,7 +1373,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
 
   // 源图和参数在打开弹窗时固定，切换历史图或修改侧栏不会悄悄改变本次增强。
   const handleImageTool = async (tool, settings = null) => {
-    if (imageToolBusyRef.current || isGenerating || batchStatus.active || inpaintPreviewBatch.active) return;
+    if (imageToolBusyRef.current || comicFlightRef.current || isGenerating || batchStatus.active || inpaintPreviewBatch.active) return;
     imageToolBusyRef.current = true;
     setImageToolBusy(true);
     try {
@@ -1396,10 +1450,81 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
     }
   };
 
-  // 图像/视频生成请求
+  const getPaintingSnapshot = () => ({
+    parameterState: parameterEditorRef.current.getSnapshot(),
+    promptsByModel,
+    vibeImages,
+  });
+
+  const applyPaintingSnapshot = (snapshot) => {
+    setGenerationParams(snapshot.parameterState.params);
+    setPromptsByModel(snapshot.promptsByModel);
+    // 离开的编辑会话不会再接收转换结果，重新打开时允许重试未完成的 Vibe。
+    setVibeImages(snapshot.vibeImages.map((vibe) => vibe.status === 'converting'
+      ? { ...vibe, status: 'unconverted' } : vibe));
+    setExternalImageData(null);
+    setCharacterTabsFromNote(null);
+    setCharacterTabsForPromptTokens(snapshot.parameterState.characterTabs || []);
+    setParameterEditorState(snapshot.parameterState);
+    // 每个画框拥有完整的编辑态，重新挂载可同时清除图生图、编辑器和未提交输入。
+    setParameterEditorKey((key) => key + 1);
+  };
+
+  const changeWorkspaceMode = (mode) => {
+    if (mode === leftPanelMode) return;
+    if (leftPanelMode === 'comic') {
+      if (comicTargetRef.current) {
+        comicWorkspaceRef.current.saveTask(comicTargetRef.current, getPaintingSnapshot(), { record: false });
+      }
+      comicTargetRef.current = null;
+      setComicSelectedTarget(null);
+      setComicEditorOpen(false);
+      applyPaintingSnapshot(regularPaintingSnapshotRef.current);
+    } else if (mode === 'comic') {
+      regularPaintingSnapshotRef.current = getPaintingSnapshot();
+      setComicWorkspaceVisited(true);
+    }
+    setLeftPanelMode(mode);
+  };
+
+  const handleComicSelectTask = (target, savedSnapshot, options = {}) => {
+    if (leftPanelMode !== 'comic') return;
+    const previous = comicTargetRef.current;
+    if (target && previous?.pageId === target.pageId && previous?.panelId === target.panelId) {
+      if (previous.panelNumber !== target.panelNumber) {
+        comicTargetRef.current = target;
+        setComicSelectedTarget(target);
+      }
+      return;
+    }
+    if (previous && options.savePrevious !== false) {
+      // 切换选框只是自动保留参数，不应成为画布中的一次撤销操作。
+      comicWorkspaceRef.current.saveTask(previous, getPaintingSnapshot(), { record: false });
+    }
+    comicTargetRef.current = target;
+    setComicSelectedTarget(target);
+    if (!target) return;
+
+    const snapshot = savedSnapshot || {
+      parameterState: { params: { ...parameterEditorRef.current.defaultParams } },
+      promptsByModel: {},
+      vibeImages: [],
+    };
+    applyPaintingSnapshot(snapshot);
+  };
+
+  const saveComicTask = () => {
+    const snapshot = getPaintingSnapshot();
+    if (comicTargetRef.current) comicWorkspaceRef.current.saveTask(comicTargetRef.current, snapshot);
+    return snapshot;
+  };
+
+  // 图像生成请求
   const handleGenerate = async () => {
-    if (imageToolBusyRef.current) return;
+    if (imageToolBusyRef.current || comicFlightRef.current || isGenerating) return;
     let requestedModel = generationParams.model;
+    const comicTarget = leftPanelMode === 'comic' ? comicTargetRef.current : null;
+    if (leftPanelMode === 'comic' && !comicTarget) return;
 
     try {
       // 关闭移动抽屉以便用户查看结果
@@ -1536,6 +1661,56 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
         return;
       }
 
+      if (comicTarget) {
+        saveComicTask();
+        setComicGenerationBusy(true);
+        setComicEditorOpen(false);
+        // 后续切换画框不能改变在途任务的请求参数或接收目标。
+        const { getLatestParams: ignoredLatestParams, ...fixedParams } = params;
+        const count = Math.min(8, Math.max(1, Number.parseInt(fixedParams.batchSize, 10) || 1));
+        const batchId = count > 1 ? createClientId() : null;
+        comicFlightRef.current = { ...comicTarget, batchId, count, index: 0, cancelled: false };
+        let panelReceived = true;
+        for (let index = 0; index < count; index += 1) {
+          if (comicFlightRef.current.cancelled) break;
+          comicFlightRef.current.index = index;
+          const item = await generate({ ...fixedParams, batchSize: 1,
+            ...(batchId ? { batch_id: batchId, index, batch_size: count, seed: '' } : {}),
+          });
+          if (!item) throw createWorkspaceError('GENERATION_FAILED');
+          // 本地生成接口已经把图像写入磁盘画廊，再将结果送回发起任务的画框。
+          const blob = item.cachedBlob || await fetchUrlAsBlob(item.downloadSrc || item.originalSrc || item.src);
+          const dataUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          const image = await new Promise((resolve, reject) => {
+            const decoded = new window.Image();
+            decoded.onload = () => resolve({ dataUrl, width: decoded.naturalWidth, height: decoded.naturalHeight });
+            decoded.onerror = reject;
+            decoded.src = dataUrl;
+          });
+          panelReceived = await comicWorkspaceRef.current.receiveGeneratedImage({ ...comicTarget, image });
+          if (item.saveError) {
+            // 磁盘失败时保留已生成的图像和画框内容，停止后续付费请求并明确提示。
+            showNotification(t('librarySettings.saveFailed'), 'warning', false);
+            return;
+          }
+          // 沿用本地版连续生成间隔；取消只阻止下一张，不丢弃已返回的结果。
+          if (index < count - 1 && !comicFlightRef.current.cancelled) {
+            await new Promise((resolve) => window.setTimeout(resolve, 15_000));
+          }
+        }
+        if (comicFlightRef.current.cancelled) {
+          showNotification(t('painting.workspace.notifications.batchCancelled'), 'info');
+          return;
+        }
+        showNotification(panelReceived ? comicText.received : comicText.missing, panelReceived ? 'success' : 'warning');
+        return;
+      }
+
       // 检查是否需要批量生成
       if (params.batchSize > 1) {
         try {
@@ -1641,6 +1816,15 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
         messageKey: WORKSPACE_ERROR_KEYS[error?.code]
           || 'painting.workspace.errors.generationFailed',
       });
+    } finally {
+      if (comicTarget) {
+        const flight = comicFlightRef.current;
+        if (flight?.batchId && (flight.cancelled || flight.index < flight.count - 1)) {
+          await apiClient.cancelImageBatch(flight.batchId).catch(() => {});
+        }
+        comicFlightRef.current = null;
+        setComicGenerationBusy(false);
+      }
     }
   };
 
@@ -1990,6 +2174,71 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
     );
   };
 
+  const handleEditorParamChange = useCallback((param, value) => {
+    // 参考图控件会延迟通知父层，切框后丢弃上一编辑面板尚未送达的更新。
+    if (parameterEditorRef.current?.key !== parameterEditorKey) return;
+    handleParamChange(param, value);
+  }, [handleParamChange, parameterEditorKey]);
+
+  const handleEditorVibeImagesChange = useCallback((nextImages) => {
+    // 文件读取和 Vibe 编码都可能晚于切框完成，不能再写入新画框或普通绘图。
+    if (parameterEditorRef.current?.key !== parameterEditorKey) return;
+    setVibeImages(nextImages);
+  }, [parameterEditorKey]);
+
+  const parameterEditor = (
+    <>
+      {/* 上方：正负面词条输入区 */}
+      <Box sx={{ flexShrink: 0, minWidth: 0 }}>
+        <PromptPanel
+          positivePrompt={positivePrompt}
+          negativePrompt={negativePrompt}
+          model={generationParams.model}
+          characterTabs={characterTabsForPromptTokens}
+          onPositivePromptChange={setPositivePrompt}
+          onNegativePromptChange={setNegativePrompt}
+          onSaveCurrentNote={handleSaveCurrentNote}
+          onApplyNoteContent={handleApplyMetadataFromNote}
+          onError={reportWorkspaceFailure}
+        />
+      </Box>
+
+      {/* 参数面板 - 传递expandedPanels和onExpandedPanelsChange */}
+      <Box sx={{ flexShrink: 0, minWidth: 0, pb: 1 }}>
+        <ParameterPanel
+          key={parameterEditorKey}
+          editorSessionKey={parameterEditorKey}
+          editorState={parameterEditorRef.current?.key === parameterEditorKey
+            ? parameterEditorRef.current.getSnapshot() : parameterEditorState}
+          editorStateRef={parameterEditorRef}
+          isolated={leftPanelMode === 'comic'}
+          comicPanelBounds={leftPanelMode === 'comic' ? comicPanelBounds : null}
+          params={generationParams}
+          isInpaintMode={leftPanelMode === 'inpaint'}
+          onParamChange={handleEditorParamChange}
+          getAllParametersRef={getAllParametersRef}
+          externalCharacterTabs={characterTabsFromNote} // 传递给 ParameterPanel
+          expandedPanels={expandedPanels}
+          onExpandedPanelsChange={isMobile ? handleMobileExpandPanel : handleExpandedPanelsChange}
+          fileInputRef={fileInputRef}
+          vibeFileInputRef={vibeFileInputRef}
+          vibeImages={vibeImages}
+          setVibeImages={handleEditorVibeImagesChange}
+          externalImageData={externalImageData}
+          onImageToImageCostParametersChange={setImageToImageCostParameters}
+          onCharacterTabsChange={setCharacterTabsForPromptTokens}
+          onApplyMetadata={handleApplyMetadata}
+          positivePrompt={positivePrompt}
+          negativePrompt={negativePrompt}
+          onError={reportWorkspaceFailure}
+        />
+      </Box>
+    </>
+  );
+
+
+  const comicGenerationAction = { ...getGenerateButtonState(), loading: comicGenerationBusy || isGenerating };
+
   return (
     <>
       <Box
@@ -1999,7 +2248,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
           flexDirection: isMobile ? 'column' : 'row',
           overflowX: 'hidden',
           position: 'relative',
-          pb: isMobile ? { xs: '116px', sm: '60px' } : 0,
+          pb: isMobile && leftPanelMode !== 'comic' ? { xs: '116px', sm: '60px' } : 0,
           backgroundColor: theme.palette.background.default,
         }}
         onDragOverCapture={(event) => {
@@ -2009,6 +2258,44 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
         }}
         onDropCapture={handlePageDrop}
       >
+        {/* 通知提示框 */}
+        {leftPanelMode === 'comic' && (
+          <Dialog
+            open={comicEditorOpen}
+            keepMounted
+            fullWidth
+            maxWidth="md"
+            fullScreen={isMobile}
+            sx={{ display: comicEditorOpen ? undefined : 'none' }}
+            onClose={() => {
+              saveComicTask();
+              setComicEditorOpen(false);
+            }}
+          >
+            <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              {comicText.edit} #{comicSelectedTarget?.panelNumber}
+              <IconButton aria-label={comicText.close} onClick={() => {
+                saveComicTask();
+                setComicEditorOpen(false);
+              }}><CloseIcon /></IconButton>
+            </DialogTitle>
+            <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {parameterEditor}
+            </DialogContent>
+            <DialogActions sx={{ flexWrap: 'wrap', gap: 1 }}>
+              {renderAnlasStatus()}
+              <Tooltip title={comicText.save}><Button aria-label={comicText.save} onClick={() => {
+                saveComicTask();
+                showNotification(comicText.saved);
+                setComicEditorOpen(false);
+              }}>{isMobile ? <CheckIcon /> : comicText.save}</Button></Tooltip>
+              <Tooltip title={comicGenerationAction.text}><span><Button aria-label={comicGenerationAction.text} variant="contained" disabled={comicGenerationAction.disabled} onClick={comicGenerationAction.action}>
+                {isMobile ? <PlayArrowIcon /> : comicGenerationAction.text}
+                {comicGenerationAction.costLabel && ` · ${comicGenerationAction.costLabel}`}
+              </Button></span></Tooltip>
+            </DialogActions>
+          </Dialog>
+        )}
         {/* 通知提示框 */}
         <Snackbar
           open={notification.open}
@@ -2090,11 +2377,11 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
         {/* 左侧区域 - 图像显示 */}
         <Box
           sx={{
-            flex: isMobile ? 'none' : 10,
+            flex: isMobile ? (leftPanelMode === 'comic' ? '1 1 0' : 'none') : 10,
             width: isMobile ? '100%' : 'auto',
             display: 'flex',
             flexDirection: isMobile ? 'column' : 'row',
-            minHeight: isMobile ? '80vh' : 'auto', // 移动端增加最小高度
+            minHeight: isMobile ? (leftPanelMode === 'comic' ? 0 : '80vh') : 'auto',
             maxHeight: '100%',
             p: 0.5,
             overflow: 'hidden',
@@ -2119,7 +2406,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
               color="primary"
               aria-label={t('painting.workspace.tabs.generation')}
               aria-pressed={leftPanelMode === 'generation'}
-              onClick={() => setLeftPanelMode('generation')}
+              onClick={() => changeWorkspaceMode('generation')}
               sx={{
                 minWidth: 0,
                 flex: isMobile ? 1 : undefined,
@@ -2144,7 +2431,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                 color="primary"
                 aria-label={t('painting.workspace.tabs.inpaint')}
                 aria-pressed={leftPanelMode === 'inpaint'}
-                onClick={() => setLeftPanelMode('inpaint')}
+                onClick={() => changeWorkspaceMode('inpaint')}
                 sx={{
                   minWidth: 0,
                   flex: isMobile ? 1 : undefined,
@@ -2164,6 +2451,23 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                 {t('painting.workspace.tabs.inpaint')}
               </Button>
             )}
+            <Button
+              variant="text"
+              aria-label={comicText.title}
+              aria-pressed={leftPanelMode === 'comic'}
+              onClick={() => changeWorkspaceMode('comic')}
+              sx={{
+                minWidth: 0, flex: isMobile ? 1 : undefined,
+                flexDirection: isMobile ? 'row' : 'column', gap: isMobile ? 0.75 : 0.25,
+                px: isMobile ? 1.25 : 0.5, py: 0.5, minHeight: isMobile ? 36 : 48,
+                fontSize: isMobile ? '0.8125rem' : '0.75rem', lineHeight: 1.4, borderRadius: 1.5,
+                color: leftPanelMode === 'comic' ? 'primary.main' : 'text.secondary',
+                bgcolor: leftPanelMode === 'comic' ? 'action.selected' : 'transparent',
+              }}
+            >
+              <ComicIcon sx={{ fontSize: 18 }} />
+              {comicText.title}
+            </Button>
           </Box>
 
           <Box
@@ -2176,6 +2480,24 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
               overflow: 'hidden',
             }}
           >
+            {comicWorkspaceVisited && (
+              <Box sx={{ display: leftPanelMode === 'comic' ? 'block' : 'none', flex: 1, minHeight: 0, minWidth: 0 }}>
+                <ComicWorkspace
+                  ref={comicWorkspaceRef}
+                  active={leftPanelMode === 'comic'}
+                  generatedItems={generatedItems}
+                  onSelectTask={handleComicSelectTask}
+                  onEditTask={(bounds) => {
+                    setComicPanelBounds(bounds);
+                    setComicEditorOpen(true);
+                  }}
+                  onSaveTask={getPaintingSnapshot}
+                  onGenerate={comicGenerationAction.action}
+                  generationAction={comicGenerationAction}
+                  isGenerating={comicGenerationBusy || isGenerating}
+                />
+              </Box>
+            )}
             <Box
               sx={{
                 display: leftPanelMode === 'generation' ? 'flex' : 'none',
@@ -2274,7 +2596,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
         </Box>
 
         {/* 桌面端右侧区域 - 控制面板 */}
-        {!isMobile && (
+        {!isMobile && leftPanelMode !== 'comic' && (
           <Box
             sx={{
               flex: '0 0 clamp(380px, 30vw, 460px)',
@@ -2320,44 +2642,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                 },
               }}
             >
-              {/* 上方：正负面词条输入区 */}
-              <Box sx={{ flexShrink: 0, minWidth: 0 }}>
-                <PromptPanel
-                  positivePrompt={positivePrompt}
-                  negativePrompt={negativePrompt}
-                  model={generationParams.model}
-                  characterTabs={characterTabsForPromptTokens}
-                  onPositivePromptChange={setPositivePrompt}
-                  onNegativePromptChange={setNegativePrompt}
-                  onSaveCurrentNote={handleSaveCurrentNote}
-                  onApplyNoteContent={handleApplyMetadataFromNote}
-                  onError={reportWorkspaceFailure}
-                />
-              </Box>
-
-              {/* 参数面板 - 传递expandedPanels和onExpandedPanelsChange */}
-              <Box sx={{ flexShrink: 0, minWidth: 0, pb: 1 }}>
-                <ParameterPanel
-                  params={generationParams}
-                  isInpaintMode={leftPanelMode === 'inpaint'}
-                  onParamChange={handleParamChange}
-                  getAllParametersRef={getAllParametersRef}
-                  externalCharacterTabs={characterTabsFromNote} // 传递给 ParameterPanel
-                  expandedPanels={expandedPanels}
-                  onExpandedPanelsChange={handleExpandedPanelsChange}
-                  fileInputRef={fileInputRef}
-                  vibeFileInputRef={vibeFileInputRef}
-                  vibeImages={vibeImages}
-                  setVibeImages={setVibeImages}
-                  externalImageData={externalImageData}
-                  onImageToImageCostParametersChange={setImageToImageCostParameters}
-                  onCharacterTabsChange={setCharacterTabsForPromptTokens}
-                  onApplyMetadata={handleApplyMetadata}
-                  positivePrompt={positivePrompt}
-                  negativePrompt={negativePrompt}
-                  onError={reportWorkspaceFailure}
-                />
-              </Box>
+              {parameterEditor}
             </Box>
 
             {/* 桌面模式下的生成按钮和验证组件区域 */}
@@ -2534,7 +2819,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                   </Box>
 
                   {/* 移动端参数菜单按钮 */}
-                  {isMobile && (
+                  {isMobile && leftPanelMode !== 'comic' && (
                     <IconButton
                       aria-label={t('painting.workspace.actions.openParameters')}
                       color="primary"
@@ -2559,7 +2844,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
         )}
 
         {/* 移动端控制面板抽屉 */}
-        {isMobile && (
+        {isMobile && leftPanelMode !== 'comic' && (
           <SwipeableDrawer
             anchor="bottom"
             open={mobileDrawerOpen}
@@ -2639,44 +2924,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                 },
               }}
             >
-              {/* 提示词设置面板 */}
-              <Box sx={{ mb: 2.5, minWidth: 0 }}>
-                <PromptPanel
-                  positivePrompt={positivePrompt}
-                  negativePrompt={negativePrompt}
-                  model={generationParams.model}
-                  characterTabs={characterTabsForPromptTokens}
-                  onPositivePromptChange={setPositivePrompt}
-                  onNegativePromptChange={setNegativePrompt}
-                  onSaveCurrentNote={handleSaveCurrentNote}
-                  onApplyNoteContent={handleApplyMetadataFromNote}
-                  onError={reportWorkspaceFailure}
-                />
-              </Box>
-
-              {/* 参数控制面板 */}
-              <Box sx={{ mb: 1, minWidth: 0 }}>
-                <ParameterPanel
-                  params={generationParams}
-                  isInpaintMode={leftPanelMode === 'inpaint'}
-                  onParamChange={handleParamChange}
-                  getAllParametersRef={getAllParametersRef}
-                  expandedPanels={expandedPanels}
-                  onExpandedPanelsChange={(panel, isExpanded) => handleMobileExpandPanel(panel, isExpanded)}
-                  externalCharacterTabs={characterTabsFromNote}
-                  fileInputRef={fileInputRef}
-                  vibeFileInputRef={vibeFileInputRef}
-                  vibeImages={vibeImages}
-                  setVibeImages={setVibeImages}
-                  externalImageData={externalImageData}
-                  onImageToImageCostParametersChange={setImageToImageCostParameters}
-                  onCharacterTabsChange={setCharacterTabsForPromptTokens}
-                  onApplyMetadata={handleApplyMetadata}
-                  positivePrompt={positivePrompt}
-                  negativePrompt={negativePrompt}
-                  onError={reportWorkspaceFailure}
-                />
-              </Box>
+              {parameterEditor}
 
               {/* 移动端抽屉与桌面、底栏复用同一个紧凑余额状态块。 */}
               <Paper
@@ -2698,7 +2946,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
         )}
 
         {/* 移动端下的固定生成按钮 */}
-        {isMobile && (
+        {isMobile && leftPanelMode !== 'comic' && (
           <Box
             sx={{
               position: 'fixed',

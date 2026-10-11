@@ -48,6 +48,7 @@ import {
 } from '@mui/icons-material';
 import {
   applyImageParametersToUI,
+  getPanelResolutionParameters,
   findAllowedResolutionWithFixedHeight,
   findAllowedResolutionWithFixedWidth,
 } from './utils/parameterMapping';
@@ -102,6 +103,11 @@ const extractBase64FromDataUrl = (dataUrl) => {
 // 主组件
 const ParameterPanel = ({
   params: externalParams,
+  isolated = false,
+  comicPanelBounds = null,
+  editorState = null,
+  editorStateRef = null,
+  editorSessionKey = 0,
   isInpaintMode = false,
   onParamChange,
   getAllParametersRef = null,
@@ -122,6 +128,7 @@ const ParameterPanel = ({
 }) => {
   const { t } = useI18n();
   const theme = useTheme();
+  const initialEditorState = useRef(editorState).current;
   const accountDefaultModel = normalizePaintingModelId('nai-diffusion-4-5-full');
   const defaultParams = useMemo(() => ({
     model: accountDefaultModel,
@@ -150,16 +157,17 @@ const ParameterPanel = ({
     autoSmea: false,
   }), [accountDefaultModel]);
 
-  const [params, setParams] = useState({ ...defaultParams });
+  const [params, setParams] = useState(() => ({ ...defaultParams, ...editorState?.params }));
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [metadataDialogOpen, setMetadataDialogOpen] = useState(false);
   const [extractedMetadata, setExtractedMetadata] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isVibeDragging, setIsVibeDragging] = useState(false);
-  const [imagePreview, setImagePreview] = useState(null);
+  const [imagePreview, setImagePreview] = useState(editorState?.imagePreview || null);
   const [editorKey, setEditorKey] = useState(0);
   const [editorOpen, setEditorOpen] = useState(false);
-  const [characterTabs, setCharacterTabs] = useState([]);
+  const [characterTabs, setCharacterTabs] = useState(editorState?.characterTabs || []);
+  const [referenceImages, setReferenceImages] = useState(editorState?.referenceImages || []);
   const [loadedFromCache, setLoadedFromCache] = useState(false);
   const [randomPromptEnabled, setRandomPromptEnabled] = useState(false);
   const [randomPromptConfig, setRandomPromptConfig] = useState(null);
@@ -173,8 +181,22 @@ const ParameterPanel = ({
   const [characterEditorOpen, setCharacterEditorOpen] = useState(false);
   const [editingCharacterPrompt, setEditingCharacterPrompt] = useState({ index: null, field: '', text: '' });
   const smeaRef = useRef(false);
-  const [editedImageData, setEditedImageData] = useState(null);
-  const [directorToolParams, setDirectorToolParams] = useState(null);
+  const [editedImageData, setEditedImageData] = useState(editorState?.editedImageData || null);
+  const [directorToolParams, setDirectorToolParams] = useState(editorState?.directorToolParams || null);
+
+  useEffect(() => {
+    if (!editorStateRef) return;
+    // 保存编辑态而非请求体，保留禁用的角色、参考图和各模型尚未提交的选项。
+    editorStateRef.current = {
+      key: editorSessionKey,
+      defaultParams,
+      getSnapshot: () => ({
+        params, imagePreview, editedImageData, directorToolParams,
+        characterTabs, referenceImages,
+      }),
+    };
+  }, [editorStateRef, editorSessionKey, defaultParams, params, imagePreview, editedImageData,
+    directorToolParams, characterTabs, referenceImages]);
 
   const handleReferenceImageChange = (refData) => {
     const supportedRefData = isNovelAIDirectorReferenceModel(params.model) ? refData : null;
@@ -204,7 +226,7 @@ const ParameterPanel = ({
           // 不保存 cached images 到 localStorage，因为它们太大且有缓存机制
           if (key !== 'director_reference_images_cached') {
             try {
-              localStorage.setItem(`aiImageParams_${key}`, JSON.stringify(value));
+              if (!isolated) localStorage.setItem(`aiImageParams_${key}`, JSON.stringify(value));
             } catch (e) {
               console.error(`保存参数到localStorage失败 (key: ${key}):`, e);
               if (e.name === 'QuotaExceededError') {
@@ -214,7 +236,7 @@ const ParameterPanel = ({
           }
         } else {
           delete newParams[key];
-          localStorage.removeItem(`aiImageParams_${key}`);
+          if (!isolated) localStorage.removeItem(`aiImageParams_${key}`);
         }
         return newParams;
       });
@@ -234,9 +256,9 @@ const ParameterPanel = ({
       width: defaultParams.width.toString(),
       height: defaultParams.height.toString()
     });
-    Object.keys(defaultParams).forEach(key => localStorage.removeItem('aiImageParams_' + key));
-    localStorage.removeItem('aiImageParams_ucPreset');
-    localStorage.removeItem('aiImageParams_ucPresetId');
+    if (!isolated) Object.keys(defaultParams).forEach(key => localStorage.removeItem('aiImageParams_' + key));
+    if (!isolated) localStorage.removeItem('aiImageParams_ucPreset');
+    if (!isolated) localStorage.removeItem('aiImageParams_ucPresetId');
     smeaRef.current = defaultParams.smea;
     if (onParamChange) {
       Object.keys(defaultParams).forEach(key => setTimeout(() => onParamChange(key, defaultParams[key]), 0));
@@ -250,10 +272,11 @@ const ParameterPanel = ({
   };
 
   useEffect(() => {
-    localStorage.removeItem('aiImageParams_ucPreset');
-    localStorage.removeItem('aiImageParams_ucPresetId');
+    if (!isolated) localStorage.removeItem('aiImageParams_ucPreset');
+    if (!isolated) localStorage.removeItem('aiImageParams_ucPresetId');
     let initialParams = { ...defaultParams };
     Object.keys(defaultParams).forEach(key => {
+      if (isolated || initialEditorState) return;
       // [修复] 不从 localStorage 加载 reference image，因为它没有被存入
       if (key === 'director_reference_images' || key === 'director_reference_images_cached') return;
 
@@ -283,19 +306,19 @@ const ParameterPanel = ({
     if (normalizedModel !== initialParams.model) {
       // 旧缓存或外部参数中的下线模型必须立即回落，避免隐藏选项继续进入生成请求。
       initialParams.model = normalizedModel;
-      localStorage.setItem('aiImageParams_model', JSON.stringify(normalizedModel));
+      if (!isolated) localStorage.setItem('aiImageParams_model', JSON.stringify(normalizedModel));
     }
     const normalizedInitialParams = normalizeNovelAISmeaParams(initialParams);
     const normalizedNovelAIParams = sanitizeNovelAIV5GenerationParams(normalizedInitialParams);
     if (normalizedNovelAIParams.steps !== normalizedInitialParams.steps) {
       // V5 普通模式现以 28 步为上限，旧缓存必须同步回写，避免刷新后再次越界。
-      localStorage.setItem('aiImageParams_steps', JSON.stringify(normalizedNovelAIParams.steps));
+      if (!isolated) localStorage.setItem('aiImageParams_steps', JSON.stringify(normalizedNovelAIParams.steps));
     }
 
     if (isV4Model(normalizedInitialParams.model)) {
-      localStorage.removeItem("aiImageParams_smea");
-      localStorage.removeItem("aiImageParams_dyn");
-      localStorage.removeItem("aiImageParams_autoSmea");
+      if (!isolated) localStorage.removeItem("aiImageParams_smea");
+      if (!isolated) localStorage.removeItem("aiImageParams_dyn");
+      if (!isolated) localStorage.removeItem("aiImageParams_autoSmea");
     }
 
     setParams(normalizedNovelAIParams);
@@ -305,9 +328,10 @@ const ParameterPanel = ({
     });
     smeaRef.current = normalizedNovelAIParams.smea;
     setLoadedFromCache(true);
-  }, [defaultParams, externalParams]);
+  }, [defaultParams, externalParams, isolated, initialEditorState]);
 
   useEffect(() => {
+    if (isolated || initialEditorState) return;
     const savedCharacterTabs = localStorage.getItem('characterTabs');
     if (savedCharacterTabs) {
       try {
@@ -324,7 +348,7 @@ const ParameterPanel = ({
         setCharacterTabs([]);
       }
     }
-  }, []);
+  }, [isolated, initialEditorState]);
 
   useEffect(() => {
     if (externalCharacterTabs !== null && externalCharacterTabs !== undefined) {
@@ -340,9 +364,9 @@ const ParameterPanel = ({
 
   useEffect(() => {
     if (loadedFromCache) {
-      localStorage.setItem('characterTabs', JSON.stringify(characterTabs));
+      if (!isolated) localStorage.setItem('characterTabs', JSON.stringify(characterTabs));
     }
-  }, [characterTabs, loadedFromCache]);
+  }, [characterTabs, loadedFromCache, isolated]);
 
   useEffect(() => {
     if (onCharacterTabsChange) {
@@ -376,9 +400,9 @@ const ParameterPanel = ({
 
       if (params.smea || params.dyn || params.autoSmea) {
         setParams(prev => normalizeNovelAISmeaParams(prev));
-        localStorage.removeItem("aiImageParams_smea");
-        localStorage.removeItem("aiImageParams_dyn");
-        localStorage.removeItem("aiImageParams_autoSmea");
+        if (!isolated) localStorage.removeItem("aiImageParams_smea");
+        if (!isolated) localStorage.removeItem("aiImageParams_dyn");
+        if (!isolated) localStorage.removeItem("aiImageParams_autoSmea");
 
         if (onParamChange) {
           setTimeout(() => {
@@ -394,10 +418,10 @@ const ParameterPanel = ({
     smeaRef.current = params.smea;
     if (!params.smea && params.dyn) {
       setParams(prev => ({ ...prev, dyn: false }));
-      localStorage.removeItem("aiImageParams_dyn");
+      if (!isolated) localStorage.removeItem("aiImageParams_dyn");
       if (onParamChange) setTimeout(() => onParamChange('dyn', false), 0);
     }
-  }, [params.model, params.smea, params.dyn, params.autoSmea, onParamChange]);
+  }, [params.model, params.smea, params.dyn, params.autoSmea, onParamChange, isolated]);
 
   const resetEditorState = () => {
     setEditedImageData(null);
@@ -430,8 +454,8 @@ const ParameterPanel = ({
       if (!checked) newParams.dyn = false;
       return newParams;
     });
-    localStorage.setItem("aiImageParams_smea", JSON.stringify(checked));
-    if (!checked) localStorage.removeItem("aiImageParams_dyn");
+    if (!isolated) localStorage.setItem("aiImageParams_smea", JSON.stringify(checked));
+    if (!checked && !isolated) localStorage.removeItem("aiImageParams_dyn");
     if (onParamChange) {
       setTimeout(() => {
         onParamChange('smea', checked);
@@ -445,15 +469,15 @@ const ParameterPanel = ({
 
     const checked = e.target.checked;
     setParams(prev => ({ ...prev, dyn: checked }));
-    localStorage.setItem("aiImageParams_dyn", JSON.stringify(checked));
+    if (!isolated) localStorage.setItem("aiImageParams_dyn", JSON.stringify(checked));
     if (onParamChange) setTimeout(() => onParamChange('dyn', checked), 0);
   };
 
   const handleParamChange = (param, value) => {
     if (param === 'smea' || param === 'dyn') return;
     if (param === 'ucPreset' || param === 'ucPresetId') {
-      localStorage.removeItem('aiImageParams_ucPreset');
-      localStorage.removeItem('aiImageParams_ucPresetId');
+      if (!isolated) localStorage.removeItem('aiImageParams_ucPreset');
+      if (!isolated) localStorage.removeItem('aiImageParams_ucPresetId');
       return;
     }
     if (param === 'autoSmea' && isV4Model(params.model)) return;
@@ -480,19 +504,19 @@ const ParameterPanel = ({
         [param]: resolvedValue,
       };
       if (shouldClearDirectorReference) {
-        NOVELAI_DIRECTOR_REFERENCE_PARAM_KEYS.forEach((key) => delete nextParams[key]);
+        if (!isolated) NOVELAI_DIRECTOR_REFERENCE_PARAM_KEYS.forEach((key) => delete nextParams[key]);
       }
       return nextParams;
     });
 
     try {
-      localStorage.setItem(`aiImageParams_${param}`, JSON.stringify(resolvedValue));
+      if (!isolated) localStorage.setItem(`aiImageParams_${param}`, JSON.stringify(resolvedValue));
       Object.entries(modelDefaults).forEach(([key, defaultValue]) => {
-        localStorage.setItem(`aiImageParams_${key}`, JSON.stringify(defaultValue));
+        if (!isolated) localStorage.setItem(`aiImageParams_${key}`, JSON.stringify(defaultValue));
       });
       if (shouldClearDirectorReference) {
         // 切离 4.5 时立即清除所有角色参考派生状态，避免隐藏数据继续影响请求与 Vibe。
-        NOVELAI_DIRECTOR_REFERENCE_PARAM_KEYS.forEach((key) => localStorage.removeItem(`aiImageParams_${key}`));
+        if (!isolated) NOVELAI_DIRECTOR_REFERENCE_PARAM_KEYS.forEach((key) => localStorage.removeItem(`aiImageParams_${key}`));
       }
     } catch (e) {
       console.error(`保存参数到localStorage失败 (key: ${param}):`, e);
@@ -510,7 +534,7 @@ const ParameterPanel = ({
         onParamChange(key, defaultValue);
       });
       if (shouldClearDirectorReference) {
-        NOVELAI_DIRECTOR_REFERENCE_PARAM_KEYS.forEach((key) => onParamChange(key, undefined));
+        if (!isolated) NOVELAI_DIRECTOR_REFERENCE_PARAM_KEYS.forEach((key) => onParamChange(key, undefined));
       }
     }, 0);
   };
@@ -1517,6 +1541,17 @@ const ParameterPanel = ({
     setToast(prev => ({ ...prev, open: false }));
   };
 
+  const resolutionAction = isolated && comicPanelBounds ? (
+    <Button size="small" variant="outlined" sx={{ minHeight: 30, fontSize: '0.8125rem', px: 1, py: 0.25, flexShrink: 0 }} onClick={() => {
+      // 只在用户点击时匹配当前画框，进入参数区、切换模型与手动输入均不触发推荐。
+      const resolution = getPanelResolutionParameters(params, comicPanelBounds);
+      setParams((current) => ({ ...current, ...resolution }));
+      Object.entries(resolution).forEach(([field, value]) => onParamChange?.(field, value));
+    }}>
+      {t('painting.workspace.parameters.useRecommendedResolution')}
+    </Button>
+  ) : null;
+
   const renderEditSummary = () => {
     if (!imagePreview) return null;
     return (
@@ -1594,6 +1629,7 @@ const ParameterPanel = ({
           )}
 
           <BasicParameters
+            resolutionAction={resolutionAction}
               params={{ ...normalizeNovelAISmeaParams(params), isV4Model: isV4Model(params.model) }}
               handleParamChange={handleParamChange}
               handleSeedChange={handleSeedChange}
@@ -1643,6 +1679,8 @@ const ParameterPanel = ({
           onDownloadZip={handleDownloadZip}
           handleVibeV4FileUpload={handleVibeV4FileUpload}
           onReferenceImageChange={handleReferenceImageChange}
+          referenceImages={referenceImages}
+          setReferenceImages={setReferenceImages}
           characterTabs={characterTabs}
           handleCharacterDataChange={handleCharacterDataChange}
           handleOpenCharacterEditor={handleOpenCharacterEditor}

@@ -202,6 +202,7 @@ const paintingWorkspacezhCN = {
         "smeaDynUnsupported": "当前模型不支持 SMEA DYN。",
         "smeaDynHelp": "动态调整 SMEA 以增强高分辨率构图。",
         "imageSize": "图像大小",
+        "useRecommendedResolution": "使用推荐分辨率",
         "disableLargeImageMode": "关闭大图模式",
         "enableLargeImageMode": "启用大图模式",
         "widthShort": "宽",

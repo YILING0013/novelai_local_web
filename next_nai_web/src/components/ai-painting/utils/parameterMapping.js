@@ -30,14 +30,13 @@ export const setLargeImageMode = (enabled) => {
  * 生成所有允许的分辨率组合
  * @returns {Array<[number, number]>} 允许的分辨率数组
  */
-const generateAllowedResolutions = () => {
-  const maxProduct = MAX_PRODUCT;
-  const maxValue = MAX_DIMENSION;
-  const step = 64;
+const generateAllowedResolutions = ({
+  maxProduct = MAX_PRODUCT, maxDimension = MAX_DIMENSION, minDimension = 64, step = 64,
+} = {}) => {
   const allowedResolutions = [];
 
-  for (let width = step; width <= maxValue; width += step) {
-    for (let height = step; height <= maxValue; height += step) {
+  for (let width = minDimension; width <= maxDimension; width += step) {
+    for (let height = minDimension; height <= maxDimension; height += step) {
       const product = width * height;
       if (product <= maxProduct) {
         allowedResolutions.push([width, height]);
@@ -64,6 +63,38 @@ const refreshAllowedResolutions = () => {
 
 // 初始化列表
 refreshAllowedResolutions();
+
+/**
+ * 按画框外接矩形匹配当前模型允许的尺寸，不改变模型、计费模式或其他生成参数。
+ *
+ * Args:
+ *   params: 当前生成参数，包含模型和大图模式开关。
+ *   bounds: 画框外接矩形的 width、height。
+ *
+ * Returns:
+ *   object: 应更新的宽高字段，不改变用户启用的大图模式。
+ */
+export const getPanelResolutionParameters = (params, { width, height }) => {
+  const ratio = width / height;
+  const limits = {
+    maxProduct: params.use_upscale_credits ? 3145728 : 1048576,
+    maxDimension: params.use_upscale_credits ? 4096 : 2048,
+    minDimension: 512,
+  };
+  let closest;
+  let closestDifference = Infinity;
+  let largestArea = 0;
+  for (const [w, h] of generateAllowedResolutions(limits)) {
+    // 对数比例误差使横竖互换后仍得到互换的尺寸；同样接近时选更清晰的尺寸。
+    const difference = Math.abs(Math.log((w / h) / ratio));
+    const area = w * h;
+    if (difference < closestDifference - 1e-10
+      || (Math.abs(difference - closestDifference) <= 1e-10 && area > largestArea)) {
+      closest = [w, h]; closestDifference = difference; largestArea = area;
+    }
+  }
+  return { width: closest[0], height: closest[1] };
+};
 
 /**
  * 查找最接近的允许分辨率，优先保证宽高比

@@ -95,6 +95,7 @@ const infoIconSx = {
 
 const BasicParameters = ({
   params,
+  resolutionAction = null,
   handleParamChange,
   handleSeedChange,
   editing,
@@ -211,10 +212,13 @@ const BasicParameters = ({
         '& .MuiOutlinedInput-root': { minHeight: 40 },
         '& .MuiOutlinedInput-input': { py: 1 },
       }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, mb: 1 }}>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 1, mb: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Typography variant="body2" sx={{ fontSize: '0.9375rem', fontWeight: 600, flexShrink: 0 }}>
             {t('painting.workspace.parameters.imageSize')}
           </Typography>
+          {resolutionAction}
+          </Box>
           <Button
               size="small"
               startIcon={<AspectRatioIcon />}

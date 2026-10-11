@@ -47,10 +47,9 @@ const referenceActionSx = {
   '&:hover': { bgcolor: 'action.focus' },
 };
 
-const ImageReferenceControl = ({ onReferenceImageChange, disabled = false, expanded, onExpandedChange }) => {
+const ImageReferenceControl = ({ images, setImages, onReferenceImageChange, disabled = false, expanded, onExpandedChange }) => {
   const { t } = useI18n();
   // 多图状态: { id, data: base64, displayUrl, type, strength, fidelity, disabled, cache_secret_key }
-  const [images, setImages] = useState([]);
   const [masterKey, setMasterKey] = useState('');
   const refImageInputRef = useRef(null);
 
@@ -84,7 +83,7 @@ const ImageReferenceControl = ({ onReferenceImageChange, disabled = false, expan
 
     updateKeys();
     return () => { isMounted = false; };
-  }, [masterKey, images]);
+  }, [masterKey, images, setImages]);
 
   // 使用 ref 保持回调函数的稳定引用，避免 useEffect 无限循环
   const onReferenceImageChangeRef = useRef(onReferenceImageChange);

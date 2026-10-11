@@ -156,6 +156,7 @@ const generateImage = async (requestParams, onProgress = () => {}) => {
       downloadUrl: displayUrl,
       objectUrlToRevoke: displayUrl,
       cachedBlob,
+      saveError: generatedImage.save_error || null,
       seed: generatedImage.seed ?? params.seed,
       completedAt: new Date().toISOString(),
       prompt: params.positivePrompt,

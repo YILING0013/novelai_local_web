@@ -52,6 +52,8 @@ const ImageParameterPanel = ({
     onDownloadBundle,
     onDownloadZip,
     onReferenceImageChange,
+    referenceImages,
+    setReferenceImages,
     characterTabs,
     handleCharacterDataChange,
     handleOpenCharacterEditor,
@@ -126,6 +128,8 @@ const ImageParameterPanel = ({
       {isNovelAIDirectorReferenceModel(params.model) && (
         <ImageReferenceControl
           onReferenceImageChange={onReferenceImageChange}
+          images={referenceImages}
+          setImages={setReferenceImages}
           disabled={imageReferenceDisabled}
           expanded={Boolean(expandedPanels.reference)}
           onExpandedChange={(_, isExpanded) => onExpandedPanelsChange('reference', isExpanded)}
