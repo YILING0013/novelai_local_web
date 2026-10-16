@@ -81,7 +81,7 @@ export default function ComicCropDialog({ panel, onClose, onApply }) {
           });
         }}
         onPointerUp={finishDrag} onPointerCancel={finishDrag} onLostPointerCapture={finishDrag}>
-        <image href={image.dataUrl} x={image.x} y={image.y} width={image.width * image.scale} height={image.height * image.scale} pointerEvents="none" />
+        <image href={image.dataUrl} x={image.x} y={image.y} width={image.width * image.scale} height={image.height * image.scale} transform={`rotate(${image.rotation || 0} ${image.x + image.width * image.scale / 2} ${image.y + image.height * image.scale / 2})`} pointerEvents="none" />
         <path d={`M ${view.x} ${view.y} h ${view.width} v ${view.height} h ${-view.width} Z ${path}`} fill="#353545" fillOpacity="0.58" fillRule="evenodd" pointerEvents="none" />
         <path d={path} fill="none" stroke="#111" strokeWidth={Math.max(2, bounds.width / 250)} pointerEvents="none" />
       </Box>

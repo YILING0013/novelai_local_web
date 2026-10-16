@@ -1,0 +1,46 @@
+.panel {
+  margin: 12px 0 16px;
+  padding: 0 0 14px;
+  border-bottom: 1px solid var(--border);
+}
+.nameRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 7px 0;
+}
+.nameRow input,
+.nameRow select {
+  min-width: 0;
+  flex: 1;
+  width: 100%;
+  height: 29px;
+}
+.nameRow button {
+  flex-shrink: 0;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.actions > button:not(:last-child) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex: 1;
+  padding: 5px 6px;
+  font-size: 11px;
+}
+.help,
+.message {
+  margin: 8px 0 0;
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.message { color: var(--accent); }
+.error { color: var(--error); }
+.exportCurrent { display: flex; width: 100%; justify-content: center; align-items: center; gap: 6px; margin-top: 6px; padding: 6px; font-size: 11px; }

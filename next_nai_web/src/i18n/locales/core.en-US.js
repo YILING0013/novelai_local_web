@@ -40,6 +40,10 @@ const messages = {
     "languageAria": "Choose interface language"
   },
   "main": {
+    "navigation": "Main navigation",
+    "showSidebarIcons": "Show icon menu",
+    "hideSidebar": "Hide menu",
+    "expandSidebar": "Expand menu",
     "accountDialog": {
       "loadError": "An error occurred while loading account information.",
       "refreshData": "Refresh data"
@@ -120,6 +124,7 @@ const messages = {
     "logout": "Log out"
   },
   "common": {
+    "retry": "Retry",
     "copied": "Copied",
     "copyFailed": "Could not copy. Select the text and copy it manually.",
     "close": "Close",

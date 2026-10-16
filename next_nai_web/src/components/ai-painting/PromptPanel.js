@@ -1,7 +1,7 @@
 // PromptPanel.js
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from 'react'; // Added useCallback
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'; // Added useCallback
 import {
   Box,
   Tabs,
@@ -53,6 +53,72 @@ import usePromptEditorSettings from './PromptEditor/usePromptEditorSettings';
 import { NOVELAI_V5_MEDIUM_MODEL_ID } from './utils/novelAIV5Params.mjs';
 import { downloadNotesExport } from './noteExport.mjs';
 
+const promptInputFrameSx = {
+  position: 'relative',
+  display: 'grid',
+  gridTemplateColumns: 'minmax(0, 1fr) auto',
+  '--prompt-outline': (theme) => theme.palette.divider,
+  '&:hover': { '--prompt-outline': (theme) => theme.palette.text.secondary },
+  '&:focus-within': { '--prompt-outline': (theme) => theme.palette.primary.main },
+  '& > .prompt-editor-input': {
+    gridColumn: '1 / -1',
+    border: 0,
+    '&:focus-within': { boxShadow: 'none' },
+  },
+};
+
+const promptActionsSx = {
+  position: 'relative',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 0.5,
+  px: 0.5,
+  minHeight: 38,
+  '& .MuiIconButton-root': { width: 34, height: 34, p: 0.75 },
+};
+
+/**
+ * 用一条连续圆角边界包住输入区和右下角按钮，左下角留给角色入口。
+ * @param {object} props 输入框、角色入口、按钮，以及外部使用的容器引用。
+ * @returns {React.ReactElement} 带阶梯轮廓的提示词编辑区。
+ */
+function PromptEditorFrame({ children, containerRef }) {
+  const [outline, setOutline] = useState('');
+  useLayoutEffect(() => {
+    const frame = containerRef.current;
+    const actions = frame.querySelector('.prompt-editor-actions');
+    const updateOutline = () => {
+      const frameRect = frame.getBoundingClientRect();
+      const actionsRect = actions.getBoundingClientRect();
+      const right = frameRect.width - 0.5;
+      const bottom = frameRect.height - 0.5;
+      const stepX = actionsRect.left - frameRect.left + 0.5;
+      const stepY = actionsRect.top - frameRect.top + 0.5;
+      // 输入框和按钮共用一条路径，避免多个边框在转角处重叠。
+      setOutline(`M 6.5 0.5 H ${right - 6} Q ${right} 0.5 ${right} 6.5 V ${bottom - 6} Q ${right} ${bottom} ${right - 6} ${bottom} H ${stepX + 6} Q ${stepX} ${bottom} ${stepX} ${bottom - 6} V ${stepY + 6} Q ${stepX} ${stepY} ${stepX - 6} ${stepY} H 6.5 Q 0.5 ${stepY} 0.5 ${stepY - 6} V 6.5 Q 0.5 0.5 6.5 0.5 Z`);
+    };
+    updateOutline();
+    const observer = new ResizeObserver(updateOutline);
+    observer.observe(frame);
+    observer.observe(actions);
+    return () => observer.disconnect();
+  }, [containerRef]);
+
+  return (
+    <Box sx={promptInputFrameSx} ref={containerRef}>
+      <Box component="svg" className="prompt-editor-outline" aria-hidden="true" focusable="false" sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1, fill: 'none', stroke: 'var(--prompt-outline)', strokeWidth: 1 }}>
+        <path d={outline} />
+      </Box>
+      {children}
+    </Box>
+  );
+}
+
+/**
+ * 编辑总提示词，并在输入框下方显示参数区提供的角色控件。
+ * @param {object} props 总提示词、编辑回调及角色折叠入口和内容。
+ * @returns {React.ReactElement} 提示词编辑区。
+ */
 const PromptPanel = ({
   positivePrompt,
   negativePrompt,
@@ -63,6 +129,8 @@ const PromptPanel = ({
   onError = null,
   model,
   characterTabs = [],
+  characterControlSummary = null,
+  characterControlContent = null,
 }) => {
   const { t } = useI18n();
   const [tabValue, setTabValue] = useState(0);
@@ -536,8 +604,9 @@ const PromptPanel = ({
               <>
                 {
                   !expandedPromptDialogOpen && (
-                    <Box sx={{ position: 'relative' }} ref={textFieldRef}>
+                    <PromptEditorFrame containerRef={textFieldRef}>
                       <InlinePromptInput
+                        className="prompt-editor-input"
                         placeholder={t('painting.workspace.prompt.positivePlaceholder')}
                         value={positivePrompt}
                         inputRef={promptInputRef}
@@ -546,14 +615,10 @@ const PromptPanel = ({
                         previewEnabled={inlinePreviewEnabled}
                         randomPromptConfig={randomPromptConfig}
                       />
+                      <Box sx={{ minWidth: 0, pr: 1, display: 'flex', alignItems: 'center' }}>{characterControlSummary}</Box>
                       <Box
-                        sx={{
-                          display: 'flex',
-                          justifyContent: 'flex-end',
-                          gap: 0.5,
-                          pt: 0.5,
-                          '& .MuiIconButton-root': { width: 34, height: 34, p: 0.75 },
-                        }}
+                        className="prompt-editor-actions"
+                        sx={promptActionsSx}
                       >
                         <Tooltip title={t('painting.workspace.prompt.expandEditor')} arrow>
                           <IconButton
@@ -591,7 +656,7 @@ const PromptPanel = ({
                           </IconButton>
                         </Tooltip>
                       </Box>
-                    </Box>
+                    </PromptEditorFrame>
                   )
                 }
 
@@ -600,8 +665,9 @@ const PromptPanel = ({
               <>
                 {
                   !expandedPromptDialogOpen && (
-                    <Box sx={{ position: 'relative' }} ref={textFieldRef}>
+                    <PromptEditorFrame containerRef={textFieldRef}>
                       <InlinePromptInput
+                        className="prompt-editor-input"
                         placeholder={t('painting.workspace.prompt.negativePlaceholder')}
                         value={negativePrompt}
                         inputRef={promptInputRef}
@@ -610,14 +676,10 @@ const PromptPanel = ({
                         previewEnabled={inlinePreviewEnabled}
                         randomPromptConfig={randomPromptConfig}
                       />
+                      <Box sx={{ minWidth: 0, pr: 1, display: 'flex', alignItems: 'center' }}>{characterControlSummary}</Box>
                       <Box
-                        sx={{
-                          display: 'flex',
-                          justifyContent: 'flex-end',
-                          gap: 0.5,
-                          pt: 0.5,
-                          '& .MuiIconButton-root': { width: 34, height: 34, p: 0.75 },
-                        }}
+                        className="prompt-editor-actions"
+                        sx={promptActionsSx}
                       >
                         <Tooltip title={t('painting.workspace.prompt.expandEditor')} arrow>
                           <IconButton
@@ -655,13 +717,18 @@ const PromptPanel = ({
                           </IconButton>
                         </Tooltip>
                       </Box>
-                    </Box>
+                    </PromptEditorFrame>
                   )
                 }
 
               </>
             ) : null}
           </Box>
+
+      {effectiveTabValue === 2 && characterControlSummary && (
+        <Box sx={{ pt: 0.5 }}>{characterControlSummary}</Box>
+      )}
+      {characterControlContent}
 
       <PromptSuggestions suggestions={suggestions} />
 

@@ -54,7 +54,8 @@ import {
 } from './utils/parameterMapping';
 import { extractMetadataFromFile } from './utils/metadataUtils';
 import ImageParameterPanel from './ParameterPanelUI/ImageParameterPanel';
-import BasicParameters, { ExtraConfiguration } from './ParameterPanelUI/ImageParameterPanelUI/BasicParameters';
+import CharacterControlPanel from './ParameterPanelUI/ImageParameterPanelUI/CharacterControlPanel';
+import BasicParameters from './ParameterPanelUI/ImageParameterPanelUI/BasicParameters';
 import { sha256 } from './utils/cryptoUtils';
 import { createThumbnail } from './utils/imageUtils';
 // [修改] 导入新增的数据库函数
@@ -125,6 +126,8 @@ const ParameterPanel = ({
   negativePrompt = '',
   externalCharacterTabs,
   onError = null,
+  renderPromptPanel = null, // 接收角色折叠入口和列表，放到总提示词编辑器旁。
+  parameterToolbarContainer = null, // 将常用参数放到当前生成按钮上方。
 }) => {
   const { t } = useI18n();
   const theme = useTheme();
@@ -575,7 +578,11 @@ const ParameterPanel = ({
 
   const handleVibeDragOver = (e) => e.preventDefault();
   const handleVibeDragEnter = (e) => { e.preventDefault(); setIsVibeDragging(true); };
-  const handleVibeDragLeave = (e) => { e.preventDefault(); setIsVibeDragging(false); };
+  const handleVibeDragLeave = (e) => {
+    e.preventDefault();
+    // 在缩略图和滑块之间移动仍处于同一个上传区域，离开整个折叠栏时再清除高亮。
+    if (!e.currentTarget.contains(e.relatedTarget)) setIsVibeDragging(false);
+  };
 
   const handleVibeDrop = (e) => {
     e.preventDefault();
@@ -1555,23 +1562,21 @@ const ParameterPanel = ({
   const renderEditSummary = () => {
     if (!imagePreview) return null;
     return (
-      <Box sx={{ p: 2, borderTop: `1px solid ${theme.palette.divider}` }}>
-        <Typography variant="caption" fontWeight="bold" color="text.secondary">{t('painting.workspace.parameters.appliedEditEffects')}</Typography>
+      <Box role="group" aria-label={t('painting.workspace.parameters.appliedEditEffects')} sx={{ position: 'absolute', top: 8, left: 8, right: 80, display: 'flex', alignItems: 'flex-start', flexWrap: 'wrap', gap: 0.5 }}>
         {editedImageData && (
-          <Box sx={{ display: 'flex', alignItems: 'center', mt: 1, flexWrap: 'wrap' }}>
-            <Chip label={t('painting.workspace.parameters.imageEdited')} size="small" color="primary" sx={{ mr: 1 }} />
-            <Typography variant="caption" color="text.secondary">{t('painting.workspace.parameters.editedImageWillBeUsed')}</Typography>
-          </Box>
+          <Tooltip title={t('painting.workspace.parameters.editedImageWillBeUsed')} arrow>
+            <Chip label={t('painting.workspace.parameters.imageEdited')} size="small" color="primary" sx={{ maxWidth: '100%', height: 24, fontSize: '0.75rem' }} />
+          </Tooltip>
         )}
         {directorToolParams && (
-          <Box sx={{ display: 'flex', alignItems: 'center', mt: 1, flexWrap: 'wrap' }}>
-            <Chip label={directorToolParams.type} size="small" color="secondary" sx={{ mr: 1 }} />
-            <Box sx={{ flexGrow: 1 }} />
-            <Button variant="outlined" color="error" size="small" startIcon={<DeleteIcon fontSize="small" />} onClick={clearDirectorToolParams} sx={{ ml: 1, mt: { xs: 1, sm: 0 }, fontSize: '0.7rem', py: 0.5 }}>{t('painting.workspace.parameters.remove')}</Button>
-          </Box>
+          <Tooltip title={t('painting.workspace.parameters.remove')} arrow>
+            <Chip label={t(`painting.tools.imageEditor.toolbar.${directorToolParams.type}`)} size="small" color="secondary" onDelete={clearDirectorToolParams} sx={{ maxWidth: '100%', height: 24, fontSize: '0.75rem' }} />
+          </Tooltip>
         )}
         {!editedImageData && !directorToolParams && (
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>{t('painting.workspace.parameters.noEditEffects')}</Typography>
+          <Tooltip title={t('painting.workspace.parameters.appliedEditEffects')} arrow>
+            <Chip label={t('painting.workspace.parameters.noEditEffects')} size="small" sx={{ maxWidth: '100%', height: 24, fontSize: '0.75rem', bgcolor: 'background.paper', border: 1, borderColor: 'divider' }} />
+          </Tooltip>
         )}
       </Box>
     );
@@ -1590,13 +1595,30 @@ const ParameterPanel = ({
 
   return (
     <Box sx={{ p: 0 }}>
+      {/* 角色控件继续使用本面板的状态，由词条编辑器安排折叠入口与内容的位置。 */}
+      <CharacterControlPanel
+        params={params}
+        handleParamChange={handleParamChange}
+        expandedPanels={expandedPanels}
+        onExpandedPanelsChange={onExpandedPanelsChange}
+        characterTabs={characterTabs}
+        handleAddCharacterTab={handleAddCharacterTab}
+        handleDeleteCharacterTab={handleDeleteCharacterTab}
+        handleMoveUpCharacterTab={handleMoveUpCharacterTab}
+        handleMoveDownCharacterTab={handleMoveDownCharacterTab}
+        handleCharacterDataChange={handleCharacterDataChange}
+        handleOpenCharacterEditor={handleOpenCharacterEditor}
+        handleCharacterToggleDisabled={handleCharacterToggleDisabled}
+        isV5Model={isNovelAIV5Model(params.model)}
+        renderPromptPanel={renderPromptPanel}
+      />
       <Snackbar open={toast.open} autoHideDuration={3000} onClose={handleCloseToast} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
         <Alert onClose={handleCloseToast} severity={toast.severity} sx={{ width: '100%' }}>{toast.message}</Alert>
       </Snackbar>
 
       {/* 常用设置直接展开，用留白区分模型和参数，不再套收折标题。 */}
-      <Box component="section" aria-label={t('painting.workspace.parameters.modelAndBasic')} sx={{ pt: 2.5, borderTop: 1, borderColor: 'divider' }}>
-        <Box sx={{ mb: 2.5 }}>
+      <Box component="section" aria-label={t('painting.workspace.parameters.modelAndBasic')} sx={{ mt: 0.75, pt: 2.5, borderTop: 1, borderColor: 'divider' }}>
+        <Box sx={{ mb: 0.5 }}>
           <FormControl fullWidth variant="outlined" size="small" sx={{ minWidth: 0 }}>
             <InputLabel id="model-select-label">{t('painting.workspace.parameters.aiModel')}</InputLabel>
             <Select
@@ -1640,8 +1662,10 @@ const ParameterPanel = ({
               handleInputBlur={handleInputBlur}
               handleSizePresetClick={handleSizePresetClick}
               handleClearSeed={handleClearSeed}
-              expandedPanels={expandedPanels}
-              onExpandedPanelsChange={onExpandedPanelsChange}
+              handleSmeaChange={handleSmeaChange}
+              handleDynChange={handleDynChange}
+              handleResetParamsConfirm={handleResetParamsConfirm}
+              parameterToolbarContainer={parameterToolbarContainer}
               isV5Model={isNovelAIV5Model(params.model)}
           />
         </Box>
@@ -1681,32 +1705,16 @@ const ParameterPanel = ({
           onReferenceImageChange={handleReferenceImageChange}
           referenceImages={referenceImages}
           setReferenceImages={setReferenceImages}
-          characterTabs={characterTabs}
-          handleCharacterDataChange={handleCharacterDataChange}
-          handleOpenCharacterEditor={handleOpenCharacterEditor}
-          handleAddCharacterTab={handleAddCharacterTab}
-          handleDeleteCharacterTab={handleDeleteCharacterTab}
-          handleMoveUpCharacterTab={handleMoveUpCharacterTab}
-          handleMoveDownCharacterTab={handleMoveDownCharacterTab}
           renderEditSummary={renderEditSummary}
           editorKey={editorKey} editorOpen={editorOpen} handleCloseEditor={handleCloseEditor}
           directorToolParams={directorToolParams}
           handleVibeToggleDisabled={handleVibeToggleDisabled}
-          handleCharacterToggleDisabled={handleCharacterToggleDisabled}
           vibeDisabled={hasImageReference || !isNovelAIVibeModel(params.model, isInpaintMode)}
           vibeBlockedMessageKey={isInpaintMode && isV4Model(params.model)
             ? 'painting.workspace.parameters.vibeBlockedByInpaint'
             : undefined}
           imageReferenceDisabled={hasActiveVibes}
           isV5Model={isNovelAIV5Model(params.model)}
-      />
-
-      <ExtraConfiguration
-          params={{ ...normalizeNovelAISmeaParams(params), isV4Model: isV4Model(params.model) }}
-          handleParamChange={handleParamChange}
-          handleSmeaChange={handleSmeaChange}
-          handleDynChange={handleDynChange}
-          handleResetParamsConfirm={handleResetParamsConfirm}
       />
 
       <Button variant="outlined" size="small" onClick={debugParams} sx={{ mt: 2, display: process.env.NODE_ENV === 'production' ? 'none' : 'block' }}>

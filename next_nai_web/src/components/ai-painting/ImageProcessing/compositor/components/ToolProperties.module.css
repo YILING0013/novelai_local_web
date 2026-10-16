@@ -1,0 +1,24 @@
+.panel { display: flex; flex-direction: column; gap: 13px; min-width: 0; padding-bottom: 16px; }
+.heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.heading strong { font-weight: 500; font-size: 12px; color: var(--text); }
+.heading span { font-size: 10px; color: var(--muted); }
+.slider { display: flex; flex-direction: column; gap: 8px; min-width: 0; font-size: 11px; }
+.slider > span { display: flex; justify-content: space-between; gap: 8px; }
+.slider output { color: var(--muted); font-variant-numeric: tabular-nums; }
+.slider input { width: 100%; accent-color: var(--accent); }
+.details { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 10px 0; }
+.details summary { cursor: pointer; font-size: 11px; color: var(--text); }
+.details > label { margin-top: 13px; }
+.check { display: flex; align-items: center; gap: 7px; font-size: 11px; }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.actions button { padding: 7px 9px; border: 1px solid var(--border); background: var(--panel-raised); font-size: 11px; }
+.note { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.75; }
+.field { display: flex; flex-direction: column; gap: 7px; font-size: 11px; min-width: 0; }
+.field select { width: 100%; min-width: 0; }
+.color { display: flex; align-items: center; gap: 10px; font-size: 11px; }
+.color input { width: 30px; height: 26px; padding: 2px; margin-left: auto; }
+.color code { font-size: 10px; color: var(--muted); }
+.columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.panel textarea { width: 100%; min-height: 92px; resize: vertical; line-height: 1.6; }
+.panel :global(.number-field) { min-width: 0; }
+.panel :global(.number-field input) { min-width: 0; width: 100%; }

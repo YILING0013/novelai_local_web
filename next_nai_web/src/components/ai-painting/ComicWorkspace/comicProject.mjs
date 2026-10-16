@@ -76,7 +76,7 @@ function validatePage(page) {
     [...page.panels, ...page.strokes, ...page.elements].some((item) => !layers.has(item.layerId) || !finite(item.order))) throw new Error('Invalid comic layer.');
   for (const panel of page.panels) {
     if (!points(panel.points, 3) || !finite(panel.borderWidth) || !['regular', 'overlay'].includes(panel.type) || !Number.isInteger(panel.section)) throw new Error('Invalid comic frame.');
-    if (panel.image && (!image(panel.image.dataUrl) || !['x', 'y', 'width', 'height', 'scale'].every((key) => finite(panel.image[key])))) throw new Error('Invalid comic image.');
+    if (panel.image && (!image(panel.image.dataUrl) || !['x', 'y', 'width', 'height', 'scale'].every((key) => finite(panel.image[key])) || (panel.image.rotation !== undefined && !finite(panel.image.rotation)))) throw new Error('Invalid comic image.');
     if (panel.task && (!panel.task.params?.parameterState?.params || !panel.task.params.promptsByModel || !Array.isArray(panel.task.params.vibeImages))) throw new Error('Invalid comic task.');
   }
   for (const stroke of page.strokes) if (!points(stroke.points, 1) || !finite(stroke.width) || typeof stroke.color !== 'string') throw new Error('Invalid comic stroke.');

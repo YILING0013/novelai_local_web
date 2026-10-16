@@ -1,0 +1,70 @@
+.workspace { display: flex; flex: 1; min-width: 0; min-height: 0; position: relative; overflow: hidden; }
+.canvas { display: flex; flex: 1; min-width: 0; min-height: 0; }
+.canvas > * { flex: 1; min-width: 0; }
+.dock { display: flex; flex-direction: column; gap: 2px; position: relative; flex-shrink: 0; min-height: 0; background: var(--bg); max-width: 42%; }
+.leftDock { border-right: 1px solid var(--border); }
+.rightDock { border-left: 1px solid var(--border); }
+.frame { display: flex; flex-direction: column; position: relative; min-height: 105px; min-width: 0; background: var(--panel); }
+.collapsed { min-height: 30px; }
+.floating { position: absolute; border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 12px 35px #0008; overflow: hidden; }
+.panelHeader { height: 30px; min-height: 30px; display: flex; align-items: center; gap: 1px; padding: 0 4px; border-bottom: 1px solid var(--border); background: var(--panel-raised); }
+.panelHeader > button { width: 21px; height: 24px; padding: 0; flex-shrink: 0; color: var(--muted); border-radius: 3px; }
+.panelHeader > button:hover { background: color-mix(in srgb, var(--text) 7%, transparent); color: var(--text); }
+.panelHeader > .dragHandle { flex: 1; width: 0; min-width: 35px; justify-content: flex-start; gap: 3px; cursor: grab; touch-action: none; font-size: 10px; }
+.dragHandle > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dragHandle > svg { flex-shrink: 0; color: var(--muted); }
+.tabs { display: flex; flex-shrink: 0; min-height: 31px; overflow-x: auto; scrollbar-width: thin; background: var(--panel); border-bottom: 1px solid var(--border); }
+.tabs > button { flex: 1 0 auto; padding: 6px 12px; border-radius: 0; border: 0; border-bottom: 2px solid transparent; font-size: 11px; color: var(--muted); cursor: grab; touch-action: none; }
+.tabs > button[aria-selected="true"] { border-bottom-color: var(--accent); background: var(--accent-dark); color: var(--accent); }
+.tabs > button:focus-visible { outline: 1px solid var(--accent); outline-offset: -3px; }
+.body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; scrollbar-width: thin; }
+.body[hidden] { display: none; }
+.body > :global(.inspector) { height: 100%; min-height: 0; flex: 1; border-bottom: none; }
+.body > :global(.layers-panel) { height: 100%; min-height: 0; flex: 1; }
+.body > section { max-height: none; min-height: 0; flex: 1; }
+.body :global(.inspector-scroll) { min-height: 0; flex: 1; }
+.widthHandle { position: absolute; top: 0; bottom: 0; width: 7px; z-index: 6; cursor: ew-resize; touch-action: none; }
+.leftDock > .widthHandle { right: -4px; }
+.rightDock > .widthHandle { left: -4px; }
+.heightHandle { position: absolute; bottom: -3px; left: 0; right: 0; height: 7px; z-index: 6; cursor: ns-resize; touch-action: none; }
+.widthHandle:hover, .heightHandle:hover { background: color-mix(in srgb, var(--text) 7%, transparent); }
+.cornerHandle { position: absolute; right: 0; bottom: 0; width: 17px; height: 17px; z-index: 6; cursor: nwse-resize; touch-action: none; background: linear-gradient(135deg, transparent 45%, var(--accent) 46%, var(--accent) 52%, transparent 53%, transparent 65%, var(--accent) 66%, var(--accent) 72%, transparent 73%); }
+.floatWidthHandle { position: absolute; right: 0; top: 30px; bottom: 17px; width: 6px; cursor: ew-resize; touch-action: none; z-index: 5; }
+.floatHeightHandle { position: absolute; bottom: 0; left: 0; right: 17px; height: 6px; cursor: ns-resize; touch-action: none; z-index: 5; }
+.floatWidthHandle:hover, .floatHeightHandle:hover { background: color-mix(in srgb, var(--text) 7%, transparent); }
+.interacting, .interacting * { user-select: none; }
+.dragOrigin { opacity: .4; }
+.ghost { position: absolute; z-index: 50; pointer-events: none; border: 1px dashed var(--accent); background: var(--accent-dark); border-radius: 5px; display: flex; align-items: flex-start; gap: 7px; padding: 10px; color: var(--accent); font-size: 11px; }
+.ghost small { position: absolute; top: 38px; left: 10px; color: var(--accent); font-size: 10px; }
+.dropZone { position: absolute; top: 0; bottom: 0; width: 55px; z-index: 53; pointer-events: none; border: 1px dashed color-mix(in srgb, var(--accent) 46%, transparent); background: var(--accent-dark); display: flex; align-items: center; justify-content: center; }
+.dropZone span { writing-mode: vertical-rl; letter-spacing: 5px; color: var(--accent); font-size: 11px; }
+.dropLeft { left: 0; }
+.dropRight { right: 0; }
+.dropActive { background: var(--accent-dark); border-color: var(--accent); }
+.insertLine { height: 3px; position: absolute; z-index: 54; background: var(--accent); pointer-events: none; color: var(--accent); font-size: 10px; padding-left: 9px; line-height: 22px; text-shadow: none; }
+.mergeZone { position: absolute; z-index: 54; pointer-events: none; border: 2px solid var(--accent); border-radius: 3px; background: var(--accent-dark); display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 12px; text-shadow: none; }
+.manager { min-width: 0; }
+.description { color: var(--muted); font-size: 11px; line-height: 1.7; margin: 0 0 14px; }
+.panelList { display: flex; flex-direction: column; gap: 9px; }
+.managerRow { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.managerRow > label { display: flex; align-items: center; gap: 6px; font-size: 11px; flex: 1; }
+.managerRow > label.collapseOption { flex: 0; white-space: nowrap; color: var(--muted); }
+.managerRow select { padding: 5px; font-size: 11px; min-width: 0; max-width: 170px; }
+.managerRow > button { padding: 5px; }
+.managerActions { display: flex; justify-content: space-between; margin: 16px 0 22px; }
+.managerActions button, .presetForm button, .presetList button { padding: 7px 9px; border-color: var(--border); font-size: 11px; }
+.manager h3 { font-size: 12px; font-weight: 500; margin: 0 0 12px; }
+.presetForm { display: flex; gap: 8px; margin-bottom: 8px; }
+.presetForm input { flex: 1; min-width: 0; font-size: 11px; }
+.presetList { max-height: 180px; overflow: auto; scrollbar-width: thin; }
+.presetList > div { display: flex; align-items: center; gap: 7px; padding: 6px 0; }
+.presetList > div > span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+@container image-processing (max-width: 760px) {
+  .dock { position: absolute; top: 0; bottom: 0; z-index: 20; max-width: calc(100% - 38px); box-shadow: 0 3px 20px #0008; }
+  .leftDock { left: 0; }
+  .rightDock { right: 0; }
+  .panelHeader > button { width: 23px; height: 27px; }
+  .managerRow { flex-wrap: wrap; }
+  .managerRow > label:first-child { min-width: 105px; }
+  .presetForm { flex-wrap: wrap; }
+}

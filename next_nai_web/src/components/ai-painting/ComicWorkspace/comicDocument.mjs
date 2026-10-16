@@ -293,6 +293,41 @@ export function movePanel(panel, delta, bounds) {
 }
 
 /**
+ * 围绕画框中心旋转并平移；整体限制在页面内，保持边长、凸形和图像构图。
+ * @param {object} panel 手势开始时的画框。
+ * @param {number} angle 相对旋转角度，单位为弧度。
+ * @param {object} delta 页面坐标中的平移距离。
+ * @param {object} bounds 允许编辑的页面范围。
+ * @returns {object|null} 新画框；旋转后尺寸超过页面时返回 null。
+ */
+export function rotatePanel(panel, angle, delta, bounds) {
+  const box = panelBounds(panel), cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+  const cos = Math.cos(angle), sin = Math.sin(angle);
+  let points = panel.points.map((p) => ({ x: cx + (p.x - cx) * cos - (p.y - cy) * sin + delta.x, y: cy + (p.x - cx) * sin + (p.y - cy) * cos + delta.y }));
+  const rotated = panelBounds(points);
+  if (rotated.width > bounds.width + 0.00001 || rotated.height > bounds.height + 0.00001) return null;
+  const dx = Math.max(bounds.x - rotated.x, Math.min(0, bounds.x + bounds.width - rotated.x - rotated.width));
+  const dy = Math.max(bounds.y - rotated.y, Math.min(0, bounds.y + bounds.height - rotated.y - rotated.height));
+  points = points.map((p) => ({ x: p.x + dx, y: p.y + dy }));
+  return { ...panel, points, image: transformPanelImage(panel.image, panel.points, points) };
+}
+
+/**
+ * 把图像跟随画框的刚性变换移动或旋转；拖动顶点改变形状时不调用。
+ * @param {object|null} image 当前图像，允许拖动期间异步填入的新图。
+ * @param {Array} before 变换前的画框顶点。
+ * @param {Array} after 变换后的画框顶点。
+ * @returns {object|null} 保留素材和比例的图像构图。
+ */
+export function transformPanelImage(image, before, after) {
+  if (!image) return image;
+  const angle = Math.atan2(after[1].y - after[0].y, after[1].x - after[0].x) - Math.atan2(before[1].y - before[0].y, before[1].x - before[0].x);
+  const halfWidth = image.width * image.scale / 2, halfHeight = image.height * image.scale / 2;
+  const dx = image.x + halfWidth - before[0].x, dy = image.y + halfHeight - before[0].y;
+  return { ...image, x: after[0].x + dx * Math.cos(angle) - dy * Math.sin(angle) - halfWidth, y: after[0].y + dx * Math.sin(angle) + dy * Math.cos(angle) - halfHeight, rotation: (image.rotation || 0) + angle * 180 / Math.PI };
+}
+
+/**
  * 切换普通框与叠加框；转回普通框时裁进所选半页，避免跨页顶点失控。
  * @param {object} panel 当前画框。
  * @param {string} type regular 或 overlay。

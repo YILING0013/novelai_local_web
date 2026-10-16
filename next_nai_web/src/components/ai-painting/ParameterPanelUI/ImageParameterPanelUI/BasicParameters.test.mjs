@@ -23,6 +23,7 @@ function createControls(file, initialProps) {
     react: {
       ...React,
       useId: () => 'parameters',
+      useCallback: callback => callback,
       useState(initial) {
         const index = cursor++;
         if (!(index in slots)) slots[index] = typeof initial === 'function' ? initial() : initial;
@@ -50,6 +51,8 @@ function createControls(file, initialProps) {
     }),
     '@mui/icons-material': new Proxy({}, { get: (_, name) => name }),
     '@/components/muiWrappers/LockableSlider': { __esModule: true, default: 'LockableSlider' },
+    './GenerationParameterBar': { __esModule: true, default: 'GenerationParameterBar' },
+    './ExtraConfiguration': { __esModule: true, default: 'ExtraConfiguration' },
     '@/i18n/I18nProvider': { useI18n: () => ({ t: (key) => key }) },
     '../../utils/parameterMapping': parameterMapping,
     '../../utils/modelUtils': novelAIV5Params,
@@ -88,8 +91,8 @@ function findNode(tree, predicate) {
   return findNode(tree.props?.children, predicate);
 }
 
-const slider = (tree, name) => findNode(tree, (node) => node.type === 'LockableSlider'
-  && node.props.label === `painting.workspace.parameters.${name}`);
+const slider = (tree, name) => findNode(tree, (node) => ['LockableSlider', 'Slider'].includes(node.type)
+  && (node.props.label || node.props['aria-label']) === `painting.workspace.parameters.${name}`);
 const modeButton = (tree) => findNode(tree, (node) => node.type === 'Button'
   && String(node.props.children).endsWith('LargeImageMode'));
 
@@ -97,6 +100,7 @@ function createPanel(overrides = {}, controlProps = {}) {
   let params = {
     width: 1024, height: 1024, steps: 23, guidanceScale: 5,
     promptGuidanceRescale: 0, batchSize: 1, use_upscale_credits: false,
+    seed: '', sampler: 'k_euler', noiseSchedule: 'native',
     ...overrides,
   };
   const inputChanges = [];
@@ -112,8 +116,23 @@ function createPanel(overrides = {}, controlProps = {}) {
     },
     handleInputChange: (...args) => inputChanges.push(args),
   });
+  let toolbar;
+  const renderToolbar = () => {
+    const bar = findNode(panel.render(), node => node.type === 'GenerationParameterBar');
+    if (!toolbar) toolbar = createControls('./GenerationParameterBar.js', bar.props);
+    else toolbar.update(bar.props);
+    return toolbar.render();
+  };
   return {
     panel, inputChanges, getParams: () => params,
+    renderToolbar,
+    openParameter(name) {
+      const tree = renderToolbar();
+      const button = findNode(tree, node => ['ButtonBase', 'IconButton'].includes(node.type)
+        && String(node.props['aria-label']).startsWith(`painting.workspace.parameters.${name}`));
+      button.props.onClick({ currentTarget: {} });
+      return renderToolbar();
+    },
     updateParams(next) {
       params = { ...params, ...next };
       panel.update({ params });
@@ -123,35 +142,38 @@ function createPanel(overrides = {}, controlProps = {}) {
 
 test('Medium 普通和大图模式均固定 14 步和采样器，保留 CFG，隐藏无效控件', () => {
   for (const use_upscale_credits of [false, true]) {
-    const { panel, getParams } = createPanel({
+    const { panel, getParams, openParameter } = createPanel({
       model: 'nai-diffusion-5-full-medium', steps: 50, sampler: 'k_euler',
       promptGuidanceRescale: 0.8, use_upscale_credits,
     }, { isV5Model: true });
-    const tree = panel.render();
+    panel.render();
     assert.equal(getParams().steps, 14);
     assert.equal(getParams().sampler, 'k_euler_ancestral');
     assert.equal(getParams().promptGuidanceRescale, 0);
-    assert.ok(!slider(tree, 'samplingSteps'));
-    assert.ok(!slider(tree, 'promptGuidanceRescale'));
-    assert.ok(slider(tree, 'cfgScale'));
-    const steps = findNode(tree, (node) => node.type === 'TextField'
+    const stepsTree = openParameter('samplingSteps');
+    assert.equal(slider(stepsTree, 'samplingSteps').props.disabled, true);
+    const steps = findNode(stepsTree, (node) => node.type === 'TextField'
       && node.props.label === 'painting.workspace.parameters.samplingSteps');
     assert.equal(steps.props.value, 14);
     assert.equal(steps.props.slotProps.input.readOnly, true);
-    const sampler = findNode(tree, (node) => node.type === 'Select'
-      && node.props.label === 'painting.workspace.parameters.sampler');
-    assert.equal(sampler.props.disabled, true);
+    const samplerTree = openParameter('sampler');
+    assert.equal(findNode(samplerTree, node => node.type === 'MenuItem' && node.props.selected).props.disabled, true);
+    assert.ok(slider(openParameter('cfgScale'), 'cfgScale'));
+    const otherTree = openParameter('otherSettings');
+    assert.ok(!slider(otherTree, 'promptGuidanceRescale'));
+    assert.ok(!findNode(otherTree, node => node.type === 'Select'));
+    assert.ok(slider(otherTree, 'batchSize'));
   }
 });
 
 test('启用大图、拖动步数至 50、切回普通模式后数值与实际参数立即恢复', () => {
-  const { panel, getParams } = createPanel();
+  const { panel, getParams, openParameter, renderToolbar } = createPanel();
   modeButton(panel.render()).props.onClick();
-  assert.equal(slider(panel.render(), 'samplingSteps').props.max, 50);
-  slider(panel.render(), 'samplingSteps').props.onChange(50);
-  assert.equal(slider(panel.render(), 'samplingSteps').props.value, 50);
+  assert.equal(slider(openParameter('samplingSteps'), 'samplingSteps').props.max, 50);
+  slider(renderToolbar(), 'samplingSteps').props.onChange({}, 50);
+  assert.equal(slider(renderToolbar(), 'samplingSteps').props.value, 50);
   modeButton(panel.render()).props.onClick();
-  const steps = slider(panel.render(), 'samplingSteps').props;
+  const steps = slider(renderToolbar(), 'samplingSteps').props;
   assert.equal(steps.max, 28);
   assert.equal(steps.value, 28);
   assert.equal(getParams().steps, 28);
@@ -159,28 +181,31 @@ test('启用大图、拖动步数至 50、切回普通模式后数值与实际�
 });
 
 test('外部切回普通模式或回传旧大图数值时同步收紧步数和尺寸，无需点击控件', () => {
-  const { panel, inputChanges, getParams, updateParams } = createPanel({
+  const { panel, inputChanges, getParams, updateParams, openParameter, renderToolbar } = createPanel({
     use_upscale_credits: true, width: 1472, height: 1472, steps: 50,
   });
   panel.render();
   updateParams({ use_upscale_credits: false });
-  const tree = panel.render();
+  const tree = openParameter('samplingSteps');
   assert.equal(slider(tree, 'samplingSteps').props.value, 28);
   assert.ok(getParams().width * getParams().height <= 1048576);
   assert.equal(getParams().steps, 28);
   assert.ok(inputChanges.some(([field, value]) => field === 'width' && value === String(getParams().width)));
   updateParams({ steps: 45 });
-  assert.equal(slider(panel.render(), 'samplingSteps').props.value, 28);
+  assert.equal(slider(renderToolbar(), 'samplingSteps').props.value, 28);
 });
 
 test('切换模式保留范围内的步数和其他滑块，并继续响应拖动与尺寸输入', () => {
-  const { panel, inputChanges } = createPanel();
+  const { panel, inputChanges, openParameter, renderToolbar } = createPanel();
   modeButton(panel.render()).props.onClick();
   modeButton(panel.render()).props.onClick();
-  assert.equal(slider(panel.render(), 'samplingSteps').props.value, 23);
+  assert.equal(slider(openParameter('samplingSteps'), 'samplingSteps').props.value, 23);
   for (const [label, value] of [['samplingSteps', 20], ['cfgScale', 6.5], ['promptGuidanceRescale', 0.24], ['batchSize', 3]]) {
-    slider(panel.render(), label).props.onChange(value);
-    assert.equal(slider(panel.render(), label).props.value, value);
+    const tree = openParameter(['promptGuidanceRescale', 'batchSize'].includes(label) ? 'otherSettings' : label);
+    const control = slider(tree, label);
+    if (control.type === 'Slider') control.props.onChange({}, value);
+    else control.props.onChange(value);
+    assert.equal(slider(renderToolbar(), label).props.value, value);
   }
   const width = findNode(panel.render(), (node) => node.type === 'TextField' && node.props.id.endsWith('-width'));
   width.props.onChange({ target: { value: '832' } });

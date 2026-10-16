@@ -14,7 +14,7 @@ const INLINE_TEXT_STYLE = { fontSize: '1rem', lineHeight: 1.65 };
  * @param {object} props 文本、输入事件、原生输入引用、预览开关及随机词配置。
  * @returns {React.ReactElement} 可编辑的提示词输入框。
  */
-export default function InlinePromptInput({ value, onChange, inputRef, inputProps, placeholder, previewEnabled, randomPromptConfig }) {
+export default function InlinePromptInput({ value, onChange, inputRef, inputProps, placeholder, previewEnabled, randomPromptConfig, className }) {
   const previewRef = useRef(null);
   const [isComposing, setIsComposing] = useState(false);
   const translationPreview = usePromptTranslationPreview({ text: value, previewRef, overlay: previewEnabled && !isComposing, enabled: !isComposing });
@@ -34,7 +34,7 @@ export default function InlinePromptInput({ value, onChange, inputRef, inputProp
   }, [value, previewEnabled, inputRef]);
 
   return (
-    <Box sx={{
+    <Box className={className} sx={{
       position: 'relative', border: '1px solid', borderColor: 'divider', borderRadius: 1.5,
       overflow: 'hidden',
       '&:hover': { borderColor: 'text.secondary' },

@@ -3,7 +3,6 @@
 import React from 'react';
 import Img2ImgPanel from './ImageParameterPanelUI/Img2ImgPanel';
 import VibePanel from './ImageParameterPanelUI/VibePanel';
-import CharacterControlPanel from './ImageParameterPanelUI/CharacterControlPanel';
 import ImageReferenceControl from './ImageParameterPanelUI/BasicParametersUI/ImageReferenceControl';
 import { isNovelAIDirectorReferenceModel } from '../utils/modelUtils';
 
@@ -54,20 +53,12 @@ const ImageParameterPanel = ({
     onReferenceImageChange,
     referenceImages,
     setReferenceImages,
-    characterTabs,
-    handleCharacterDataChange,
-    handleOpenCharacterEditor,
-    handleAddCharacterTab,
-    handleDeleteCharacterTab,
-    handleMoveUpCharacterTab,
-    handleMoveDownCharacterTab,
     renderEditSummary,
     editorKey,
     editorOpen,
     handleCloseEditor,
     directorToolParams,
     handleVibeToggleDisabled,
-    handleCharacterToggleDisabled,
     // 接收禁用状态
     vibeDisabled,
     vibeBlockedMessageKey,
@@ -136,21 +127,6 @@ const ImageParameterPanel = ({
         />
       )}
 
-      <CharacterControlPanel
-        params={params}
-        handleParamChange={handleParamChange}
-        expandedPanels={expandedPanels}
-        onExpandedPanelsChange={onExpandedPanelsChange}
-        characterTabs={characterTabs}
-        handleAddCharacterTab={handleAddCharacterTab}
-        handleDeleteCharacterTab={handleDeleteCharacterTab}
-        handleMoveUpCharacterTab={handleMoveUpCharacterTab}
-        handleMoveDownCharacterTab={handleMoveDownCharacterTab}
-        handleCharacterDataChange={handleCharacterDataChange}
-        handleOpenCharacterEditor={handleOpenCharacterEditor}
-        handleCharacterToggleDisabled={handleCharacterToggleDisabled}
-        isV5Model={isV5Model}
-      />
     </>
   );
 };

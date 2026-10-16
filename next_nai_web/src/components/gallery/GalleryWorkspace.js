@@ -1,5 +1,7 @@
 "use client";
 
+import { createClientId } from '@/utils/browserCapabilities.mjs';
+
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Box, Button, ButtonBase, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, InputAdornment, LinearProgress, Menu, MenuItem, Snackbar, Stack, TextField, Tooltip, Typography, useMediaQuery, useTheme } from '@mui/material';
 import { AddPhotoAlternateOutlined, CheckBoxOutlined, Close, CreateNewFolderOutlined, DeleteOutline, DeleteForeverOutlined, ArrowBack, DescriptionOutlined, DriveFileMoveOutlined, ImageOutlined, PaletteOutlined, Refresh, RestoreFromTrashOutlined, Search } from '@mui/icons-material';
@@ -181,6 +183,13 @@ export default function GalleryWorkspace({ source = 'references' }) {
 
   const apply = (entry, mode) => {
     try {
+      if (mode === 'imageProcessing') {
+        sessionStorage.setItem('novelai:pending-image-processing', JSON.stringify({ id: createClientId(), entryId: entry.id }));
+        window.dispatchEvent(new Event('novelai:image-processing'));
+        window.dispatchEvent(new CustomEvent('novelai:open-page', { detail: 'ai-painting' }));
+        setDetailId(null);
+        return;
+      }
       if (mode === 'style') {
         window.localStorage.setItem('novelai:pending-artist-prompt', entry.style_prompt);
         window.dispatchEvent(new CustomEvent('novelai:artist-prompt', { detail: entry.style_prompt }));

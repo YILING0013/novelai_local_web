@@ -31,6 +31,7 @@ function renderComponent(filename, props, apiOverrides = {}) {
     if (!(position in slots)) slots[position] = typeof initial === 'function' ? initial() : initial;
     return [slots[position], (next) => { slots[position] = typeof next === 'function' ? next(slots[position]) : next; }];
   };
+  const sessionStorage = { setItem: (key, value) => storage.set(key, value) };
   const window = {
     localStorage: { setItem: (key, value) => storage.set(key, value) },
     dispatchEvent: (event) => events.push(event),
@@ -53,7 +54,7 @@ function renderComponent(filename, props, apiOverrides = {}) {
     '@mui/material': new Proxy({}, { get: (_, key) => key === 'useTheme' ? () => ({ breakpoints: { up: (name) => name } }) : key === 'useMediaQuery' ? () => false : key }),
     '@mui/icons-material': new Proxy({}, { get: (_, key) => key }),
     '@/utils/ApiClient': { __esModule: true, default: api },
-    '@/utils/browserCapabilities.mjs': { copyTextToClipboard: async () => {} },
+    '@/utils/browserCapabilities.mjs': { copyTextToClipboard: async () => {}, createClientId: () => 'synthetic-editor-request' },
     '@/i18n/I18nProvider': { useI18n: () => ({ t: translation }) },
     './GalleryDetailDialog': { __esModule: true, default: 'GalleryDetailDialog' },
     './GalleryMetadataDialog': { __esModule: true, default: 'GalleryMetadataDialog' },
@@ -65,7 +66,7 @@ function renderComponent(filename, props, apiOverrides = {}) {
     const result = {};
     runInNewContext(code, { exports: result, require: (name) => dependencies[name] || require(name), window,
       document: { addEventListener: (name, listener) => { listeners[name] = listener; }, removeEventListener: () => {} },
-      FormData, CustomEvent, structuredClone, IntersectionObserver: class { observe() {} disconnect() {} },
+      FormData, CustomEvent, Event, sessionStorage, structuredClone, IntersectionObserver: class { observe() {} disconnect() {} },
       navigator: { clipboard: { writeText: async () => {} } },
     });
     return result;
@@ -282,4 +283,18 @@ test('目录浏览可进入子目录并确认，另存也接受用户手填路�
   findNode(dialog.render(), (node) => node.type === 'TextField' && node.props.label === 'gallery.outputDirectory').props.onChange({ target: { value: ' E:\\other-exports ' } });
   button(dialog.render(), 'gallery.saveCopy').props.onClick();
   assert.equal(requests[1].output_directory, 'E:\\other-exports');
+});
+
+
+test('图库发送图像处理只传本地图片 ID，保留现有绘画参数', async () => {
+  const gallery = renderComponent('GalleryWorkspace.js', { source: 'references' });
+  gallery.render(); await gallery.flush();
+  findNode(gallery.render(), (node) => node.type === 'ButtonBase').props.onClick();
+  findNode(gallery.render(), (node) => node.type === 'GalleryDetailDialog').props.onApply(fixture, 'imageProcessing');
+  assert.deepEqual(JSON.parse(gallery.storage.get('novelai:pending-image-processing')), {
+    id: 'synthetic-editor-request', entryId: fixture.id,
+  });
+  assert.equal(gallery.storage.has('novelai:pending-reference-parameters'), false);
+  assert.deepEqual(gallery.events.map((event) => event.type), ['novelai:image-processing', 'novelai:open-page']);
+  assert.equal(gallery.events.at(-1).detail, 'ai-painting');
 });

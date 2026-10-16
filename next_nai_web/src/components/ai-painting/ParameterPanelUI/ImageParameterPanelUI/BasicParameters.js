@@ -1,35 +1,20 @@
 "use client";
 
 import React, { useEffect } from 'react';
-import LockableSlider from '@/components/muiWrappers/LockableSlider';
+import { createPortal } from 'react-dom';
+import GenerationParameterBar from './GenerationParameterBar';
 import {
   Box,
   Typography,
   TextField,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
   Button,
   Grid,
   IconButton,
-  Tooltip,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
   Chip,
   InputAdornment,
-  FormControlLabel,
-  Checkbox,
-  FormGroup,
 } from '@mui/material';
 import {
-  ExpandMore as ExpandMoreIcon,
-  Refresh as RefreshIcon,
-  Info as InfoIcon,
-  Clear as ClearIcon,
   AspectRatio as AspectRatioIcon,
-  Tune as TuneIcon,
   KeyboardArrowUp as ArrowUpIcon,
   KeyboardArrowDown as ArrowDownIcon,
 } from '@mui/icons-material';
@@ -37,17 +22,6 @@ import { useMediaQuery, useTheme } from '@mui/material';
 import { setLargeImageMode, findClosestAllowedResolution } from '../../utils/parameterMapping';
 import { NOVELAI_V5_MEDIUM_DEFAULT_PARAMS, NOVELAI_V5_MEDIUM_MODEL_ID, NOVELAI_V5_STANDARD_MAX_STEPS } from '../../utils/modelUtils';
 import { useI18n } from '@/i18n/I18nProvider';
-
-// 采样算法选项
-const samplerOptions = [
-  { value: 'k_euler', label: 'Euler' },
-  { value: 'k_euler_ancestral', label: 'Euler Ancestral' },
-  { value: 'k_dpmpp_2s_ancestral', label: 'DPM++ 2S Ancestral' },
-  { value: 'k_dpmpp_2m_sde', label: 'DPM++ 2M SDE' },
-  { value: 'k_dpmpp_2m', label: 'DPM++ 2M' },
-  { value: 'k_dpmpp_sde', label: 'DPM++ SDE' },
-  { value: 'ddim_v3', label: 'DDIM' },
-];
 
 // 普通尺寸预设
 const standardSizePresets = [
@@ -63,36 +37,6 @@ const largeSizePresets = [
   { width: 1024, height: 1536, labelKey: 'painting.workspace.parameters.portraitSize' },
 ];
 
-// 噪声调度选项
-const noiseScheduleOptions = [
-  { value: 'native', labelKey: 'painting.workspace.parameters.noiseNative' },
-  { value: 'karras', labelKey: 'painting.workspace.parameters.noiseKarras' },
-  { value: 'exponential', labelKey: 'painting.workspace.parameters.noiseExponential' },
-  { value: 'polyexponential', labelKey: 'painting.workspace.parameters.noisePolyexponential' },
-];
-
-const optionLabelSx = {
-  m: 0,
-  minHeight: 36,
-  alignItems: 'flex-start',
-  '& .MuiCheckbox-root': { p: 0.75 },
-  '& .MuiCheckbox-root .MuiSvgIcon-root': { fontSize: 20 },
-  '& .MuiFormControlLabel-label': { py: 0.75 },
-};
-
-const optionTextSx = {
-  fontSize: '0.875rem',
-  lineHeight: 1.5,
-};
-
-const infoIconSx = {
-  ml: 0.75,
-  fontSize: 16,
-  flexShrink: 0,
-  opacity: 0.7,
-};
-
-
 const BasicParameters = ({
   params,
   resolutionAction = null,
@@ -105,8 +49,10 @@ const BasicParameters = ({
   handleInputBlur,
   handleSizePresetClick,
   handleClearSeed,
-  expandedPanels,
-  onExpandedPanelsChange,
+  handleSmeaChange,
+  handleDynChange,
+  handleResetParamsConfirm,
+  parameterToolbarContainer = null,
   isV5Model = false,
 }) => {
   const fieldId = React.useId();
@@ -195,14 +141,24 @@ const BasicParameters = ({
     </InputAdornment>
   );
 
+  // 通过 Portal 移动控件位置，尺寸限制和所有参数修改仍由当前面板统一管理。
+  const parameterBar = <GenerationParameterBar
+    params={params}
+    maxSteps={maxSteps}
+    isV5Medium={isV5Medium}
+    handleParamChange={handleParamChange}
+    handleSeedChange={handleSeedChange}
+    handleClearSeed={handleClearSeed}
+    handleSmeaChange={handleSmeaChange}
+    handleDynChange={handleDynChange}
+    handleResetParamsConfirm={handleResetParamsConfirm}
+  />;
   return (
     <Box sx={{
       display: 'flex',
       flexDirection: 'column',
       gap: 2,
       pt: 1,
-      containerType: 'inline-size',
-      containerName: 'generation-parameters',
       '& .MuiInputBase-root': { fontSize: '0.9375rem' },
       '& .MuiOutlinedInput-root': { minHeight: 44 },
       '& .MuiOutlinedInput-input': { py: 1.25 },
@@ -268,7 +224,7 @@ const BasicParameters = ({
             </Grid>
           </Grid>
 
-          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: 0.75, mt: 1 }}>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
             {sizePresets.map((preset, index) => (
               <Chip
                 key={index}
@@ -279,479 +235,18 @@ const BasicParameters = ({
                 color="primary"
                 sx={{
                   borderRadius: 1,
-                  height: 'auto',
-                  minHeight: 32,
-                  '& .MuiChip-label': { px: 1, py: 0.375, fontSize: '0.875rem', lineHeight: 1.5, whiteSpace: 'normal', textAlign: 'center' },
+                  flex: '1 0 auto',
+                  height: 28,
+                  '& .MuiChip-label': { px: 0.75, fontSize: '0.75rem', lineHeight: 1.25, whiteSpace: 'nowrap' },
                 }}
               />
             ))}
           </Box>
         </Box>
 
-        {/* 常用参数按生成时的设置顺序排列。 */}
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-          {isV5Medium ? (
-            <Tooltip title={t('painting.workspace.parameters.modelV5MediumSettings')} arrow>
-              <TextField
-                label={t('painting.workspace.parameters.samplingSteps')}
-                value={NOVELAI_V5_MEDIUM_DEFAULT_PARAMS.steps}
-                size="small"
-                fullWidth
-                slotProps={{ input: { readOnly: true } }}
-              />
-            </Tooltip>
-          ) : <LockableSlider
-            label={t('painting.workspace.parameters.samplingSteps')}
-            value={params.steps}
-            min={1}
-            max={maxSteps}
-            step={1}
-            onChange={(newValue) => handleParamChange('steps', newValue)}
-            tooltip={t('painting.workspace.parameters.samplingStepsHelp')}
-          />}
-          <LockableSlider
-            label={t('painting.workspace.parameters.cfgScale')}
-            value={params.guidanceScale}
-            min={1}
-            max={20}
-            step={0.1}
-            onChange={(newValue) => handleParamChange('guidanceScale', newValue)}
-            tooltip={t('painting.workspace.parameters.cfgScaleCreativityHelp')}
-            valueLabelFormat={(value) => value.toFixed(1)}
-          />
-        </Box>
-
-        {/* 根据参数区自身宽度决定是否并排，避免宽屏中的窄侧栏挤压控件。 */}
-        <Box sx={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1fr)',
-          gap: 1.5,
-          '@container generation-parameters (min-width: 380px)': {
-            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-          },
-        }}>
-          <TextField
-            id={`${fieldId}-seed`}
-            label={t('painting.workspace.parameters.seed')}
-            value={params.seed}
-            onChange={(e) => handleSeedChange(e.target.value)}
-            fullWidth
-            size="small"
-            InputProps={{
-              endAdornment: (
-                <InputAdornment position="end" sx={{ ml: 0.25, gap: 0.25 }}>
-                  <Tooltip title={t('painting.workspace.parameters.clearSeed')} arrow>
-                    <IconButton
-                      edge="end"
-                      size="small"
-                      onClick={handleClearSeed}
-                      disabled={params.seed === ''}
-                      aria-label={t('painting.workspace.parameters.clearSeed')}
-                      sx={{ p: 0.75, mr: 0 }}
-                    >
-                      <ClearIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                  <Tooltip title={t('painting.workspace.parameters.randomSeed')} arrow>
-                    <IconButton aria-label={t('painting.workspace.parameters.randomSeed')} size="small" onClick={() => handleSeedChange(null, true)} sx={{ p: 0.75 }}>
-                      <RefreshIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </InputAdornment>
-              ),
-            }}
-          />
-          <FormControl fullWidth size="small" sx={{ minWidth: 0 }}>
-            <InputLabel id={`${fieldId}-sampler-label`}>
-              {t('painting.workspace.parameters.sampler')}
-            </InputLabel>
-            <Select
-              labelId={`${fieldId}-sampler-label`}
-              label={t('painting.workspace.parameters.sampler')}
-              value={params.sampler || 'k_euler'}
-              disabled={isV5Medium}
-              onChange={(e) => handleParamChange('sampler', e.target.value)}
-            >
-              {samplerOptions.map((option) => (
-                <MenuItem key={option.value} value={option.value}>
-                  {option.label}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </Box>
-
-        <Accordion
-          expanded={Boolean(expandedPanels.otherSettings)}
-          onChange={(_, isExpanded) => onExpandedPanelsChange('otherSettings', isExpanded)}
-          disableGutters
-          sx={{
-            bgcolor: 'transparent',
-            backgroundImage: 'none',
-            boxShadow: 'none',
-            '&::before': { display: 'none' },
-            '&.Mui-expanded': { m: 0 },
-          }}
-        >
-          <AccordionSummary
-            expandIcon={<ExpandMoreIcon sx={{ fontSize: 18 }} />}
-            sx={{ minHeight: 36, px: 0, '& .MuiAccordionSummary-content': { my: 0 } }}
-          >
-            <Typography sx={{ fontSize: 14, fontWeight: 500 }}>
-              {t('painting.workspace.parameters.otherSettings')}
-            </Typography>
-          </AccordionSummary>
-          <AccordionDetails sx={{ p: 0, pt: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {/* Prompt Guidance Rescale */}
-            {!isV5Medium && <LockableSlider
-              label={t('painting.workspace.parameters.promptGuidanceRescale')}
-              value={params.promptGuidanceRescale}
-              min={0}
-              max={1}
-              step={0.02}
-              onChange={(newValue) => handleParamChange('promptGuidanceRescale', newValue)}
-              tooltip={t('painting.workspace.parameters.promptGuidanceRescaleHelp')}
-              valueLabelFormat={(value) => value.toFixed(2)}
-            />}
-
-            {/* 噪声调度 */}
-            {!isV5Medium && <FormControl fullWidth variant="outlined" size="small">
-              <InputLabel id={`${fieldId}-noise-label`}>
-                {t('painting.workspace.parameters.noiseSchedule')}
-              </InputLabel>
-              <Select
-                labelId={`${fieldId}-noise-label`}
-                label={t('painting.workspace.parameters.noiseSchedule')}
-                value={params.noiseSchedule}
-                onChange={(e) => handleParamChange('noiseSchedule', e.target.value)}
-              >
-                {noiseScheduleOptions.map((option) => (
-                  <MenuItem key={option.value} value={option.value}>
-                    {t(option.labelKey)}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>}
-            {/* 批量生成 */}
-            <LockableSlider
-              label={t('painting.workspace.parameters.batchSize')}
-              value={params.batchSize}
-              min={1}
-              max={8}
-              step={1}
-              onChange={(newValue) => handleParamChange('batchSize', newValue)}
-              tooltip={t('painting.workspace.parameters.batchSizeHelp')}
-              marks={[
-                { value: 1, label: '1' },
-                { value: 4, label: '4' },
-                { value: 8, label: '8' },
-              ]}
-            />
-          </AccordionDetails>
-        </Accordion>
+      {parameterToolbarContainer ? createPortal(parameterBar, parameterToolbarContainer) : parameterBar}
     </Box>
   );
 };
-
-/**
- * 显示参数区末尾的额外配置，恢复默认值也在这里统一操作。
- * @param {object} props 当前参数、参数修改回调和恢复默认值回调。
- * @returns {React.ReactElement} 额外配置折叠区域。
- */
-/**
- * 显示可折叠的采样与高级选项；回调由参数面板提供，重置沿用同一确认流程。
- * @param {object} props 当前参数和修改、重置回调。
- * @returns {React.ReactElement} 高级参数折叠区。
- */
-export function ExtraConfiguration({ params, handleParamChange, handleSmeaChange, handleDynChange, handleResetParamsConfirm }) {
-  const { t } = useI18n();
-  const isSmeaUnsupported = params.isV4Model;
-  // V4 及以上模型官方不支持 SMEA / SMEA DYN，UI 必须显示为关闭且不可交互。
-  const smeaChecked = isSmeaUnsupported ? false : Boolean(params.smea);
-  const dynChecked = isSmeaUnsupported ? false : Boolean(params.dyn);
-  const autoSmeaChecked = isSmeaUnsupported ? false : Boolean(params.autoSmea);
-  const smeaTooltip = isSmeaUnsupported
-    ? t('painting.workspace.parameters.smeaUnsupported')
-    : t('painting.workspace.parameters.smeaHelp');
-  const dynTooltip = isSmeaUnsupported
-    ? t('painting.workspace.parameters.smeaDynUnsupported')
-    : t('painting.workspace.parameters.smeaDynHelp');
-
-  return (
-    <Accordion
-      disableGutters
-      sx={{
-        boxShadow: 'none',
-        background: 'transparent',
-        border: 0,
-        borderTop: '1px solid',
-        borderBottom: '1px solid',
-        borderColor: 'divider',
-        '&:before': { display: 'none' },
-        borderRadius: '0 !important',
-        '&.Mui-expanded': { m: 0 },
-      }}
-    >
-      <AccordionSummary
-        expandIcon={<ExpandMoreIcon sx={{ fontSize: 18 }} />}
-        sx={{
-          minHeight: 44,
-          height: 44,
-          p: 0,
-          pl: 0,
-          '&:hover': { backgroundColor: 'transparent' },
-          '&.Mui-expanded': { minHeight: 44 },
-          '& .MuiAccordionSummary-content': { margin: 0 },
-          '& .MuiAccordionSummary-content.Mui-expanded': { margin: 0 },
-        }}
-      >
-        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-          <TuneIcon sx={{ mr: 1, fontSize: 18, color: 'text.secondary' }} />
-          <Typography sx={{ fontSize: '0.9375rem', fontWeight: 500, lineHeight: 1.5 }}>
-            {t('painting.workspace.parameters.extraConfiguration')}
-          </Typography>
-          <Tooltip title={t('painting.workspace.parameters.extraConfigurationWarning')} arrow placement="right">
-            <InfoIcon sx={{ ml: 0.75, fontSize: 16, opacity: 0.6 }} />
-          </Tooltip>
-        </Box>
-      </AccordionSummary>
-      <AccordionDetails sx={{ px: 0, pb: 2, pt: 1 }}>
-        <Typography color="text.secondary" sx={{ display: 'block', mb: 2, fontSize: '0.875rem', lineHeight: 1.6 }}>
-          {t('painting.workspace.parameters.experimentalWarning')}
-        </Typography>
-
-        <Box sx={{ mb: 2 }}>
-          <Typography color="text.secondary" fontWeight="medium" sx={{ mb: 0.75, display: 'block', fontSize: '0.875rem', lineHeight: 1.5 }}>
-            {t('painting.workspace.parameters.compatibilitySettings')}
-          </Typography>
-          <FormGroup>
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0.5 }}>
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={params.legacy}
-                    onChange={(e) => handleParamChange('legacy', e.target.checked)}
-                    size="small"
-                  />
-                }
-                label={
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Typography sx={optionTextSx}>{t('painting.workspace.parameters.legacyCompatibility')}</Typography>
-                    <Tooltip title={t('painting.workspace.parameters.legacyCompatibilityHelp')} arrow>
-                      <InfoIcon sx={infoIconSx} />
-                    </Tooltip>
-                  </Box>
-                }
-                sx={optionLabelSx}
-              />
-
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={params.legacy_uc}
-                    onChange={(e) => handleParamChange('legacy_uc', e.target.checked)}
-                    size="small"
-                  />
-                }
-                label={
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Typography sx={optionTextSx}>{t('painting.workspace.parameters.legacyPromptConditioning')}</Typography>
-                    <Tooltip title={t('painting.workspace.parameters.legacyPromptConditioningHelp')} arrow>
-                      <InfoIcon sx={infoIconSx} />
-                    </Tooltip>
-                  </Box>
-                }
-                sx={optionLabelSx}
-              />
-
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={params.legacy_v3_extend}
-                    onChange={(e) => handleParamChange('legacy_v3_extend', e.target.checked)}
-                    size="small"
-                  />
-                }
-                label={
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Typography sx={optionTextSx}>{t('painting.workspace.parameters.legacyV3Extend')}</Typography>
-                    <Tooltip title={t('painting.workspace.parameters.legacyV3ExtendHelp')} arrow>
-                      <InfoIcon sx={infoIconSx} />
-                    </Tooltip>
-                  </Box>
-                }
-                sx={optionLabelSx}
-              />
-            </Box>
-          </FormGroup>
-        </Box>
-
-        <Box>
-          <Typography color="text.secondary" fontWeight="medium" sx={{ mb: 0.75, display: 'block', fontSize: '0.875rem', lineHeight: 1.5 }}>
-            {t('painting.workspace.parameters.specialFeatures')}
-          </Typography>
-          <FormGroup>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 2, rowGap: 0.5 }}>
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={smeaChecked}
-                    onChange={handleSmeaChange}
-                    disabled={isSmeaUnsupported}
-                    size="small"
-                  />
-                }
-                label={
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Typography sx={optionTextSx}>SMEA</Typography>
-                    <Tooltip title={smeaTooltip} arrow>
-                      <InfoIcon sx={infoIconSx} />
-                    </Tooltip>
-                  </Box>
-                }
-                sx={optionLabelSx}
-              />
-
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={dynChecked}
-                    onChange={handleDynChange}
-                    disabled={isSmeaUnsupported || !smeaChecked}
-                    size="small"
-                  />
-                }
-                label={
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Typography sx={optionTextSx}>DYN</Typography>
-                    <Tooltip title={dynTooltip} arrow>
-                      <InfoIcon sx={infoIconSx} />
-                    </Tooltip>
-                  </Box>
-                }
-                sx={optionLabelSx}
-              />
-
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={params.variety}
-                    onChange={(e) => handleParamChange('variety', e.target.checked)}
-                    size="small"
-                  />
-                }
-                label={
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Typography sx={optionTextSx}>{t('painting.workspace.parameters.variety')}</Typography>
-                    <Tooltip title={t('painting.workspace.parameters.varietyHelp')} arrow>
-                      <InfoIcon sx={infoIconSx} />
-                    </Tooltip>
-                  </Box>
-                }
-                sx={optionLabelSx}
-              />
-
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={params.decrisp}
-                    onChange={(e) => handleParamChange('decrisp', e.target.checked)}
-                    size="small"
-                  />
-                }
-                label={
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Typography sx={optionTextSx}>{t('painting.workspace.parameters.decrisp')}</Typography>
-                    <Tooltip title={t('painting.workspace.parameters.decrispHelp')} arrow>
-                      <InfoIcon sx={infoIconSx} />
-                    </Tooltip>
-                  </Box>
-                }
-                sx={optionLabelSx}
-              />
-
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={autoSmeaChecked}
-                    onChange={(e) => handleParamChange('autoSmea', e.target.checked)}
-                    disabled={isSmeaUnsupported}
-                    size="small"
-                  />
-                }
-                label={
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Typography sx={optionTextSx}>{t('painting.workspace.parameters.autoSmea')}</Typography>
-                    <Tooltip title={isSmeaUnsupported
-                      ? t('painting.workspace.parameters.autoSmeaUnsupported')
-                      : t('painting.workspace.parameters.autoSmeaHelp')} arrow>
-                      <InfoIcon sx={infoIconSx} />
-                    </Tooltip>
-                  </Box>
-                }
-                sx={optionLabelSx}
-              />
-
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={params.prefer_brownian}
-                    onChange={(e) => handleParamChange('prefer_brownian', e.target.checked)}
-                    size="small"
-                  />
-                }
-                label={
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Typography sx={optionTextSx}>{t('painting.workspace.parameters.brownianMotion')}</Typography>
-                    <Tooltip title={t('painting.workspace.parameters.brownianMotionHelp')} arrow>
-                      <InfoIcon sx={infoIconSx} />
-                    </Tooltip>
-                  </Box>
-                }
-                sx={optionLabelSx}
-              />
-
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={params.deliberate_euler_ancestral_bug}
-                    onChange={(e) => handleParamChange('deliberate_euler_ancestral_bug', e.target.checked)}
-                    size="small"
-                  />
-                }
-                label={
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Typography sx={optionTextSx}>{t('painting.workspace.parameters.preserveSamplerBug')}</Typography>
-                    <Tooltip title={t('painting.workspace.parameters.preserveSamplerBugHelp')} arrow>
-                      <InfoIcon sx={infoIconSx} />
-                    </Tooltip>
-                  </Box>
-                }
-                sx={optionLabelSx}
-              />
-            </Box>
-          </FormGroup>
-        </Box>
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
-          <Button
-            variant="outlined"
-            color="secondary"
-            size="small"
-            startIcon={<RefreshIcon fontSize="small" />}
-            onClick={handleResetParamsConfirm}
-            sx={{
-              minHeight: 40,
-              fontSize: '0.875rem',
-              opacity: 0.8,
-              '&:hover': { opacity: 1 }
-            }}
-          >
-            {t('painting.workspace.parameters.resetAllDefaults')}
-          </Button>
-        </Box>
-      </AccordionDetails>
-    </Accordion>
-  );
-}
 
 export default BasicParameters;

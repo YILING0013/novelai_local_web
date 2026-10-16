@@ -7,13 +7,12 @@ import LockableSlider from '@/components/muiWrappers/LockableSlider';
 import {
   Box,
   Typography,
-  Button,
   IconButton,
   Accordion,
   AccordionSummary,
   AccordionDetails,
   Divider,
-  CardActions,
+  Tooltip,
 } from '@mui/material';
 import {
   ExpandMore as ExpandMoreIcon,
@@ -79,13 +78,10 @@ const Img2ImgPanel = ({
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
           <ImageIcon sx={{ mr: 1, fontSize: 18, color: 'text.secondary' }} />
           <Typography sx={{ fontSize: 15, fontWeight: 500 }}>{t('painting.workspace.parameters.img2img')}</Typography>
+          {imagePreview && <Typography component="span" variant="caption" color="primary.main" sx={{ ml: 1, whiteSpace: 'nowrap' }}>{t('painting.workspace.parameters.enabled')}</Typography>}
         </Box>
       </AccordionSummary>
       <AccordionDetails sx={{ px: 0, py: 2 }}>
-        <Typography color="text.secondary" display="block" sx={{ mb: 2, fontSize: 14, lineHeight: 1.6 }}>
-          {t('painting.workspace.parameters.img2imgDescription')}
-        </Typography>
-        
         <input
           ref={fileInputRef}
           type="file"
@@ -147,35 +143,30 @@ const Img2ImgPanel = ({
                   maxHeight: '100%'
                 }}
               />
-              <IconButton
-                size="small"
-                onClick={handleImageDelete}
-                sx={{
-                  position: 'absolute',
-                  top: 8,
-                  right: 8,
-                  backgroundColor: 'rgba(0, 0, 0, 0.6)',
-                  color: 'white',
-                  '&:hover': {
-                    backgroundColor: 'rgba(255, 0, 0, 0.8)',
-                  }
-                }}
-              >
-                <DeleteIcon fontSize="small" />
-              </IconButton>
+              {renderEditSummary()}
+              <Box sx={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 0.5 }}>
+                <Tooltip title={t('painting.workspace.parameters.editImage')} arrow>
+                  <IconButton
+                    aria-label={t('painting.workspace.parameters.editImage')}
+                    size="small"
+                    onClick={handleOpenEditor}
+                    sx={{ bgcolor: 'rgba(0, 0, 0, 0.6)', color: 'white', '&:hover': { bgcolor: 'primary.dark' } }}
+                  >
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title={t('painting.workspace.parameters.deleteSourceImage')} arrow>
+                  <IconButton
+                    aria-label={t('painting.workspace.parameters.deleteSourceImage')}
+                    size="small"
+                    onClick={handleImageDelete}
+                    sx={{ bgcolor: 'rgba(0, 0, 0, 0.6)', color: 'white', '&:hover': { bgcolor: 'error.main' } }}
+                  >
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Box>
             </Box>
-            <CardActions sx={{ px: 0, py: 0.5 }}>
-              <Button 
-                startIcon={<EditIcon />} 
-                onClick={handleOpenEditor}
-                fullWidth
-                sx={{ py: 0.5 }}
-              >
-                {t('painting.workspace.parameters.editImage')}
-              </Button>
-            </CardActions>
-            
-            {renderEditSummary()}
           </Box>
         )}
 

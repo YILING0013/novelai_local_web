@@ -1,0 +1,2426 @@
+.image-processing-editor {
+  position: relative;
+  isolation: isolate;
+  container: image-processing / inline-size;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.image-processing-editor .curves-control {
+  margin: 4px 0 18px;
+}
+.image-processing-editor .curves-control > svg {
+  width: 100%;
+  height: 170px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  touch-action: none;
+  cursor: crosshair;
+  border-radius: 4px;
+}
+.image-processing-editor .curves-control > svg line {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.image-processing-editor .curves-control > svg .curve-diagonal {
+  stroke: var(--border);
+  stroke-dasharray: 4 5;
+}
+.image-processing-editor .curves-control > svg .curve-path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.image-processing-editor .curves-control > svg circle {
+  fill: var(--accent);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  cursor: grab;
+}
+.image-processing-editor .curves-control > small {
+  font-size: 9px;
+  color: var(--accent);
+  display: block;
+  margin-top: 7px;
+}
+.image-processing-editor * {
+  box-sizing: border-box;
+}
+.image-processing-editor button,
+.image-processing-editor input,
+.image-processing-editor select,
+.image-processing-editor textarea {
+  font: inherit;
+}
+.image-processing-editor button,
+.image-processing-editor a,
+.image-processing-editor input,
+.image-processing-editor select,
+.image-processing-editor textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+.image-processing-editor button {
+  border: 1px solid transparent;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  border-radius: var(--radius);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+.image-processing-editor button:hover {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+.image-processing-editor button:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+.image-processing-editor button:disabled:hover {
+  background: transparent;
+}
+.image-processing-editor button:focus-visible,
+.image-processing-editor a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.image-processing-editor input,
+.image-processing-editor select,
+.image-processing-editor textarea {
+  min-width: 0;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 7px 9px;
+  outline: none;
+}
+.image-processing-editor input:focus,
+.image-processing-editor select:focus,
+.image-processing-editor textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px #9ec1aa12;
+}
+.image-processing-editor input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.image-processing-editor input[type="number"]::-webkit-inner-spin-button {
+  appearance: none;
+}
+.image-processing-editor input[type="checkbox"] {
+  appearance: none;
+  margin: 0;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  cursor: pointer;
+}
+.image-processing-editor input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.image-processing-editor input[type="checkbox"]:checked:after {
+  content: "✓";
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent-contrast);
+  line-height: 1;
+}
+.image-processing-editor input[type="color"] {
+  appearance: none;
+  width: 27px;
+  height: 25px;
+  padding: 3px;
+  cursor: pointer;
+}
+.image-processing-editor input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+.image-processing-editor input[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: 2px;
+}
+.image-processing-editor input[type="range"] {
+  appearance: none;
+  background: var(--bg);
+  height: 3px;
+  border: 0;
+  border-radius: 5px;
+  box-shadow: none;
+  padding: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+.image-processing-editor input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px #232426;
+}
+.image-processing-editor select {
+  font-size: 11px;
+  cursor: pointer;
+}
+.image-processing-editor svg {
+  flex-shrink: 0;
+}
+.image-processing-editor small {
+  font-size: 10px;
+  color: var(--muted);
+}
+.image-processing-editor kbd {
+  font:
+    10px "Segoe UI",
+    sans-serif;
+  color: var(--muted);
+  font-weight: 400;
+}
+.image-processing-editor a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.image-processing-editor a:hover {
+  text-decoration: underline;
+}
+.image-processing-editor h1,
+.image-processing-editor h2,
+.image-processing-editor h3,
+.image-processing-editor p {
+  margin: 0;
+}
+.image-processing-editor hr {
+  height: 1px;
+  border: 0;
+  background: var(--border);
+  margin: 5px 0;
+}
+.image-processing-editor button.primary {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 600;
+  border-color: var(--accent);
+}
+.image-processing-editor button.primary:hover {
+  background: var(--accent);
+}
+.image-processing-editor .full-width {
+  width: 100%;
+}
+.image-processing-editor .text-button {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 5px 7px;
+}
+.image-processing-editor .text-button:hover {
+  color: var(--text);
+}
+.image-processing-editor .icon-button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: var(--text);
+  flex-shrink: 0;
+}
+.image-processing-editor .icon-button:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+.image-processing-editor .icon-button.active {
+  background: var(--accent-dark);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 13%, transparent);
+}
+.image-processing-editor .rail-spacer,
+.image-processing-editor .header-spacer,
+.image-processing-editor .tabs-spacer {
+  flex: 1;
+}
+.image-processing-editor .editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg);
+}
+.image-processing-editor .app-header {
+  height: 51px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 15px;
+  gap: 18px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  z-index: 51;
+}
+.image-processing-editor .brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--text);
+  text-decoration: none !important;
+}
+.image-processing-editor .brand-mark {
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+}
+.image-processing-editor .brand strong {
+  font-size: 15px;
+  font-weight: 550;
+  letter-spacing: -0.5px;
+}
+.image-processing-editor .brand strong span {
+  margin-left: 5px;
+  font-size: 9px;
+  font-weight: 400;
+  color: var(--muted);
+  letter-spacing: 0.5px;
+}
+.image-processing-editor .menu-bar {
+  display: flex;
+  gap: 1px;
+}
+.image-processing-editor .menu-container {
+  position: relative;
+}
+.image-processing-editor .menu-trigger {
+  padding: 6px 8px;
+  font-size: 11px;
+  color: var(--text);
+  border-radius: 4px;
+}
+.image-processing-editor .menu-trigger.opened {
+  background: color-mix(in srgb, var(--panel-raised) 7%, transparent);
+  color: var(--text);
+}
+.image-processing-editor .menu-dropdown {
+  position: absolute;
+  top: 34px;
+  left: 0;
+  width: 250px;
+  padding: 5px;
+  background: var(--accent-dark);
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  box-shadow: 0 8px 30px #0006;
+  z-index: 60;
+}
+.image-processing-editor .menu-dropdown button {
+  width: 100%;
+  padding: 8px 10px;
+  justify-content: space-between;
+  gap: 18px;
+  font-size: 11px;
+  line-height: 1.3;
+}
+.image-processing-editor .menu-dropdown button:hover {
+  background: var(--accent-dark);
+  color: var(--text);
+}
+.image-processing-editor .menu-dismiss {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  background: transparent;
+}
+.image-processing-editor .search-button {
+  gap: 12px;
+  color: var(--muted);
+  padding: 5px 6px;
+}
+.image-processing-editor .search-button kbd {
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 9px;
+  padding: 2px 4px;
+}
+.image-processing-editor .save-status {
+  font-size: 10px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.image-processing-editor .save-status > span,
+.image-processing-editor .local-dot {
+  width: 5px;
+  height: 5px;
+  display: inline-block;
+  border-radius: 50%;
+  background: var(--success);
+}
+.image-processing-editor .save-status.saving > span {
+  background: var(--warning);
+}
+.image-processing-editor .save-status.error > span {
+  background: color-mix(in srgb, var(--error) 12%, var(--panel));
+}
+.image-processing-editor .export-button {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  padding: 7px 12px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.image-processing-editor .export-button:hover {
+  background: var(--accent);
+}
+.image-processing-editor .tool-options {
+  height: 45px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 15px 0 18px;
+  gap: 14px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+.image-processing-editor .current-tool {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 113px;
+  color: var(--text);
+}
+.image-processing-editor .current-tool svg {
+  color: var(--text);
+}
+.image-processing-editor .option-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--panel-raised);
+  flex-shrink: 0;
+}
+.image-processing-editor .tool-options select {
+  padding: 4px 8px;
+  height: 27px;
+  min-width: 63px;
+}
+.image-processing-editor .checkbox-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text);
+  font-size: 11px;
+}
+.image-processing-editor .option-note {
+  font-size: 10px;
+  color: var(--muted);
+}
+.image-processing-editor .tool-options .number-field {
+  width: 120px;
+  height: 27px;
+}
+.image-processing-editor .tool-options .number-field span {
+  font-size: 10px;
+  white-space: nowrap;
+}
+.image-processing-editor .undo-actions {
+  display: flex;
+  gap: 2px;
+}
+.image-processing-editor .inline-color {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.image-processing-editor .segmented {
+  display: flex;
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 2px;
+  border-radius: 5px;
+  gap: 2px;
+}
+.image-processing-editor .segmented button {
+  padding: 3px 9px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.image-processing-editor .segmented .selected {
+  color: var(--accent);
+  background: var(--accent-dark);
+}
+.image-processing-editor .workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.image-processing-editor .tool-rail {
+  width: 51px;
+  flex-shrink: 0;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  padding: 10px 0 7px;
+  gap: 3px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.image-processing-editor .tool-rail .icon-button {
+  width: 34px;
+  height: 31px;
+  border-radius: 5px;
+}
+.image-processing-editor .tool-divider {
+  margin-top: 7px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.image-processing-editor .tool-rail .rail-spacer {
+  min-height: 12px;
+}
+.image-processing-editor .color-pair {
+  position: relative;
+  width: 37px;
+  height: 51px;
+  margin: 4px 0 5px;
+}
+.image-processing-editor .color-pair input {
+  position: absolute;
+  top: 2px;
+  left: 1px;
+  width: 25px;
+  height: 25px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 2px;
+  z-index: 2;
+}
+.image-processing-editor .color-pair input.back-color {
+  left: 11px;
+  top: 12px;
+  z-index: 1;
+}
+.image-processing-editor .color-pair button {
+  position: absolute;
+  bottom: 0;
+  left: 2px;
+  font-size: 16px;
+  height: 15px;
+  width: 28px;
+  color: var(--muted);
+}
+.image-processing-editor .canvas-workspace {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.image-processing-editor .document-tabs {
+  height: 37px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-right: 7px;
+}
+.image-processing-editor .document-tab {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  flex-shrink: 0;
+  max-width: 280px;
+  border-top: 2px solid transparent;
+}
+.image-processing-editor .document-tab.active {
+  background: var(--accent-dark);
+  border-top-color: var(--accent);
+}
+.image-processing-editor .document-tab > button:first-child {
+  height: 100%;
+  padding: 0 6px 0 14px;
+  font-size: 10px;
+  color: var(--muted);
+  gap: 8px;
+  border-radius: 0;
+}
+.image-processing-editor .document-tab.active > button:first-child {
+  color: var(--accent);
+}
+.image-processing-editor .document-tab > button:first-child > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 150px;
+}
+.image-processing-editor .document-tab small {
+  font-size: 9px;
+  color: var(--muted);
+  margin-left: 4px;
+}
+.image-processing-editor .tab-close {
+  width: 24px;
+  height: 24px;
+  margin: 0 6px;
+  color: var(--muted);
+}
+.image-processing-editor .document-tabs > .icon-button {
+  margin-left: 5px;
+  width: 26px;
+}
+.image-processing-editor .canvas-stage {
+  position: relative;
+  overflow: hidden;
+  flex: 1;
+  touch-action: none;
+  background: var(--bg);
+  user-select: none;
+  min-height: 0;
+}
+.image-processing-editor .artboard {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  box-shadow: 0 10px 35px #0004;
+  isolation: isolate;
+}
+.image-processing-editor .checkerboard {
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, #ddd 25%, transparent 25%),
+    linear-gradient(-45deg, #ddd 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ddd 75%),
+    linear-gradient(-45deg, transparent 75%, #ddd 75%);
+  background-size: 16px 16px;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
+}
+.image-processing-editor .artboard > canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.image-processing-editor .artboard-label {
+  position: absolute;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+  font-size: 10px;
+  pointer-events: none;
+}
+.image-processing-editor .artboard-label small {
+  font-size: 9px;
+  color: var(--muted);
+}
+.image-processing-editor .ruler-horizontal,
+.image-processing-editor .ruler-vertical {
+  position: absolute;
+  background: var(--panel);
+  z-index: 5;
+  color: var(--muted);
+  font:
+    8px "Segoe UI",
+    sans-serif;
+  overflow: hidden;
+}
+.image-processing-editor .ruler-horizontal {
+  left: 20px;
+  right: 0;
+  top: 0;
+  height: 20px;
+  border-bottom: 1px solid var(--border);
+  cursor: ns-resize;
+}
+.image-processing-editor .ruler-vertical {
+  top: 20px;
+  bottom: 0;
+  left: 0;
+  width: 20px;
+  border-right: 1px solid var(--border);
+  cursor: ew-resize;
+}
+.image-processing-editor .ruler-horizontal span {
+  position: absolute;
+  top: 0;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  padding-left: 4px;
+  border-left: 1px solid var(--border);
+}
+.image-processing-editor .ruler-horizontal span:after {
+  content: "";
+  position: absolute;
+  width: 1px;
+  height: 4px;
+  left: 25px;
+  bottom: 0;
+  background: var(--panel);
+}
+.image-processing-editor .ruler-vertical span {
+  position: absolute;
+  left: 0;
+  width: 20px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+  writing-mode: vertical-rl;
+  height: 45px;
+  align-items: center;
+  display: flex;
+}
+.image-processing-editor .ruler-corner {
+  position: absolute;
+  z-index: 6;
+  top: 0;
+  left: 0;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+}
+.image-processing-editor .grid-overlay,
+.image-processing-editor .selection-outline,
+.image-processing-editor .drawing-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.image-processing-editor .grid-overlay {
+  background-image:
+    linear-gradient(#fff3 1px, transparent 1px),
+    linear-gradient(90deg, #fff3 1px, transparent 1px);
+  mix-blend-mode: difference;
+}
+.image-processing-editor .drawing-overlay {
+  overflow: visible;
+}
+.image-processing-editor .guide-line {
+  position: absolute;
+  background: var(--blue);
+  opacity: 0.8;
+  pointer-events: none;
+}
+.image-processing-editor .guide-line.x {
+  width: 1px;
+  top: -10000px;
+  bottom: -10000px;
+}
+.image-processing-editor .guide-line.y {
+  height: 1px;
+  left: -10000px;
+  right: -10000px;
+}
+.image-processing-editor .guide-line.snap-line {
+  background: var(--blue);
+}
+.image-processing-editor .transform-box {
+  position: absolute;
+  border: 1px solid var(--accent);
+  pointer-events: none;
+  transform-origin: center;
+}
+.image-processing-editor .transform-handle {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  border: 1px solid var(--accent);
+  background: var(--panel-raised);
+  border-radius: 0;
+  pointer-events: auto;
+}
+.image-processing-editor .transform-handle:hover {
+  background: var(--panel-raised);
+}
+.image-processing-editor .transform-handle.nw {
+  left: -4px;
+  top: -4px;
+  cursor: nwse-resize;
+}
+.image-processing-editor .transform-handle.ne {
+  right: -4px;
+  top: -4px;
+  cursor: nesw-resize;
+}
+.image-processing-editor .transform-handle.sw {
+  left: -4px;
+  bottom: -4px;
+  cursor: nesw-resize;
+}
+.image-processing-editor .transform-handle.se {
+  right: -4px;
+  bottom: -4px;
+  cursor: nwse-resize;
+}
+.image-processing-editor .rotation-stem {
+  position: absolute;
+  left: 50%;
+  top: -25px;
+  width: 1px;
+  height: 25px;
+  background: var(--accent);
+}
+.image-processing-editor .rotation-handle {
+  position: absolute;
+  left: calc(50% - 4px);
+  top: -30px;
+  width: 9px;
+  height: 9px;
+  padding: 0;
+  border: 1px solid var(--accent);
+  background: var(--panel-raised);
+  border-radius: 50%;
+  pointer-events: auto;
+  cursor: grab;
+}
+.image-processing-editor .size-label {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--panel-raised);
+  color: var(--text);
+  padding: 3px 6px;
+  font:
+    9px "Segoe UI",
+    sans-serif;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+.image-processing-editor .tool-brush,
+.image-processing-editor .tool-eraser,
+.image-processing-editor .tool-clone,
+.image-processing-editor .tool-blur,
+.image-processing-editor .tool-marquee,
+.image-processing-editor .tool-crop,
+.image-processing-editor .tool-shape,
+.image-processing-editor .tool-gradient,
+.image-processing-editor .tool-wand,
+.image-processing-editor .tool-lasso,
+.image-processing-editor .tool-fill {
+  cursor: crosshair;
+}
+.image-processing-editor .tool-hand,
+.image-processing-editor .panning {
+  cursor: grab;
+}
+.image-processing-editor .tool-hand:active,
+.image-processing-editor .panning:active {
+  cursor: grabbing;
+}
+.image-processing-editor .tool-zoom {
+  cursor: zoom-in;
+}
+.image-processing-editor .tool-text {
+  cursor: text;
+}
+.image-processing-editor .tool-move {
+  cursor: default;
+}
+.image-processing-editor .tool-eyedropper {
+  cursor: crosshair;
+}
+.image-processing-editor .navigator {
+  position: absolute;
+  bottom: 18px;
+  right: 18px;
+  width: 160px;
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 20px #0008;
+  cursor: crosshair;
+  z-index: 7;
+}
+.image-processing-editor .navigator img {
+  display: block;
+  width: 100%;
+  pointer-events: none;
+}
+.image-processing-editor .crop-actions {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  box-shadow: 0 7px 22px #0004;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  z-index: 12;
+}
+.image-processing-editor .crop-actions > span {
+  padding: 0 10px;
+  color: var(--text);
+}
+.image-processing-editor .crop-actions button {
+  padding: 6px 9px;
+}
+.image-processing-editor .busy-indicator {
+  position: absolute;
+  left: 50%;
+  top: 35px;
+  transform: translateX(-50%);
+  padding: 10px 20px;
+  border: 1px solid var(--border);
+  background: var(--panel-raised);
+  border-radius: 6px;
+  z-index: 20;
+}
+.image-processing-editor .empty-canvas-hint {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 13px;
+  background: var(--panel-raised);
+  padding: 28px 38px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  box-shadow: 0 15px 30px #0003;
+  max-width: 90%;
+  color: var(--text);
+}
+.image-processing-editor .empty-canvas-hint p {
+  font-size: 15px;
+}
+.image-processing-editor .empty-canvas-hint span {
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+}
+.image-processing-editor .empty-canvas-hint button {
+  padding: 7px 14px;
+  border-color: var(--border);
+  margin-top: 5px;
+}
+.image-processing-editor .canvas-footer {
+  height: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  padding: 0 10px;
+  font-size: 9px;
+  color: var(--muted);
+}
+.image-processing-editor .zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.image-processing-editor .zoom-controls .icon-button {
+  width: 21px;
+  height: 23px;
+}
+.image-processing-editor .zoom-controls .icon-button svg {
+  width: 12px;
+}
+.image-processing-editor .zoom-value {
+  font-size: 10px;
+  color: var(--text);
+  min-width: 54px;
+}
+.image-processing-editor .fit-button {
+  font-size: 9px;
+  color: var(--muted);
+  padding: 3px 7px;
+  margin-left: 3px;
+}
+.image-processing-editor .canvas-size {
+  white-space: nowrap;
+}
+.image-processing-editor .status-separator {
+  color: var(--muted);
+  margin: 0 9px;
+}
+.image-processing-editor .tool-hint {
+  margin-left: auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+.image-processing-editor .coordinates {
+  font-variant-numeric: tabular-nums;
+  min-width: 58px;
+  text-align: right;
+  color: var(--muted);
+}
+.image-processing-editor .right-sidebar {
+  width: 290px;
+  flex-shrink: 0;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.image-processing-editor .inspector {
+  height: 44%;
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border);
+}
+.image-processing-editor .panel-tabs {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  height: 39px;
+  border-bottom: 1px solid var(--border);
+  padding: 0 12px;
+  gap: 20px;
+}
+.image-processing-editor .panel-tabs button {
+  height: 100%;
+  padding: 0 2px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--muted);
+  font-size: 11px;
+  gap: 7px;
+}
+.image-processing-editor .panel-tabs button.selected {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+}
+.image-processing-editor .inspector-scroll {
+  overflow: auto;
+  padding: 0 15px 15px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.image-processing-editor .section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text);
+}
+.image-processing-editor .section-heading small {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 400;
+}
+.image-processing-editor .section-heading .icon-button {
+  width: 20px;
+  height: 20px;
+}
+.image-processing-editor .section-heading .icon-button svg {
+  width: 13px;
+}
+.image-processing-editor .fields-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 9px;
+}
+.image-processing-editor .number-field {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  border-radius: 4px;
+  height: 29px;
+  min-width: 0;
+  padding: 0 7px;
+  gap: 5px;
+  overflow: hidden;
+}
+.image-processing-editor .number-field > span {
+  font-size: 10px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.image-processing-editor .number-field > input {
+  border: 0;
+  background: none;
+  padding: 0 2px;
+  text-align: right;
+  width: 100%;
+  font-size: 11px;
+  color: var(--text);
+  box-shadow: none;
+}
+.image-processing-editor .number-field:focus-within {
+  border-color: var(--accent);
+}
+.image-processing-editor .number-field > small {
+  font-size: 9px;
+  color: var(--muted);
+}
+.image-processing-editor .transform-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+.image-processing-editor .transform-actions .icon-button {
+  height: 29px;
+  width: 39px;
+  border: 1px solid var(--accent);
+  background: var(--bg);
+}
+.image-processing-editor .alignment-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  margin-top: 10px;
+}
+.image-processing-editor .alignment-row > span {
+  color: var(--muted);
+  margin-right: auto;
+}
+.image-processing-editor .alignment-row > button {
+  padding: 3px 6px;
+  color: var(--text);
+  background: var(--panel-raised);
+  border-color: var(--border);
+}
+.image-processing-editor .text-content {
+  width: 100%;
+  height: 65px;
+  resize: vertical;
+  line-height: 1.6;
+  font-size: 11px;
+  min-height: 45px;
+}
+.image-processing-editor .inspector-scroll > select {
+  width: 100%;
+  margin: 6px 0 10px;
+  height: 29px;
+  padding: 4px 8px;
+}
+.image-processing-editor .toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+.image-processing-editor .toggle-row > label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  font-size: 11px;
+}
+.image-processing-editor .toggle-row select {
+  flex: 1;
+  width: 50%;
+  height: 28px;
+  padding: 4px 7px;
+}
+.image-processing-editor .toggle-row > button {
+  border: 1px solid var(--border);
+  background: var(--panel-raised);
+  padding: 5px 9px;
+  font-size: 10px;
+  flex: 1;
+}
+.image-processing-editor .color-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 3px 0 10px;
+}
+.image-processing-editor .color-row > label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 10px;
+  color: var(--muted);
+  flex: 1;
+  white-space: nowrap;
+}
+.image-processing-editor .color-row code {
+  color: var(--text);
+  font: 10px monospace;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 5px 9px;
+  border-radius: 4px;
+  min-width: 82px;
+  text-align: center;
+}
+.image-processing-editor .color-row .number-field {
+  width: 115px;
+}
+.image-processing-editor .color-row input[type="color"] {
+  margin-left: auto;
+  width: 27px;
+  height: 25px;
+}
+.image-processing-editor .color-row .text-button {
+  font-size: 10px;
+}
+.image-processing-editor .slider-field {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 8px 0 10px;
+}
+.image-processing-editor .slider-field > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 10px;
+}
+.image-processing-editor .slider-field output {
+  color: var(--text);
+  font:
+    10px "Segoe UI",
+    sans-serif;
+}
+.image-processing-editor .slider-field input {
+  width: 100%;
+  margin: 0;
+}
+.image-processing-editor .document-info {
+  margin-top: 15px;
+  border-top: 1px solid var(--border);
+}
+.image-processing-editor .document-info > div:last-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--muted);
+}
+.image-processing-editor .document-info .section-heading {
+  padding-top: 10px;
+  padding-bottom: 7px;
+}
+.image-processing-editor .document-info small {
+  font-size: 9px;
+  color: var(--muted);
+}
+.image-processing-editor .panel-empty {
+  color: var(--muted);
+  padding: 27px 12px;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 10px;
+  text-align: center;
+  line-height: 1.7;
+  font-size: 11px;
+}
+.image-processing-editor .panel-empty small {
+  font-size: 10px;
+  color: var(--muted);
+}
+.image-processing-editor .adjust-presets {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-top: 15px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 13px;
+}
+.image-processing-editor .adjust-presets > button {
+  flex-direction: column;
+  padding: 10px 3px;
+  gap: 7px;
+  background: var(--panel-raised);
+  border-color: var(--border);
+  color: var(--text);
+}
+.image-processing-editor .adjust-presets > button:hover {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  border-color: var(--border);
+}
+.image-processing-editor .adjust-presets span {
+  font-size: 9px;
+}
+.image-processing-editor .layers-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 200px;
+}
+.image-processing-editor .layers-panel > header {
+  display: flex;
+  align-items: center;
+  height: 41px;
+  padding: 0 13px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  justify-content: space-between;
+}
+.image-processing-editor .layers-panel h2 {
+  font-size: 11px;
+  font-weight: 500;
+  display: flex;
+  gap: 9px;
+  align-items: center;
+}
+.image-processing-editor .layers-panel h2 span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 400;
+}
+.image-processing-editor .layers-panel header .icon-button {
+  height: 25px;
+  width: 25px;
+}
+.image-processing-editor .layers-panel header .icon-button svg {
+  width: 14px;
+}
+.image-processing-editor .layer-controls {
+  display: flex;
+  padding: 10px 11px;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.image-processing-editor .layer-controls select {
+  width: 106px;
+  padding: 4px 7px;
+  font-size: 10px;
+  height: 27px;
+}
+.image-processing-editor .layer-controls .number-field {
+  height: 27px;
+  flex: 1;
+  padding-left: 7px;
+  padding-right: 5px;
+  gap: 3px;
+}
+.image-processing-editor .layer-controls .number-field > span {
+  font-size: 9px;
+}
+.image-processing-editor .layer-controls .number-field > input {
+  font-size: 10px;
+}
+.image-processing-editor .layer-list {
+  flex: 1;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+  padding: 4px 0;
+}
+.image-processing-editor .layer-row {
+  min-height: 49px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px 6px 8px;
+  border: 1px solid transparent;
+  cursor: default;
+  position: relative;
+  user-select: none;
+}
+.image-processing-editor .layer-row:hover {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+.image-processing-editor .layer-row.selected {
+  background: var(--accent-dark);
+  border-top-color: color-mix(in srgb, var(--accent) 9%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.image-processing-editor .layer-row.selected:before {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent-dark);
+  content: "";
+}
+.image-processing-editor .linked-adjustment {
+  min-height: 42px;
+  background: var(--bg);
+}
+.image-processing-editor .linked-adjustment-icon {
+  flex: none;
+  color: var(--accent);
+}
+.image-processing-editor .layer-row > .icon-button {
+  width: 18px;
+  height: 25px;
+  color: var(--muted);
+}
+.image-processing-editor .layer-row > .icon-button svg {
+  width: 13px;
+}
+.image-processing-editor .layer-row.selected > .icon-button {
+  color: var(--accent);
+}
+.image-processing-editor .layer-thumb {
+  width: 31px;
+  height: 31px;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+  border-radius: 3px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  overflow: hidden;
+  background: var(--panel-raised);
+}
+.image-processing-editor .layer-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.image-processing-editor .layer-name {
+  font-size: 10px;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+  line-height: 1.5;
+}
+.image-processing-editor .layer-name > small {
+  display: block;
+  font-size: 8px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+.image-processing-editor .layer-row.selected .layer-name {
+  color: var(--accent);
+}
+.image-processing-editor .layer-row .group-toggle {
+  width: 10px;
+  padding: 0;
+  height: 20px;
+  margin-right: -4px;
+  color: var(--muted);
+}
+.image-processing-editor .layer-lock {
+  width: 17px;
+  padding: 0;
+  height: 24px;
+  flex-shrink: 0;
+  color: var(--muted);
+  opacity: 0;
+}
+.image-processing-editor .layer-lock.locked,
+.image-processing-editor .layer-row:hover .layer-lock {
+  opacity: 1;
+}
+.image-processing-editor .hidden-layer .layer-name,
+.image-processing-editor .hidden-layer .layer-thumb {
+  opacity: 0.4;
+}
+.image-processing-editor .clipped-mark {
+  color: var(--muted);
+  font-size: 16px;
+  margin-right: -3px;
+}
+.image-processing-editor .mask-thumb {
+  padding: 0;
+  width: 25px;
+  height: 29px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  background: #000;
+  border-radius: 2px;
+}
+.image-processing-editor .mask-thumb.selected {
+  border: 2px solid var(--accent);
+}
+.image-processing-editor .mask-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.image-processing-editor .layer-footer {
+  height: 40px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 0 10px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.image-processing-editor .layer-footer .icon-button {
+  width: 26px;
+  height: 28px;
+}
+.image-processing-editor .layer-footer .icon-button svg {
+  width: 15px;
+}
+.image-processing-editor .swatches-panel {
+  border-top: 1px solid var(--border);
+  padding: 13px 14px 11px;
+  flex-shrink: 0;
+}
+.image-processing-editor .swatches-panel > span {
+  display: block;
+  font-size: 10px;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+.image-processing-editor .swatches-panel > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.image-processing-editor .swatches-panel > div > button {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid color-mix(in srgb, var(--border) 4%, transparent);
+  padding: 0;
+}
+.image-processing-editor .swatches-panel > div > button.selected {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+.image-processing-editor .swatches-panel > small {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 9px;
+  color: var(--muted);
+  margin-top: 16px;
+}
+.image-processing-editor .modal-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.image-processing-editor .modal {
+  width: 440px;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: auto;
+  scrollbar-width: thin;
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0 24px 23px;
+  box-shadow: 0 30px 120px #0007;
+  outline: 0;
+}
+.image-processing-editor .modal.wide {
+  width: 760px;
+}
+.image-processing-editor .modal > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 19px 0 15px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+}
+.image-processing-editor .modal > header h2 {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+.image-processing-editor .modal > header .icon-button {
+  width: 23px;
+  height: 23px;
+}
+.image-processing-editor .modal form {
+  display: block;
+}
+.image-processing-editor .dialog-description {
+  font-size: 11px;
+  line-height: 1.9;
+  color: var(--muted);
+  margin-bottom: 20px;
+}
+.image-processing-editor .form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  font-size: 11px;
+  color: var(--muted);
+  margin: 0 0 16px;
+}
+.image-processing-editor .form-field input,
+.image-processing-editor .form-field select {
+  height: 36px;
+  background: var(--bg);
+  border-color: var(--border);
+  font-size: 12px;
+}
+.image-processing-editor .form-field input[type="range"] {
+  height: 3px;
+  margin-top: 10px;
+}
+.image-processing-editor .preset-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 20px 0;
+}
+.image-processing-editor .preset-grid button {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px 2px 12px;
+}
+.image-processing-editor .preset-grid button.selected {
+  border-color: var(--accent);
+  background: var(--accent-dark);
+}
+.image-processing-editor .preset-grid strong {
+  font-weight: 400;
+  font-size: 10px;
+  color: var(--text);
+}
+.image-processing-editor .preset-grid small {
+  font-size: 8px;
+  color: var(--muted);
+}
+.image-processing-editor .preset-shape {
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: 1px;
+  margin: 3px;
+}
+.image-processing-editor .modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 9px;
+  margin-top: 23px;
+  padding-top: 17px;
+  border-top: 1px solid var(--border);
+}
+.image-processing-editor .modal-footer button {
+  padding: 8px 16px;
+  border-color: var(--border);
+  background: var(--panel);
+  font-size: 11px;
+}
+.image-processing-editor .modal-footer button.primary {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+.image-processing-editor .export-layout {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 25px;
+}
+.image-processing-editor .export-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+  min-height: 250px;
+  background-color: var(--panel-raised);
+}
+.image-processing-editor .export-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.image-processing-editor .export-settings .dialog-description {
+  font-size: 11px;
+  margin-bottom: 20px;
+}
+.image-processing-editor .export-details {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 5px 0 20px;
+}
+.image-processing-editor .export-details small {
+  font-size: 10px;
+  color: var(--muted);
+}
+.image-processing-editor .export-settings .primary {
+  padding: 10px;
+}
+.image-processing-editor .export-settings .text-button {
+  font-size: 9px;
+  margin-top: 8px;
+  color: var(--muted);
+}
+.image-processing-editor .conversion-report {
+  padding-left: 17px;
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.9;
+  margin: 0;
+  max-height: 300px;
+  overflow: auto;
+}
+.image-processing-editor .conversion-report li {
+  margin-bottom: 10px;
+}
+.image-processing-editor .command-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 12px;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+.image-processing-editor .command-search input {
+  border: 0;
+  background: none;
+  box-shadow: none;
+  width: 100%;
+  font-size: 12px;
+  height: 30px;
+  padding: 0;
+}
+.image-processing-editor .command-results {
+  max-height: 400px;
+  overflow: auto;
+  margin: 0 -7px;
+  scrollbar-width: thin;
+}
+.image-processing-editor .command-results button {
+  padding: 10px 9px;
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  font-size: 11px;
+  gap: 20px;
+}
+.image-processing-editor .command-results button > span {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+.image-processing-editor .command-results small {
+  font-size: 10px;
+  color: var(--muted);
+}
+.image-processing-editor .command-results button:hover {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+.image-processing-editor .shortcuts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 26px;
+}
+.image-processing-editor .shortcuts-grid > div {
+  display: flex;
+  justify-content: space-between;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 10px;
+  gap: 10px;
+}
+.image-processing-editor .shortcuts-grid kbd {
+  color: var(--muted);
+  font-size: 9px;
+}
+.image-processing-editor .tool-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 24px;
+}
+.image-processing-editor .tool-shortcuts button {
+  display: flex;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 8px 5px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.image-processing-editor .tool-shortcuts kbd {
+  margin-left: auto;
+  font-size: 9px;
+}
+.image-processing-editor .about-brand {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  margin-bottom: 22px;
+}
+.image-processing-editor .about-brand .brand-mark {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+}
+.image-processing-editor .about-brand h3 {
+  font-size: 23px;
+  font-weight: 450;
+  letter-spacing: -0.7px;
+  margin-bottom: 7px;
+}
+.image-processing-editor .about-brand h3 em {
+  font-style: normal;
+  font-size: 13px;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+.image-processing-editor .about-brand > div > span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.image-processing-editor .about-content > p {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.9;
+}
+.image-processing-editor .about-features {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  margin: 22px 0 26px;
+  padding: 19px;
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+.image-processing-editor .about-features > div {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text);
+}
+.image-processing-editor .about-content > p.about-limits {
+  font-size: 11px;
+  color: var(--muted);
+}
+.image-processing-editor .about-links {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 25px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+}
+.image-processing-editor .about-links > span {
+  color: var(--muted);
+  font-size: 10px;
+}
+.image-processing-editor .history-list > div:not(.toggle-row) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--muted);
+}
+.image-processing-editor .history-list small {
+  margin-left: auto;
+  color: var(--muted);
+}
+.image-processing-editor .history-list .history-current {
+  background: var(--panel-raised);
+  border-radius: 5px;
+  color: var(--text) !important;
+  margin: 15px 0 3px;
+}
+.image-processing-editor .toast {
+  position: absolute;
+  bottom: 53px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 120;
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 30px #0005;
+  border-radius: 7px;
+  color: var(--text);
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  max-width: min(700px, calc(100% - 24px));
+  line-height: 1.6;
+}
+.image-processing-editor .toast > svg {
+  color: var(--muted);
+}
+.image-processing-editor .toast button {
+  margin-left: 10px;
+  padding: 1px;
+  color: var(--muted);
+}
+.image-processing-editor .loading-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  flex: 1;
+  gap: 18px;
+}
+.image-processing-editor .loading-screen .brand-mark {
+  width: 52px;
+  height: 52px;
+  border-radius: 13px;
+}
+.image-processing-editor .loading-screen h1 {
+  font-size: 22px;
+  font-weight: 450;
+  letter-spacing: -0.8px;
+}
+.image-processing-editor .loading-screen p {
+  color: var(--muted);
+  font-size: 11px;
+}
+.image-processing-editor .focus-mode .app-header,
+.image-processing-editor .focus-mode .tool-options,
+.image-processing-editor .focus-mode .tool-rail,
+.image-processing-editor .focus-mode .right-sidebar,
+.image-processing-editor .focus-mode .document-tabs,
+.image-processing-editor .focus-mode .canvas-footer {
+  display: none;
+}
+.image-processing-editor .focus-mode .canvas-stage {
+  background: var(--bg);
+}
+.image-processing-editor .exit-focus {
+  position: absolute;
+  right: 20px;
+  top: 30px;
+  z-index: 20;
+  background: var(--panel-raised);
+  border: 1px solid var(--accent);
+  color: var(--text);
+  padding: 7px 12px;
+  font-size: 11px;
+}
+@container image-processing (min-width: 1700px) {
+  .image-processing-editor .right-sidebar {
+    width: 320px;
+  }
+  .image-processing-editor .inspector {
+    height: 45%;
+  }
+  .image-processing-editor .layer-row {
+    min-height: 53px;
+  }
+  .image-processing-editor .tool-rail {
+    width: 55px;
+  }
+  .image-processing-editor .app-header {
+    gap: 23px;
+  }
+}
+@container image-processing (max-width: 1200px) {
+  .image-processing-editor .app-header {
+    gap: 12px;
+    padding: 0 11px;
+  }
+  .image-processing-editor .brand strong span {
+    display: none;
+  }
+  .image-processing-editor .menu-trigger {
+    padding: 6px;
+  }
+  .image-processing-editor .save-status {
+    display: none;
+  }
+  .image-processing-editor .right-sidebar {
+    width: 265px;
+  }
+  .image-processing-editor .tool-hint {
+    display: none;
+  }
+  .image-processing-editor .tool-options {
+    gap: 10px;
+  }
+  .image-processing-editor .option-note {
+    display: none;
+  }
+  .image-processing-editor .layer-controls {
+    gap: 5px;
+    padding: 10px 8px;
+  }
+  .image-processing-editor .layer-controls select {
+    width: 88px;
+  }
+  .image-processing-editor .layer-controls .number-field > span {
+    font-size: 8px;
+  }
+  .image-processing-editor .search-button kbd {
+    display: none;
+  }
+  .image-processing-editor .swatches-panel > div {
+    gap: 4px;
+  }
+  .image-processing-editor .layer-name {
+    font-size: 9px;
+  }
+}
+@container image-processing (max-width: 900px) {
+  .image-processing-editor .brand strong {
+    font-size: 13px;
+  }
+  .image-processing-editor .app-header {
+    gap: 10px;
+    height: 47px;
+  }
+  .image-processing-editor .brand-mark {
+    width: 25px;
+    height: 25px;
+  }
+  .image-processing-editor .menu-bar {
+    gap: 0;
+  }
+  .image-processing-editor .menu-trigger {
+    font-size: 10px;
+    padding: 6px 5px;
+  }
+  .image-processing-editor .search-button {
+    display: none;
+  }
+  .image-processing-editor .export-button {
+    padding: 6px 9px;
+    font-size: 10px;
+  }
+  .image-processing-editor .right-sidebar {
+    width: 245px;
+  }
+  .image-processing-editor .current-tool {
+    min-width: 85px;
+  }
+  .image-processing-editor .tool-options {
+    padding-left: 12px;
+  }
+  .image-processing-editor .tool-options .number-field {
+    width: 103px;
+  }
+  .image-processing-editor .tool-options .checkbox-line {
+    font-size: 10px;
+  }
+  .image-processing-editor .tool-options .option-divider {
+    display: none;
+  }
+  .image-processing-editor .layer-controls .number-field {
+    padding: 0 4px;
+  }
+  .image-processing-editor .layer-controls .number-field > span {
+    max-width: 40px;
+    overflow: hidden;
+  }
+  .image-processing-editor .inspector-scroll {
+    padding-left: 11px;
+    padding-right: 11px;
+  }
+  .image-processing-editor .layer-thumb {
+    width: 27px;
+    height: 27px;
+  }
+  .image-processing-editor .layer-row {
+    gap: 5px;
+    padding-right: 6px;
+  }
+  .image-processing-editor .layer-footer {
+    gap: 5px;
+    padding: 0 7px;
+  }
+  .image-processing-editor .swatches-panel {
+    padding: 10px;
+  }
+  .image-processing-editor .swatches-panel > div {
+    gap: 3px;
+  }
+  .image-processing-editor .swatches-panel > div > button {
+    width: 13px;
+    height: 13px;
+  }
+  .image-processing-editor .canvas-footer {
+    gap: 6px;
+    padding: 0 6px;
+  }
+  .image-processing-editor .canvas-size {
+    font-size: 8px;
+  }
+  .image-processing-editor .coordinates {
+    display: none;
+  }
+  .image-processing-editor .tool-options .number-field span {
+    font-size: 9px;
+  }
+  .image-processing-editor .current-tool span {
+    font-size: 10px;
+  }
+}
+@container image-processing (max-width: 720px) {
+  .image-processing-editor .app-header {
+    height: 45px;
+    gap: 8px;
+    padding: 0 8px;
+  }
+  .image-processing-editor .brand strong {
+    display: none;
+  }
+  .image-processing-editor .menu-trigger {
+    padding: 6px 4px;
+    font-size: 10px;
+  }
+  .image-processing-editor .menu-container:nth-child(6),
+  .image-processing-editor .menu-container:nth-child(7),
+  .image-processing-editor .menu-container:nth-child(9) {
+    display: none;
+  }
+  .image-processing-editor .menu-dropdown {
+    width: 230px;
+  }
+  .image-processing-editor .menu-container:nth-child(8) .menu-dropdown {
+    left: auto;
+    right: 0;
+  }
+  .image-processing-editor .right-sidebar {
+    position: absolute;
+    right: 0;
+    top: 123px;
+    bottom: 0;
+    z-index: 25;
+    width: 260px;
+    box-shadow: -10px 0 40px #0006;
+  }
+  .image-processing-editor .tool-options {
+    height: 45px;
+    padding: 0 8px;
+    gap: 8px;
+    overflow: auto;
+    scrollbar-width: none;
+  }
+  .image-processing-editor .tool-options .current-tool {
+    min-width: 30px;
+  }
+  .image-processing-editor .tool-options .current-tool > span {
+    display: none;
+  }
+  .image-processing-editor .tool-options .number-field {
+    min-width: 100px;
+  }
+  .image-processing-editor .tool-options > .header-spacer {
+    min-width: 0;
+  }
+  .image-processing-editor .tool-options > .icon-button {
+    display: none;
+  }
+  .image-processing-editor .tool-options .undo-actions {
+    margin-left: auto;
+  }
+  .image-processing-editor .tool-rail {
+    width: 43px;
+    padding-top: 7px;
+    gap: 1px;
+  }
+  .image-processing-editor .tool-rail .icon-button {
+    width: 31px;
+    height: 29px;
+  }
+  .image-processing-editor .tool-divider {
+    margin-top: 5px;
+    padding-top: 6px;
+  }
+  .image-processing-editor .document-tabs {
+    height: 33px;
+  }
+  .image-processing-editor .document-tab > button:first-child {
+    padding-left: 9px;
+  }
+  .image-processing-editor .document-tab > button:first-child > span {
+    max-width: 125px;
+  }
+  .image-processing-editor .document-tab small {
+    display: none;
+  }
+  .image-processing-editor .canvas-size {
+    margin-left: auto;
+  }
+  .image-processing-editor .canvas-footer .fit-button {
+    display: none;
+  }
+  .image-processing-editor .modal-backdrop {
+    padding: 12px;
+  }
+  .image-processing-editor .modal {
+    padding: 0 18px 19px;
+  }
+  .image-processing-editor .modal > header {
+    padding: 15px 0 12px;
+  }
+  .image-processing-editor .export-layout {
+    grid-template-columns: 1fr;
+  }
+  .image-processing-editor .export-preview {
+    height: 180px;
+    min-height: 180px;
+  }
+  .image-processing-editor .export-settings .dialog-description {
+    display: none;
+  }
+  .image-processing-editor .export-settings {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .image-processing-editor .export-settings .export-details {
+    grid-column: 1/-1;
+    flex-direction: row;
+    gap: 12px;
+    padding: 0 0 5px;
+  }
+  .image-processing-editor .export-settings .export-details small {
+    display: none;
+  }
+  .image-processing-editor .export-settings .primary,
+  .image-processing-editor .export-settings > .text-button {
+    grid-column: 1/-1;
+  }
+  .image-processing-editor .shortcuts-grid {
+    grid-template-columns: 1fr;
+  }
+  .image-processing-editor .tool-shortcuts {
+    grid-template-columns: 1fr 1fr;
+  }
+  .image-processing-editor .about-links {
+    gap: 10px;
+    flex-direction: column;
+  }
+  .image-processing-editor .about-brand h3 {
+    font-size: 21px;
+  }
+  .image-processing-editor .preset-grid {
+    gap: 5px;
+  }
+  .image-processing-editor .preset-grid button {
+    font-size: 9px;
+  }
+  .image-processing-editor .empty-canvas-hint {
+    padding: 20px;
+  }
+  .image-processing-editor .empty-canvas-hint span {
+    font-size: 9px;
+  }
+}
+@media (max-height: 780px) {
+  .image-processing-editor .tool-rail {
+    gap: 0;
+    padding-top: 6px;
+  }
+  .image-processing-editor .tool-rail .icon-button {
+    height: 27px;
+  }
+  .image-processing-editor .tool-divider {
+    margin-top: 4px;
+    padding-top: 5px;
+  }
+  .image-processing-editor .swatches-panel {
+    padding-top: 9px;
+    padding-bottom: 8px;
+  }
+  .image-processing-editor .swatches-panel > small {
+    margin-top: 10px;
+  }
+  .image-processing-editor .inspector {
+    height: 43%;
+    min-height: 130px;
+  }
+  .image-processing-editor .layer-row {
+    min-height: 44px;
+  }
+  .image-processing-editor .color-pair {
+    margin: 2px 0 3px;
+    height: 43px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .image-processing-editor * {
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.image-processing-editor .import-button {
+  min-height: 30px;
+  padding: 5px 9px;
+  border-color: var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.image-processing-editor .import-button:hover {
+  background: var(--accent-dark);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.image-processing-editor .app-header {
+  min-width: 0;
+  gap: 10px;
+}
+.image-processing-editor .brand {
+  flex-shrink: 0;
+}
+.image-processing-editor .empty-canvas-hint {
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 22px 28px;
+  box-shadow: none;
+  border-style: dashed;
+  text-align: center;
+}
+.image-processing-editor .menu-dropdown {
+  max-height: min(520px, 65cqh);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.image-processing-editor .export-button:hover,
+.image-processing-editor button.primary:hover {
+  background: color-mix(in srgb, var(--accent) 90%, var(--text));
+}
+.image-processing-editor .modal-footer {
+  flex-wrap: wrap;
+}
+.image-processing-editor .canvas-footer {
+  min-width: 0;
+  overflow: hidden;
+}
+.image-processing-editor .canvas-size {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@container image-processing (max-width: 1100px) {
+  .image-processing-editor .app-header {
+    height: auto;
+    min-height: 45px;
+    flex-wrap: wrap;
+    padding: 7px 10px 0;
+    gap: 6px 8px;
+  }
+  .image-processing-editor .menu-bar {
+    order: 2;
+    flex-basis: 100%;
+    padding: 4px 0;
+    border-top: 1px solid var(--border);
+  }
+  .image-processing-editor .menu-container:nth-child(n + 5) .menu-dropdown {
+    left: auto;
+    right: 0;
+  }
+  .image-processing-editor .save-status,
+  .image-processing-editor .search-button {
+    display: none;
+  }
+  .image-processing-editor .tool-options > * {
+    flex-shrink: 0;
+  }
+}
+
+@container image-processing (max-width: 480px) {
+  .image-processing-editor .app-header {
+    gap: 5px;
+    padding-inline: 6px;
+  }
+  .image-processing-editor .brand strong,
+  .image-processing-editor .import-button span {
+    display: none;
+  }
+  .image-processing-editor .import-button {
+    width: 31px;
+    padding-inline: 0;
+  }
+  .image-processing-editor .menu-dropdown {
+    width: 210px;
+  }
+  .image-processing-editor .menu-container:nth-child(n + 4) .menu-dropdown {
+    left: auto;
+    right: -30px;
+  }
+  .image-processing-editor .empty-canvas-hint {
+    padding: 14px;
+  }
+  .image-processing-editor .empty-canvas-hint p {
+    font-size: 13px;
+  }
+  .image-processing-editor .modal-backdrop {
+    padding: 8px;
+  }
+  .image-processing-editor .modal {
+    padding-inline: 14px;
+  }
+  .image-processing-editor .preset-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

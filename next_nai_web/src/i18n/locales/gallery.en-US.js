@@ -1,5 +1,7 @@
 const gallery = {
   "gallery": {
+    "sessionHistory": "This session's results",
+    "editImage": "Open in image editor",
     "referencesTitle": "Reference gallery",
     "outputsTitle": "Local gallery",
     "referencesHint": "Drop images or upload several at once to read their prompts and parameters.",

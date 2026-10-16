@@ -1,5 +1,7 @@
 const gallery = {
   "gallery": {
+    "sessionHistory": "本次生成记录",
+    "editImage": "发送到图像处理",
     "referencesTitle": "参考图库",
     "outputsTitle": "本地图库",
     "referencesHint": "拖入图片或多图上传，自动读取每张图的提示词与参数。",

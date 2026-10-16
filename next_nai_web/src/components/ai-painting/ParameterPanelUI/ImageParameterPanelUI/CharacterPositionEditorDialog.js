@@ -25,10 +25,8 @@ import { fitCharacterPositionCanvas } from '../../utils/characterPositionCanvas.
 import { resolveCharacterName } from '../../utils/characterName.mjs';
 import { normalizeNovelAICharacterCenter } from '../../utils/modelUtils';
 
-const markerColors = ['#D81B60', '#8E24AA', '#5E35B1', '#1E88E5', '#00897B', '#FB8C00'];
-
 /**
- * 在图像展示区级别的等比画布上编辑 NovelAI V5 角色坐标。
+ * 在等比画布上编辑角色位置；V4/4.5 使用 5×5 格子，V5 使用连续坐标。
  *
  * @param {object} props 位置编辑器属性。
  * @returns {React.ReactElement} 角色位置编辑对话框。
@@ -40,6 +38,7 @@ const CharacterPositionEditorDialog = ({
   onCharacterDataChange,
   width,
   height,
+  gridMode = false,
 }) => {
   const { t } = useI18n();
   const theme = useTheme();
@@ -93,7 +92,7 @@ const CharacterPositionEditorDialog = ({
 
   const selectedCharacter = selectedIndex === null ? null : characterTabs[selectedIndex];
   const selectedCenter = normalizeNovelAICharacterCenter(
-    selectedCharacter?.center,
+    gridMode ? undefined : selectedCharacter?.center,
     selectedCharacter?.position,
   );
 
@@ -119,7 +118,9 @@ const CharacterPositionEditorDialog = ({
               {t('painting.workspace.parameters.customPositionEditor')}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              {t('painting.workspace.parameters.customPositionEditorHelp')}
+              {t(gridMode
+                ? 'painting.workspace.parameters.gridPositionEditorHelp'
+                : 'painting.workspace.parameters.customPositionEditorHelp')}
             </Typography>
           </Box>
           <IconButton onClick={onClose} aria-label={t('painting.workspace.actions.close')}>
@@ -160,27 +161,29 @@ const CharacterPositionEditorDialog = ({
                 key={index}
                 variant={selected ? 'contained' : 'outlined'}
                 onClick={() => setSelectedIndex(index)}
-                startIcon={(
-                  <Box
-                    component="span"
-                    sx={{
-                      width: 20,
-                      height: 20,
-                      borderRadius: '50%',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      bgcolor: selected ? 'common.white' : markerColors[(character.colorId ?? index) % markerColors.length],
-                      color: selected ? 'primary.main' : 'common.white',
-                      fontSize: '0.7rem',
-                      fontWeight: 700,
-                    }}
-                  >
-                    {index + 1}
-                  </Box>
-                )}
-                sx={{ flex: '0 0 auto', textTransform: 'none', maxWidth: 180 }}
+                aria-pressed={selected}
+                sx={{ flex: '0 0 auto', gap: 0.75, textTransform: 'none', maxWidth: 180 }}
               >
+                {/* 直接排列编号与名字，避免 startIcon 样式把圆内字号放大。 */}
+                <Box
+                  component="span"
+                  sx={{
+                    width: 20,
+                    height: 20,
+                    flexShrink: 0,
+                    borderRadius: '50%',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    bgcolor: selected ? 'primary.contrastText' : 'primary.main',
+                    color: selected ? 'primary.main' : 'primary.contrastText',
+                    fontSize: '0.7rem',
+                    lineHeight: 1,
+                    fontWeight: 700,
+                  }}
+                >
+                  {index + 1}
+                </Box>
                 <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</Box>
               </Button>
             );
@@ -206,9 +209,10 @@ const CharacterPositionEditorDialog = ({
             </Paper>
           ) : (
             <Box
-              component="button"
-              type="button"
-              onClick={handleCanvasClick}
+              component={gridMode ? 'div' : 'button'}
+              type={gridMode ? undefined : 'button'}
+              role={gridMode ? 'group' : undefined}
+              onClick={gridMode ? undefined : handleCanvasClick}
               aria-label={t('painting.workspace.parameters.positionCanvasLabel')}
               sx={{
                 position: 'relative',
@@ -222,6 +226,7 @@ const CharacterPositionEditorDialog = ({
                 p: 0,
                 overflow: 'hidden',
                 cursor: 'crosshair',
+                fontFamily: 'inherit',
                 border: '1px solid',
                 borderColor: 'divider',
                 borderRadius: 1.5,
@@ -237,10 +242,58 @@ const CharacterPositionEditorDialog = ({
                 },
               }}
             >
+              {gridMode && (
+                <Box sx={{ position: 'absolute', inset: 0, display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gridTemplateRows: 'repeat(5, 1fr)' }}>
+                  {Array.from({ length: 25 }, (_, cellIndex) => {
+                    const column = cellIndex % 5;
+                    const row = Math.floor(cellIndex / 5);
+                    const position = `${String.fromCharCode(65 + column)}${row + 1}`;
+                    const selected = (selectedCharacter?.position || 'C3') === position;
+                    return (
+                      <Box
+                        key={position}
+                        component="button"
+                        type="button"
+                        aria-label={t('painting.workspace.parameters.positionValue', { position })}
+                        aria-pressed={selected}
+                        onClick={() => {
+                          if (selectedIndex === null) return;
+                          // 保留 A1–E5 供 V4/4.5 生成使用，并同步格子中心供切换 V5 时使用。
+                          onCharacterDataChange(selectedIndex, {
+                            ...selectedCharacter,
+                            position,
+                            center: normalizeNovelAICharacterCenter(undefined, position),
+                          });
+                        }}
+                        sx={{
+                          minWidth: 0,
+                          minHeight: 0,
+                          p: 0.5,
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          justifyContent: 'flex-start',
+                          border: 0,
+                          borderRight: column < 4 ? '1px solid' : 0,
+                          borderBottom: row < 4 ? '1px solid' : 0,
+                          borderColor: 'divider',
+                          bgcolor: selected ? alpha(theme.palette.primary.main, 0.14) : 'transparent',
+                          color: 'text.secondary',
+                          fontFamily: 'inherit',
+                          fontSize: '0.7rem',
+                          cursor: 'pointer',
+                          '&:hover': { bgcolor: 'action.hover' },
+                          '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 },
+                        }}
+                      >
+                        {position}
+                      </Box>
+                    );
+                  })}
+                </Box>
+              )}
               {activeCharacters.map(({ character, index }) => {
-                const center = normalizeNovelAICharacterCenter(character.center, character.position);
+                const center = normalizeNovelAICharacterCenter(gridMode ? undefined : character.center, character.position);
                 const selected = selectedIndex === index;
-                const markerColor = markerColors[(character.colorId ?? index) % markerColors.length];
                 return (
                   <Box
                     key={index}
@@ -252,17 +305,19 @@ const CharacterPositionEditorDialog = ({
                       transform: 'translate(-50%, -50%)',
                       width: selected ? 36 : 30,
                       height: selected ? 36 : 30,
+                      boxSizing: 'border-box',
                       borderRadius: '50%',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      bgcolor: selected ? 'common.white' : markerColor,
-                      color: selected ? markerColor : 'common.white',
+                      bgcolor: selected ? 'background.paper' : 'primary.main',
+                      color: selected ? 'primary.main' : 'primary.contrastText',
                       border: '2px solid',
-                      borderColor: markerColor,
+                      borderColor: 'primary.main',
                       boxShadow: theme.shadows[selected ? 5 : 2],
                       fontSize: selected ? '0.85rem' : '0.75rem',
                       fontWeight: 800,
+                      lineHeight: 1,
                       pointerEvents: 'none',
                       transition: 'left 120ms ease, top 120ms ease, width 120ms ease, height 120ms ease',
                     }}
@@ -277,6 +332,7 @@ const CharacterPositionEditorDialog = ({
 
         {selectedCharacter && (
           <Typography variant="caption" color="text.secondary" sx={{ flex: '0 0 auto', pt: 1, textAlign: 'center' }}>
+            {gridMode && `${t('painting.workspace.parameters.positionValue', { position: selectedCharacter.position || 'C3' })} · `}
             {t('painting.workspace.parameters.normalizedCoordinates', {
               x: selectedCenter.x.toFixed(3),
               y: selectedCenter.y.toFixed(3),

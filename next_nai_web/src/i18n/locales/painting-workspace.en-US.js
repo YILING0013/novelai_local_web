@@ -130,7 +130,8 @@ const paintingWorkspaceenUS = {
         "closeParameters": "Close parameters",
         "closeBatchStatus": "Close batch status",
         "viewErrorDetailsCount": "View {count} errors",
-        "cancel": "Cancel"
+        "cancel": "Cancel",
+        "resizeParameters": "Drag to resize · double-click to reset"
       },
       "anlas": {
         "openDetails": "View Anlas details",
@@ -159,7 +160,8 @@ const paintingWorkspaceenUS = {
       },
       "tabs": {
         "generation": "Generate",
-        "inpaint": "Inpaint"
+        "inpaint": "Inpaint",
+        "imageProcessing": "Image editor"
       },
       "parameters": {
         "title": "Generation parameters",
@@ -321,7 +323,7 @@ const paintingWorkspaceenUS = {
         "vibeV3Description": "V3 models use encoded Vibe files to control style.",
         "releaseToUploadFile": "Release to upload file",
         "clickOrDropVibeFile": "Click or drop a Vibe file",
-        "vibeCount": "{count} Vibes",
+        "vibeCount": "{count} Vibes · {enabled} enabled",
         "clickOrDropMultipleImages": "Click or drop multiple images",
         "downloadBundle": "Download bundle",
         "downloadZip": "Download ZIP",
@@ -333,7 +335,16 @@ const paintingWorkspaceenUS = {
         "modelV5Medium": "Faster Medium effort · Fixed 14 steps · 0.6 quota points per image",
         "modelV5MediumSettings": "Medium uses 14 steps, Euler Ancestral, and the official fixed Heavy negative prompt. Custom negative prompts and CFG Rescale are unavailable.",
         "fixedNegativeTab": "Negative (fixed)",
-        "modelV5MediumNegativeHelp": "Medium uses the official fixed Heavy negative prompt and ignores character negative prompts. Your custom negative drafts are kept for use when you switch back to High."
+        "modelV5MediumNegativeHelp": "Medium uses the official fixed Heavy negative prompt and ignores character negative prompts. Your custom negative drafts are kept for use when you switch back to High.",
+        "collapseCharacter": "Collapse character editor",
+        "expandCharacter": "Expand character editor",
+        "gridPositionEditorHelp": "Select a character, then click a cell in the 5×5 grid to place the character at its center.",
+        "continueVibeUpload": "Add more Vibes",
+        "deleteSourceImage": "Delete source image",
+        "stepsShort": "Steps",
+        "guidanceShort": "Guidance",
+        "quickGenerationSettings": "Quick generation settings",
+        "vibePausedCount": "{count} Vibes · Paused"
       },
       "batch": {
         "statusTitle": "Batch generation status"
@@ -470,7 +481,10 @@ const paintingWorkspaceenUS = {
         "delete": "Delete",
         "download": "Download",
         "clearAll": "Clear all",
-        "downloadAllArchive": "Download all as archive"
+        "downloadAllArchive": "Download all as archive",
+        "collapseHistory": "Collapse history",
+        "expandHistory": "Expand history",
+        "sendToImageProcessing": "Send to image processing"
       },
       "common": {
         "loading": "Loading…",

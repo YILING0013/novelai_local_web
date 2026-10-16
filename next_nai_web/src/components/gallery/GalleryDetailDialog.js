@@ -187,6 +187,7 @@ export default function GalleryDetailDialog({ entryId, groups, onClose, onChange
                 <Button size="small" disabled={actionBusy} startIcon={<RestoreFromTrashOutlined />} onClick={() => onRestore(entry)}>{t('gallery.restore')}</Button>
                 <Button size="small" color="error" disabled={actionBusy} startIcon={<DeleteForeverOutlined />} onClick={() => onDelete(entry)}>{t('gallery.deleteForever')}</Button>
               </> : <>
+                <Button size="small" variant="outlined" disabled={actionBusy || editing} onClick={() => onApply(entry, 'imageProcessing')}>{t('gallery.editImage')}</Button>
                 <Button size="small" variant="contained" disabled={actionBusy || editing || (!entry.prompt && !Object.keys(parameters).length)} onClick={() => onApply(entry, 'parameters')}>{t('gallery.applyAll')}</Button>
                 <Button size="small" variant="outlined" disabled={actionBusy || editing || (!entry.prompt && !entry.negative_prompt)} onClick={() => onApply(entry, 'prompt')}>{t('gallery.applyPrompt')}</Button>
                 <Tooltip title={t('gallery.trash')}><IconButton size="small" color="error" aria-label={t('gallery.trash')} disabled={actionBusy || editing} onClick={() => onTrash(entry)}><DeleteOutline fontSize="small" /></IconButton></Tooltip>

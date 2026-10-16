@@ -1,19 +1,15 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import {
   Alert,
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
   Box,
   Button,
-  Checkbox,
+  ButtonBase,
+  Collapse,
   IconButton,
   InputBase,
-  InputAdornment,
   Paper,
-  Stack,
   Tab,
   Tabs,
   TextField,
@@ -22,7 +18,6 @@ import {
   ToggleButtonGroup,
   Typography,
 } from '@mui/material';
-import { alpha } from '@mui/material/styles';
 import {
   Add as AddIcon,
   ArrowDownward as ArrowDownwardIcon,
@@ -47,110 +42,6 @@ import {
 } from '../../utils/characterName.mjs';
 import { useI18n } from '@/i18n/I18nProvider';
 
-const positionMapping = {
-  row: { '1': 0.1, '2': 0.3, '3': 0.5, '4': 0.7, '5': 0.9 },
-  col: { 'A': 0.1, 'B': 0.3, 'C': 0.5, 'D': 0.7, 'E': 0.9 },
-};
-
-const characterColors = [
-  { light: 'rgba(233, 30, 99, 0.05)', main: '#D81B60' },
-  { light: 'rgba(156, 39, 176, 0.05)', main: '#8E24AA' },
-  { light: 'rgba(103, 58, 183, 0.05)', main: '#5E35B1' },
-  { light: 'rgba(33, 150, 243, 0.05)', main: '#1E88E5' },
-  { light: 'rgba(0, 150, 136, 0.05)', main: '#00897B' },
-  { light: 'rgba(255, 152, 0, 0.05)', main: '#FB8C00' },
-];
-
-const compactTabSx = {
-  minHeight: 32,
-  px: 0.5,
-  py: 0.5,
-  fontSize: '0.75rem',
-  minWidth: 0,
-  textTransform: 'none',
-};
-
-const PositionSelector = ({ value, onChange }) => {
-  const { t } = useI18n();
-  const [position, setPosition] = useState(value || 'C3');
-
-  useEffect(() => {
-    setPosition(value || 'C3');
-  }, [value]);
-
-  const handlePositionChange = (nextPosition) => {
-    setPosition(nextPosition);
-    onChange(nextPosition);
-  };
-
-  const rows = ['1', '2', '3', '4', '5'];
-  const cols = ['A', 'B', 'C', 'D', 'E'];
-
-  return (
-    <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.75 }}>
-        <Typography variant="caption" color="text.secondary">
-          {t('painting.workspace.parameters.characterPosition')}
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          {position} · ({positionMapping.col[position.charAt(0)]}, {positionMapping.row[position.charAt(1)]})
-        </Typography>
-      </Box>
-
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: '20px repeat(5, 36px)',
-          columnGap: 0.5,
-          rowGap: 0.5,
-          justifyContent: 'start',
-          alignItems: 'center',
-        }}
-      >
-        <Box />
-        {cols.map((col) => (
-          <Box key={col} sx={{ textAlign: 'center' }}>
-            <Typography variant="caption" fontWeight={700}>{col}</Typography>
-          </Box>
-        ))}
-
-        {rows.map((row) => (
-          <React.Fragment key={row}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Typography variant="caption" fontWeight={700}>{row}</Typography>
-            </Box>
-            {cols.map((col) => {
-              const key = `${col}${row}`;
-              const isSelected = position === key;
-
-              return (
-                <Box key={key}>
-                  <Button
-                    variant={isSelected ? 'contained' : 'outlined'}
-                    size="small"
-                    onClick={() => handlePositionChange(key)}
-                    sx={{
-                      width: 36,
-                      minWidth: 36,
-                      height: 36,
-                      p: 0,
-                      borderRadius: 0.875,
-                      fontSize: '0.8125rem',
-                      lineHeight: 1,
-                    }}
-                  >
-                    {key}
-                  </Button>
-                </Box>
-              );
-            })}
-          </React.Fragment>
-        ))}
-      </Box>
-    </Box>
-  );
-};
-
 const CharacterControlTab = ({
   data,
   onDelete,
@@ -169,11 +60,15 @@ const CharacterControlTab = ({
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(true);
   const [activeTab, setActiveTab] = useState(0);
+  const visibleTab = isV5Medium ? 0 : activeTab;
+  const activeField = visibleTab === 0 ? 'prompt' : 'uc';
+  const activeFieldLabel = t(visibleTab === 0
+    ? 'painting.workspace.parameters.characterDescription'
+    : 'painting.workspace.parameters.avoidContent');
+  const editorId = useId();
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const cancelNameEditRef = useRef(false);
-  const colorIndex = data.colorId !== undefined ? data.colorId % characterColors.length : index % characterColors.length;
-  const color = characterColors[colorIndex];
   const isTemporarilyDisabled = data.isTemporarilyDisabled === true;
   const defaultCharacterName = t('painting.workspace.parameters.defaultCharacterName', { index: index + 1 });
 
@@ -226,52 +121,6 @@ const CharacterControlTab = ({
     startNameEdit(event);
   };
 
-  useEffect(() => {
-    if ((isV5Model && activeTab > 1) || (isV5Medium && activeTab === 1)) {
-      setActiveTab(0);
-    }
-  }, [activeTab, isV5Medium, isV5Model]);
-
-  const renderTextFieldWithEditButton = (field, label, placeholder) => (
-    <TextField
-      fullWidth
-      multiline
-      rows={2}
-      label={label}
-      placeholder={placeholder}
-      value={data[field] || ''}
-      onChange={(event) => onDataChange(index, { ...data, [field]: event.target.value })}
-      size="small"
-      sx={{
-        mt: 0.5,
-        '& .MuiOutlinedInput-root': {
-          pr: 4.5,
-        },
-        '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': {
-          borderColor: color.main,
-        },
-        '& .MuiInputLabel-root.Mui-focused': {
-          color: color.main,
-        },
-      }}
-      InputProps={{
-        endAdornment: (
-          <InputAdornment position="end" sx={{ position: 'absolute', right: 6, top: 6 }}>
-            <Tooltip title={t('painting.workspace.parameters.expandEditor')}>
-              <IconButton
-                size="small"
-                onClick={() => onOpenEditor(index, field, data[field] || '')}
-                sx={{ p: 0.5 }}
-              >
-                <OpenInFullIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          </InputAdornment>
-        ),
-      }}
-    />
-  );
-
   return (
     <Paper
       elevation={0}
@@ -288,18 +137,26 @@ const CharacterControlTab = ({
       <Box
         sx={{
           px: 1.5,
-          py: 1,
-          minHeight: 44,
+          py: 0.75,
+          minHeight: 40,
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           gap: 0.75,
-          bgcolor: (theme) => alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.16 : 0.04),
+          position: 'relative',
+          bgcolor: 'action.hover',
           borderBottom: expanded ? '1px solid' : 0,
           borderColor: 'divider',
         }}
       >
-        <Box sx={{ minWidth: 0, flexGrow: 1 }}>
+        <ButtonBase
+          aria-label={`${t(expanded ? 'painting.workspace.parameters.collapseCharacter' : 'painting.workspace.parameters.expandCharacter')}: ${getPreviewText()}`}
+          aria-expanded={expanded}
+          aria-controls={editorId}
+          onClick={() => setExpanded((prev) => !prev)}
+          sx={{ position: 'absolute', inset: 0, '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 } }}
+        />
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0, flexGrow: 1, position: 'relative', pointerEvents: 'none' }}>
           {isEditingName ? (
             <InputBase
               autoFocus
@@ -315,16 +172,17 @@ const CharacterControlTab = ({
                 'aria-label': t('painting.workspace.parameters.characterName'),
               }}
               sx={{
-                display: 'block',
-                width: 'min(100%, 240px)',
-                color: color.main,
+                minWidth: 0,
+                pointerEvents: 'auto',
+                width: 'min(100%, 160px)',
+                color: 'text.primary',
                 fontSize: '0.875rem',
                 fontWeight: 500,
                 lineHeight: 1.25,
                 borderBottom: '1px solid',
-                borderColor: color.main,
+                borderColor: 'primary.main',
                 '& input': { p: 0, height: 'auto' },
-                '& input::placeholder': { color: color.main, opacity: 0.72 },
+                '& input::placeholder': { color: 'text.secondary', opacity: 0.72 },
               }}
             />
           ) : (
@@ -340,12 +198,14 @@ const CharacterControlTab = ({
                 onPointerDown={(event) => event.stopPropagation()}
                 sx={{
                   display: 'block',
+                  pointerEvents: 'auto',
+                  minWidth: 0,
                   maxWidth: '100%',
                   p: 0,
                   border: 0,
                   bgcolor: 'transparent',
                   cursor: 'text',
-                  color: color.main,
+                  color: 'text.primary',
                   fontSize: 15,
                   lineHeight: 1.25,
                   overflow: 'hidden',
@@ -355,7 +215,7 @@ const CharacterControlTab = ({
                   '&:hover': { textDecoration: 'underline' },
                   '&:focus-visible': {
                     outline: '2px solid',
-                    outlineColor: color.main,
+                    outlineColor: 'primary.main',
                     outlineOffset: 2,
                     borderRadius: 0.25,
                   },
@@ -366,7 +226,7 @@ const CharacterControlTab = ({
             </Tooltip>
           )}
           {isV5Model ? (
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.125 }}>
+            <Typography variant="caption" color="text.secondary" noWrap sx={{ minWidth: 0 }}>
               {characterPositionMode === 'custom'
                 ? t('painting.workspace.parameters.normalizedCoordinates', {
                   x: normalizeNovelAICharacterCenter(data.center, data.position).x.toFixed(3),
@@ -375,106 +235,95 @@ const CharacterControlTab = ({
                 : t('painting.workspace.parameters.aiDecidesPosition')}
             </Typography>
           ) : (
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.125 }}>
+            <Typography variant="caption" color="text.secondary" noWrap sx={{ minWidth: 0 }}>
               {t('painting.workspace.parameters.positionValue', { position: data.position || 'C3' })}
             </Typography>
           )}
           {isTemporarilyDisabled && (
-            <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 0.125 }}>
+            <Typography variant="caption" color="warning.main" noWrap sx={{ minWidth: 0 }}>
               {t('painting.workspace.parameters.temporarilyDisabled')}
             </Typography>
           )}
         </Box>
 
-        <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-          <IconButton aria-label={t('painting.workspace.parameters.moveCharacterUp')} size="small" onClick={onMoveUp} disabled={!canMoveUp} sx={{ p: 0.5 }}>
-            <ArrowUpwardIcon fontSize="small" sx={{ color: color.main }} />
+        <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0, position: 'relative' }}>
+          <IconButton aria-label={t('painting.workspace.parameters.moveCharacterUp')} color="primary" size="small" onClick={onMoveUp} disabled={!canMoveUp} sx={{ p: 0.5 }}>
+            <ArrowUpwardIcon fontSize="small" />
           </IconButton>
-          <IconButton aria-label={t('painting.workspace.parameters.moveCharacterDown')} size="small" onClick={onMoveDown} disabled={!canMoveDown} sx={{ p: 0.5 }}>
-            <ArrowDownwardIcon fontSize="small" sx={{ color: color.main }} />
+          <IconButton aria-label={t('painting.workspace.parameters.moveCharacterDown')} color="primary" size="small" onClick={onMoveDown} disabled={!canMoveDown} sx={{ p: 0.5 }}>
+            <ArrowDownwardIcon fontSize="small" />
           </IconButton>
           <TemporaryDisableButton
             isDisabled={isTemporarilyDisabled}
             onToggle={() => onToggleDisabled(index)}
             iconOnly
-            sx={{ color: isTemporarilyDisabled ? 'warning.main' : color.main }}
+            sx={{ color: isTemporarilyDisabled ? 'warning.main' : 'primary.main' }}
           />
-          <IconButton aria-label={t('painting.workspace.parameters.deleteCharacter')} size="small" onClick={onDelete} sx={{ p: 0.5 }}>
-            <DeleteIcon fontSize="small" sx={{ color: color.main }} />
-          </IconButton>
-          <IconButton size="small" onClick={() => setExpanded((prev) => !prev)} sx={{ p: 0.5 }}>
-            <ExpandMoreIcon
-              fontSize="small"
-              sx={{
-                color: color.main,
-                transform: expanded ? 'rotate(0deg)' : 'rotate(-180deg)',
-                transition: 'transform 0.2s ease',
-              }}
-            />
+          <IconButton aria-label={t('painting.workspace.parameters.deleteCharacter')} color="primary" size="small" onClick={onDelete} sx={{ p: 0.5 }}>
+            <DeleteIcon fontSize="small" />
           </IconButton>
         </Box>
       </Box>
 
       {expanded && (
-        <Box sx={{ p: 1.25, opacity: isTemporarilyDisabled ? 0.74 : 1, transition: 'opacity 0.2s ease' }}>
-          <Stack direction="row" alignItems="center" spacing={0.5} sx={{ mb: 1 }}>
+        <Box id={editorId} sx={{ p: '1px', opacity: isTemporarilyDisabled ? 0.74 : 1, transition: 'opacity 0.2s ease' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
             <Tabs
-              value={activeTab}
-              onChange={(_, newValue) => setActiveTab(newValue)}
+              value={visibleTab}
+              onChange={(_, nextTab) => setActiveTab(nextTab)}
               variant="scrollable"
               scrollButtons="auto"
-              sx={{
-                flex: 1,
-                minWidth: 0,
-                minHeight: 32,
-                '& .MuiTab-root': {
-                  ...compactTabSx,
-                  color: 'text.secondary',
-                },
-                '& .Mui-selected': { color: color.main },
-                '& .MuiTabs-indicator': {
-                  backgroundColor: color.main,
-                  height: 2,
-                },
-              }}
+              sx={{ flex: 1, minWidth: 0, minHeight: 30, '& .MuiTab-root': { minWidth: 0, minHeight: 30, px: 0.75, py: 0.5, fontSize: '0.75rem', textTransform: 'none' } }}
             >
-              <Tab disableRipple label={t('painting.workspace.parameters.characterPromptTab')} />
-              <Tab disableRipple label={t(isV5Medium
-                ? 'painting.workspace.parameters.fixedNegativeTab'
-                : 'painting.workspace.parameters.characterAvoidTab')} disabled={isV5Medium} />
-              {!isV5Model && <Tab disableRipple label={t('painting.workspace.parameters.characterPositionTab')} />}
+              <Tab label={t('painting.workspace.parameters.characterPromptTab')} />
+              <Tab label={t(isV5Medium ? 'painting.workspace.parameters.fixedNegativeTab' : 'painting.workspace.parameters.characterAvoidTab')} disabled={isV5Medium} />
             </Tabs>
             {isV5Medium && (
               <Tooltip title={t('painting.workspace.parameters.modelV5MediumNegativeHelp')} arrow>
-                <IconButton size="small" aria-label={t('painting.workspace.parameters.fixedNegativeTab')}>
-                  <InfoIcon fontSize="small" />
-                </IconButton>
+                <IconButton size="small" aria-label={t('painting.workspace.parameters.fixedNegativeTab')}><InfoIcon fontSize="small" /></IconButton>
               </Tooltip>
             )}
-          </Stack>
-
-          {activeTab === 0 && renderTextFieldWithEditButton(
-            'prompt',
-            t('painting.workspace.parameters.characterDescription'),
-            t('painting.workspace.parameters.characterDescriptionPlaceholder'),
-          )}
-          {activeTab === 1 && renderTextFieldWithEditButton(
-            'uc',
-            t('painting.workspace.parameters.avoidContent'),
-            t('painting.workspace.parameters.avoidContentPlaceholder'),
-          )}
-          {!isV5Model && activeTab === 2 && (
-            <PositionSelector
-              value={data.position}
-              onChange={(pos) => onDataChange(index, { ...data, position: pos })}
-            />
-          )}
+            <Tooltip title={t('painting.workspace.parameters.expandEditor')}>
+              <IconButton
+                size="small"
+                aria-label={`${t('painting.workspace.parameters.expandEditor')}: ${activeFieldLabel}`}
+                onClick={() => onOpenEditor(index, activeField, data[activeField] || '')}
+                sx={{ width: 30, height: 30, flexShrink: 0, p: 0.5 }}
+              >
+                <OpenInFullIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Box>
+          <TextField
+            fullWidth
+            multiline
+            minRows={2}
+            maxRows={5}
+            label={activeFieldLabel}
+            placeholder={t(visibleTab === 0
+              ? 'painting.workspace.parameters.characterDescriptionPlaceholder'
+              : 'painting.workspace.parameters.avoidContentPlaceholder')}
+            value={data[activeField] || ''}
+            onChange={(event) => onDataChange(index, { ...data, [activeField]: event.target.value })}
+            size="small"
+            sx={{
+              mt: 0.75,
+              minWidth: 0,
+              '& .MuiInputLabel-root': { maxWidth: 'calc(100% - 16px)' },
+              '& .MuiOutlinedInput-root': { px: 0.75 },
+            }}
+          />
         </Box>
       )}
     </Paper>
   );
 };
 
+/**
+ * 管理角色控件，并把折叠入口和展开列表交给词条区安排位置。
+ * @param {object} props 角色数据、操作回调和可选的词条区渲染函数。
+ * @returns {React.ReactElement} 词条区、角色控件和位置弹窗。
+ */
 const CharacterControlPanel = ({
   params,
   handleParamChange,
@@ -489,114 +338,86 @@ const CharacterControlPanel = ({
   handleOpenCharacterEditor,
   handleCharacterToggleDisabled,
   isV5Model = false,
+  visible = true,
+  renderPromptPanel = null,
 }) => {
   const { t } = useI18n();
+  const controlId = useId();
   const [positionEditorOpen, setPositionEditorOpen] = useState(false);
   const enabledCharacterCount = characterTabs.filter((tab) => tab.isTemporarilyDisabled !== true).length;
-  const characterPositionMode = params.characterPositionMode === 'custom' ? 'custom' : 'ai';
+  const characterPositionMode = isV5Model
+    ? (params.characterPositionMode === 'custom' ? 'custom' : 'ai')
+    : (params.aiDecidePosition ? 'ai' : 'custom');
 
-  return (
-    <Accordion
-      expanded={expandedPanels.character}
-      onChange={(_, isExpanded) => onExpandedPanelsChange('character', isExpanded)}
-      disableGutters
-      sx={{
-        m: 0,
-        border: 0,
-        borderTop: '1px solid',
-        borderColor: 'divider',
-        borderRadius: 0,
-        bgcolor: 'transparent',
-        backgroundImage: 'none',
-        boxShadow: 'none',
-        '&::before': { display: 'none' },
-        '&:first-of-type, &:last-of-type': { borderRadius: 0 },
-        '&.Mui-expanded': { margin: 0 },
-      }}
-    >
-      <AccordionSummary
-        expandIcon={<ExpandMoreIcon sx={{ fontSize: 18 }} />}
-        sx={{
-          minHeight: 44,
-          px: 0,
-          py: 0,
-          bgcolor: 'transparent',
-          '&.Mui-expanded': { minHeight: 44 },
-          '& .MuiAccordionSummary-content, & .MuiAccordionSummary-content.Mui-expanded': { margin: 0 },
-        }}
+  const summary = visible ? (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0, maxWidth: '100%' }}>
+      <Button
+        id={`${controlId}-toggle`}
+        aria-expanded={Boolean(expandedPanels.character)}
+        aria-controls={`${controlId}-content`}
+        onClick={() => onExpandedPanelsChange('character', !expandedPanels.character)}
+        color="inherit"
+        size="small"
+        sx={{ minWidth: 0, minHeight: 34, px: 0.5, gap: 0.5, textTransform: 'none', whiteSpace: 'nowrap' }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
-          <FaceIcon sx={{ mr: 1, fontSize: 18, color: 'text.secondary' }} />
-          <Typography sx={{ fontSize: 15, fontWeight: 500 }}>{t('painting.workspace.parameters.characterControl')}</Typography>
-        </Box>
-      </AccordionSummary>
-
-      <AccordionDetails sx={{ px: 0, py: 2 }}>
-        <Typography color="text.secondary" sx={{ display: 'block', mb: 2, fontSize: 14, lineHeight: 1.6 }}>
-          {t('painting.workspace.parameters.characterControlDescription')}
+        <FaceIcon sx={{ flexShrink: 0, fontSize: 16, color: 'text.secondary' }} />
+        <Typography component="span" noWrap sx={{ minWidth: 0, fontSize: 13, fontWeight: 500 }}>{t('painting.workspace.parameters.characterControl')}</Typography>
+        <Typography component="span" color="text.secondary" noWrap sx={{ minWidth: 0, fontSize: 11 }}>
+          {t('painting.workspace.parameters.characterCount', {
+            configured: characterTabs.length,
+            enabled: enabledCharacterCount,
+          })}
         </Typography>
+        <ExpandMoreIcon sx={{ flexShrink: 0, fontSize: 16, color: 'text.secondary', transform: expandedPanels.character ? 'rotate(180deg)' : 'none' }} />
+      </Button>
+      <Tooltip title={t('painting.workspace.parameters.characterControlDescription')} arrow>
+        <Box component="span" tabIndex={0} sx={{ display: 'inline-flex', flexShrink: 0, alignItems: 'center', justifyContent: 'center', height: 20, lineHeight: 0, color: 'text.secondary', transform: 'translateY(-1px)' }}>
+          <InfoIcon sx={{ display: 'block', fontSize: 15 }} />
+        </Box>
+      </Tooltip>
+    </Box>
+  ) : null;
 
-        <Stack spacing={1.5} sx={{ mb: 2 }}>
+  const content = visible ? (
+    <Collapse in={Boolean(expandedPanels.character)}>
+      <Box id={`${controlId}-content`} role="region" aria-labelledby={`${controlId}-toggle`} sx={{ pt: 0.5, pb: 1, maxHeight: 420, overflowY: 'auto', pr: 0.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 0.75, mb: 1 }}>
           <Button
             variant="outlined"
             size="small"
             startIcon={<AddIcon />}
             onClick={handleAddCharacterTab}
             disabled={!isV5Model && enabledCharacterCount >= 6}
-            sx={{ flexGrow: 1, textTransform: 'none', minHeight: 38, fontSize: 14 }}
+            sx={{ flexShrink: 0, px: 0.75, textTransform: 'none', whiteSpace: 'nowrap', minHeight: 34, fontSize: 13 }}
           >
             {t('painting.workspace.parameters.addCharacter')}
           </Button>
 
-          {isV5Model ? (
-            <ToggleButtonGroup
-              exclusive
-              size="small"
-              value={characterPositionMode}
-              onChange={(_, nextMode) => {
-                if (!nextMode) return;
-                handleParamChange('characterPositionMode', nextMode);
-                if (nextMode === 'custom') setPositionEditorOpen(true);
-              }}
-              aria-label={t('painting.workspace.parameters.characterPositionMode')}
-              sx={{ alignSelf: 'stretch', '& .MuiToggleButton-root': { minHeight: 40, fontSize: 14 } }}
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={characterPositionMode}
+            onChange={(_, nextMode) => {
+              if (!nextMode) return;
+              if (isV5Model) handleParamChange('characterPositionMode', nextMode);
+              else handleParamChange('aiDecidePosition', nextMode === 'ai');
+            }}
+            aria-label={t('painting.workspace.parameters.characterPositionMode')}
+            sx={{ ml: 'auto', minWidth: 0, maxWidth: '100%', '& .MuiToggleButton-root': { minWidth: 0, minHeight: 34, px: 0.75, py: 0.5, fontSize: 13 } }}
+          >
+            <ToggleButton value="ai" sx={{ flex: 1, textTransform: 'none', whiteSpace: 'nowrap' }}>
+              <Typography component="span" noWrap sx={{ minWidth: 0, fontSize: 'inherit', fontWeight: 'inherit' }}>{t('painting.workspace.parameters.aiDecidesPosition')}</Typography>
+            </ToggleButton>
+            <ToggleButton
+              value="custom"
+              onClick={() => setPositionEditorOpen(true)}
+              sx={{ flex: 1, gap: 0.75, textTransform: 'none', whiteSpace: 'nowrap' }}
             >
-              <ToggleButton value="ai" sx={{ flex: 1, textTransform: 'none', whiteSpace: 'nowrap' }}>
-                {t('painting.workspace.parameters.aiDecidesPosition')}
-              </ToggleButton>
-              <ToggleButton
-                value="custom"
-                onClick={() => setPositionEditorOpen(true)}
-                sx={{ flex: 1, gap: 0.75, textTransform: 'none', whiteSpace: 'nowrap' }}
-              >
-                {t('painting.workspace.parameters.customPosition')}
-                <GridOnIcon fontSize="small" />
-              </ToggleButton>
-            </ToggleButtonGroup>
-          ) : (
-            <Box
-              sx={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                alignSelf: { xs: 'flex-start', sm: 'stretch' },
-                gap: 0.25,
-                pl: 0.25,
-                pr: 0.75,
-              }}
-            >
-              <Checkbox
-                checked={params.aiDecidePosition}
-                onChange={(event) => handleParamChange('aiDecidePosition', event.target.checked)}
-                size="small"
-                sx={{ p: 0.5 }}
-              />
-              <Typography sx={{ fontSize: 14 }}>{t('painting.workspace.parameters.aiDecidesPosition')}</Typography>
-              <Tooltip title={t('painting.workspace.parameters.aiDecidesPositionHelp')} arrow>
-                <InfoIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
-              </Tooltip>
-            </Box>
-          )}
-        </Stack>
+              <Typography component="span" noWrap sx={{ minWidth: 0, fontSize: 'inherit', fontWeight: 'inherit' }}>{t('painting.workspace.parameters.customPosition')}</Typography>
+              <GridOnIcon fontSize="small" sx={{ flexShrink: 0 }} />
+            </ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
 
         {isV5Model && enabledCharacterCount > NOVELAI_V5_CHARACTER_WARNING_THRESHOLD && (
           <Alert severity="warning" sx={{ mb: 0.75 }}>
@@ -604,14 +425,7 @@ const CharacterControlPanel = ({
           </Alert>
         )}
 
-        <Typography color="text.secondary" sx={{ display: 'block', mb: 1.5, fontSize: 14 }}>
-          {t('painting.workspace.parameters.characterCount', {
-            configured: characterTabs.length,
-            enabled: enabledCharacterCount,
-          })}
-        </Typography>
-
-        <Box sx={{ maxHeight: 420, overflowY: 'auto', pr: 0.5 }}>
+        <Box>
           {characterTabs.length === 0 ? (
             <Box
               sx={{
@@ -645,9 +459,14 @@ const CharacterControlPanel = ({
             ))
           )}
         </Box>
-      </AccordionDetails>
+      </Box>
+    </Collapse>
+  ) : null;
 
-      {isV5Model && (
+  return (
+    <>
+      {renderPromptPanel ? renderPromptPanel(summary, content) : <>{summary}{content}</>}
+      {visible && (
         <CharacterPositionEditorDialog
           open={positionEditorOpen}
           onClose={() => setPositionEditorOpen(false)}
@@ -655,9 +474,10 @@ const CharacterControlPanel = ({
           onCharacterDataChange={handleCharacterDataChange}
           width={params.width}
           height={params.height}
+          gridMode={!isV5Model}
         />
       )}
-    </Accordion>
+    </>
   );
 };
 

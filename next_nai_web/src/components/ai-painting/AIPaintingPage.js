@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import {
   Box,
   Paper,
@@ -47,6 +48,7 @@ import {
   ViewQuilt as ComicIcon,
   Warning as WarningIcon,
   MonetizationOn as MonetizationOnIcon,
+  PhotoFilter as ImageProcessingIcon,
 } from '@mui/icons-material';
 import ItemDisplay from './ItemDisplay';
 import ImageEnhanceDialog from './ImageEnhanceDialog';
@@ -299,7 +301,9 @@ const getResponsiveGenerateButtonContent = ({
 };
 
 // 使用GenerationContext包装的AIPaintingPage内部组件
-const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
+const ImageProcessingWorkspace = dynamic(() => import('./ImageProcessing/ImageProcessingWorkspace'), { ssr: false });
+
+const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }) => {
   const { t, formatNumber, locale } = useI18n();
   const comicText = locale === 'en-US' ? {
     title: 'Comic maker', edit: 'Panel parameters', save: 'Save task', close: 'Back to canvas',
@@ -316,6 +320,21 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
   };
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const workspaceRef = useRef(null);
+  const parameterResizeRef = useRef(null);
+  const [workspaceWidth, setWorkspaceWidth] = useState(0);
+  const [parameterPanelWidth, setParameterPanelWidth] = useState(null);
+  const [resizingParameters, setResizingParameters] = useState(false);
+  const maxParameterPanelWidth = Math.max(320, Math.min(680, workspaceWidth - 320));
+  const visibleParameterPanelWidth = Math.min(maxParameterPanelWidth,
+    parameterPanelWidth ?? Math.min(460, Math.max(380, workspaceWidth * 0.3)));
+
+  useEffect(() => {
+    // 菜单展开或窗口变窄时为画布保留空间，不让参数面板挤出页面。
+    const observer = new ResizeObserver(([entry]) => setWorkspaceWidth(entry.contentRect.width));
+    observer.observe(workspaceRef.current);
+    return () => observer.disconnect();
+  }, []);
   const accountDefaultModel = DEFAULT_PAINTING_MODEL_ID;
   const themeColors = {
     ItemDisplayBg: theme.palette.background.paper,
@@ -359,6 +378,8 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
   const [comicPanelBounds, setComicPanelBounds] = useState(null);
   const [comicGenerationBusy, setComicGenerationBusy] = useState(false);
   const [comicWorkspaceVisited, setComicWorkspaceVisited] = useState(false);
+  const [imageProcessingVisited, setImageProcessingVisited] = useState(false);
+  const [processingGalleryRequest, setProcessingGalleryRequest] = useState(null);
   const [parameterEditorState, setParameterEditorState] = useState(null);
   const [parameterEditorKey, setParameterEditorKey] = useState(0);
   const [leftPanelMode, setLeftPanelMode] = useState('generation');
@@ -369,6 +390,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
     flight.cancelled = true;
     if (flight.batchId) void apiClient.cancelImageBatch(flight.batchId, true).catch(() => {});
   }, []);
+  const isCanvasWorkspace = leftPanelMode === 'comic' || leftPanelMode === 'imageProcessing';
   const imageToolBusyRef = useRef(false);
   const [imageToolBusy, setImageToolBusy] = useState(false);
   const [enhanceSource, setEnhanceSource] = useState(null);
@@ -589,6 +611,8 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
   }, [vibeImages, vibeCacheHydrated, leftPanelMode]);
   const [setDesktopGenerateButtonContainer, desktopGenerateButtonWidth] = useObservedWidth();
   const [setMobileGenerateButtonContainer, mobileGenerateButtonWidth] = useObservedWidth();
+  const [parameterToolbarContainer, setParameterToolbarContainer] = useState(null);
+  const [drawerToolbarContainer, setDrawerToolbarContainer] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1484,8 +1508,22 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
       regularPaintingSnapshotRef.current = getPaintingSnapshot();
       setComicWorkspaceVisited(true);
     }
+    if (mode === 'imageProcessing') setImageProcessingVisited(true);
     setLeftPanelMode(mode);
   };
+
+  useEffect(() => {
+    const openGalleryImage = () => {
+      const pending = sessionStorage.getItem('novelai:pending-image-processing');
+      if (!pending) return;
+      sessionStorage.removeItem('novelai:pending-image-processing');
+      setProcessingGalleryRequest(JSON.parse(pending));
+      changeWorkspaceMode('imageProcessing');
+    };
+    openGalleryImage();
+    window.addEventListener('novelai:image-processing', openGalleryImage);
+    return () => window.removeEventListener('novelai:image-processing', openGalleryImage);
+  });
 
   const handleComicSelectTask = (target, savedSnapshot, options = {}) => {
     if (leftPanelMode !== 'comic') return;
@@ -1925,6 +1963,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
     };
 
     switch (action) {
+      case 'use-as-image-processing':
+        setProcessingGalleryRequest({ id: createClientId(), generatedItem: currentItem });
+        changeWorkspaceMode('imageProcessing');
+        return true;
       case 'use-as-input':
         try {
           const response = await fetch(currentItem.src);
@@ -2057,7 +2099,6 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
   const currentItemMetadata = currentItem?.metadataStatus === 'ready' && currentItem?.metadataSource === currentItem?.src
     ? currentItem.metadata
     : null;
-  const hasCurrentItemActionRow = Boolean(currentItem);
   const hasCurrentItemSeed = currentItemMetadata?.seed !== undefined
     && currentItemMetadata?.seed !== null
     && currentItemMetadata?.seed !== '';
@@ -2188,24 +2229,25 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
 
   const parameterEditor = (
     <>
-      {/* 上方：正负面词条输入区 */}
-      <Box sx={{ flexShrink: 0, minWidth: 0 }}>
-        <PromptPanel
-          positivePrompt={positivePrompt}
-          negativePrompt={negativePrompt}
-          model={generationParams.model}
-          characterTabs={characterTabsForPromptTokens}
-          onPositivePromptChange={setPositivePrompt}
-          onNegativePromptChange={setNegativePrompt}
-          onSaveCurrentNote={handleSaveCurrentNote}
-          onApplyNoteContent={handleApplyMetadataFromNote}
-          onError={reportWorkspaceFailure}
-        />
-      </Box>
-
       {/* 参数面板 - 传递expandedPanels和onExpandedPanelsChange */}
       <Box sx={{ flexShrink: 0, minWidth: 0, pb: 1 }}>
         <ParameterPanel
+          parameterToolbarContainer={isMobile ? drawerToolbarContainer : parameterToolbarContainer}
+          renderPromptPanel={(characterControlSummary, characterControlContent) => (
+            <PromptPanel
+                  positivePrompt={positivePrompt}
+              negativePrompt={negativePrompt}
+              model={generationParams.model}
+              characterTabs={characterTabsForPromptTokens}
+              onPositivePromptChange={setPositivePrompt}
+              onNegativePromptChange={setNegativePrompt}
+              onSaveCurrentNote={handleSaveCurrentNote}
+              onApplyNoteContent={handleApplyMetadataFromNote}
+              onError={reportWorkspaceFailure}
+              characterControlSummary={characterControlSummary}
+              characterControlContent={characterControlContent}
+            />
+          )}
           key={parameterEditorKey}
           editorSessionKey={parameterEditorKey}
           editorState={parameterEditorRef.current?.key === parameterEditorKey
@@ -2241,15 +2283,20 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
 
   return (
     <>
+      {/* 参数编辑态持续挂载，保证直接打开图像处理后仍能切换漫画并恢复普通绘图参数。 */}
+      {leftPanelMode === 'imageProcessing' && <Box sx={{ display: 'none' }}>{parameterEditor}</Box>}
       <Box
+        ref={workspaceRef}
         sx={{
           height: '100%',
           display: 'flex',
           flexDirection: isMobile ? 'column' : 'row',
           overflowX: 'hidden',
           position: 'relative',
-          pb: isMobile && leftPanelMode !== 'comic' ? { xs: '116px', sm: '60px' } : 0,
+          pb: isMobile && !isCanvasWorkspace ? { xs: '116px', sm: '60px' } : 0,
           backgroundColor: theme.palette.background.default,
+          userSelect: resizingParameters ? 'none' : undefined,
+          cursor: resizingParameters ? 'col-resize' : undefined,
         }}
         onDragOverCapture={(event) => {
           if (Array.from(event.dataTransfer?.types || []).includes('Files')) {
@@ -2377,13 +2424,14 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
         {/* 左侧区域 - 图像显示 */}
         <Box
           sx={{
-            flex: isMobile ? (leftPanelMode === 'comic' ? '1 1 0' : 'none') : 10,
+            flex: isMobile ? (isCanvasWorkspace ? '1 1 0' : 'none') : '1 1 0',
+            minWidth: 0,
             width: isMobile ? '100%' : 'auto',
             display: 'flex',
             flexDirection: isMobile ? 'column' : 'row',
-            minHeight: isMobile ? (leftPanelMode === 'comic' ? 0 : '80vh') : 'auto',
+            minHeight: isMobile ? (isCanvasWorkspace ? 0 : '80vh') : 'auto',
             maxHeight: '100%',
-            p: 0.5,
+            p: isMobile ? 0.5 : '1px',
             overflow: 'hidden',
           }}
         >
@@ -2391,7 +2439,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
             sx={{
               flex: '0 0 auto',
               width: isMobile ? '100%' : 56,
-              mr: isMobile ? 0 : 1,
+              mr: isMobile ? 0 : '3px',
               mb: isMobile ? 1 : 0,
               pt: isMobile ? 0 : 0.5,
               display: 'flex',
@@ -2468,6 +2516,23 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
               <ComicIcon sx={{ fontSize: 18 }} />
               {comicText.title}
             </Button>
+            <Button
+              variant="text"
+              aria-label={t('painting.workspace.tabs.imageProcessing')}
+              aria-pressed={leftPanelMode === 'imageProcessing'}
+              onClick={() => changeWorkspaceMode('imageProcessing')}
+              sx={{
+                minWidth: 0, flex: isMobile ? 1 : undefined,
+                flexDirection: isMobile ? 'row' : 'column', gap: isMobile ? 0.5 : 0.25,
+                px: 0.5, py: 0.5, minHeight: isMobile ? 36 : 48,
+                fontSize: '0.75rem', lineHeight: 1.4, borderRadius: 1.5,
+                color: leftPanelMode === 'imageProcessing' ? 'primary.main' : 'text.secondary',
+                bgcolor: leftPanelMode === 'imageProcessing' ? 'action.selected' : 'transparent',
+              }}
+            >
+              <ImageProcessingIcon sx={{ fontSize: 18 }} />
+              {t('painting.workspace.tabs.imageProcessing')}
+            </Button>
           </Box>
 
           <Box
@@ -2480,11 +2545,22 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
               overflow: 'hidden',
             }}
           >
+            {imageProcessingVisited && (
+              <Box sx={{ display: leftPanelMode === 'imageProcessing' ? 'flex' : 'none', flex: 1, minHeight: 0, minWidth: 0 }}>
+                <ImageProcessingWorkspace
+                  active={active && leftPanelMode === 'imageProcessing'}
+                  generatedItems={generatedItems}
+                  galleryRequest={processingGalleryRequest}
+                  onGalleryRequestHandled={() => setProcessingGalleryRequest(null)}
+                  getCurrentComicPage={() => comicWorkspaceRef.current?.getCurrentPage()}
+                />
+              </Box>
+            )}
             {comicWorkspaceVisited && (
               <Box sx={{ display: leftPanelMode === 'comic' ? 'block' : 'none', flex: 1, minHeight: 0, minWidth: 0 }}>
                 <ComicWorkspace
                   ref={comicWorkspaceRef}
-                  active={leftPanelMode === 'comic'}
+                  active={active && leftPanelMode === 'comic'}
                   generatedItems={generatedItems}
                   onSelectTask={handleComicSelectTask}
                   onEditTask={(bounds) => {
@@ -2515,10 +2591,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                   justifyContent: 'center',
                   alignItems: 'center',
                   position: 'relative',
-                  mb: 0.5,
-                  p: 0.5,
+                  mb: isMobile ? 0.5 : '1px',
+                  p: isMobile ? 0.5 : '1px',
                   overflow: 'hidden',
-                  borderRadius: 2,
+                  borderRadius: isMobile ? 2 : '8px 0 0 8px',
                   backgroundColor: themeColors.ItemDisplayBg,
                   minHeight: isMobile ? '50vh' : '300px',
                   border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
@@ -2526,6 +2602,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
               >
                 <ItemDisplay
                   item={currentItem}
+                  active={active && leftPanelMode === 'generation'}
                   onActionButtonClick={handleActionButtonClick}
                   onNextItem={handleSelectNext}
                   onPreviousItem={handleSelectPrevious}
@@ -2544,11 +2621,8 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                 elevation={0}
                 sx={{
                   flex: '0 0 auto',
-                  height: hasCurrentItemActionRow
-                    ? { xs: 108, sm: 126, md: 136 }
-                    : { xs: 80, sm: 100, md: 110 },
-                  p: 0.5,
-                  borderRadius: 2,
+                  p: isMobile ? 0.5 : '1px',
+                  borderRadius: isMobile ? 2 : '8px 0 0 8px',
                   backgroundColor: themeColors.ItemPreviewBg,
                   overflow: 'hidden',
                   border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
@@ -2571,8 +2645,8 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                 sx={{
                   display: leftPanelMode === 'inpaint' ? 'block' : 'none',
                   flex: 1,
-                  p: 0.5,
-                  borderRadius: 2,
+                  p: isMobile ? 0.5 : '1px',
+                  borderRadius: isMobile ? 2 : '8px 0 0 8px',
                   overflow: 'hidden',
                   backgroundColor: themeColors.ItemDisplayBg,
                   border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
@@ -2596,17 +2670,70 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
         </Box>
 
         {/* 桌面端右侧区域 - 控制面板 */}
-        {!isMobile && leftPanelMode !== 'comic' && (
+        {!isMobile && !isCanvasWorkspace && (
+          <>
+          <Tooltip title={t('painting.workspace.actions.resizeParameters')} placement="left" arrow>
+            <Box
+              role="separator"
+              tabIndex={0}
+              aria-label={t('painting.workspace.actions.resizeParameters')}
+              aria-orientation="vertical"
+              aria-controls="painting-parameters"
+              aria-valuemin={320}
+              aria-valuemax={maxParameterPanelWidth}
+              aria-valuenow={Math.round(visibleParameterPanelWidth)}
+              onPointerDown={(event) => {
+                if (event.button !== 0) return;
+                event.preventDefault();
+                event.currentTarget.focus();
+                event.currentTarget.setPointerCapture(event.pointerId);
+                parameterResizeRef.current = { x: event.clientX, width: visibleParameterPanelWidth };
+                setResizingParameters(true);
+              }}
+              onPointerMove={(event) => {
+                if (!parameterResizeRef.current) return;
+                const { x, width } = parameterResizeRef.current;
+                setParameterPanelWidth(Math.max(320, Math.min(maxParameterPanelWidth, width + x - event.clientX)));
+              }}
+              onLostPointerCapture={() => {
+                parameterResizeRef.current = null;
+                setResizingParameters(false);
+              }}
+              onDoubleClick={() => setParameterPanelWidth(null)}
+              onKeyDown={(event) => {
+                if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+                event.preventDefault();
+                const width = event.key === 'Home' ? 320 : event.key === 'End' ? maxParameterPanelWidth
+                  : visibleParameterPanelWidth + (event.key === 'ArrowLeft' ? 16 : -16);
+                setParameterPanelWidth(Math.max(320, Math.min(maxParameterPanelWidth, width)));
+              }}
+              sx={{
+                flex: '0 0 6px', position: 'relative', cursor: 'col-resize', touchAction: 'none',
+                outline: 'none', zIndex: 1,
+                '&::before': {
+                  content: '""', position: 'absolute', inset: '0 -2px',
+                },
+                '&::after': {
+                  content: '""', position: 'absolute', width: 2, height: 40,
+                  top: '50%', left: 2, transform: 'translateY(-50%)', borderRadius: 1,
+                  bgcolor: resizingParameters ? 'primary.main' : 'divider',
+                },
+                '&:hover, &:focus-visible': { bgcolor: 'action.hover', '&::after': { bgcolor: 'primary.main' } },
+              }}
+            />
+          </Tooltip>
           <Box
+            id="painting-parameters"
+            style={{ width: visibleParameterPanelWidth }}
             sx={{
-              flex: '0 0 clamp(380px, 30vw, 460px)',
+              flex: '0 0 auto',
               minWidth: 0,
-              px: 2.5,
-              pt: 1.5,
+              px: '7px',
+              pt: 0.5,
               bgcolor: 'background.paper',
               border: 1,
               borderColor: 'divider',
-              borderRadius: 2,
+              borderRadius: '0 8px 8px 0',
               display: 'flex',
               flexDirection: 'column',
               height: '100%',
@@ -2657,6 +2784,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                 overflow: 'hidden',
               }}
             >
+              <Box ref={setParameterToolbarContainer} />
               <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1, minWidth: 0 }}>
                 {/* 点数、批量状态和错误入口在空间不足时共同留在第一行。 */}
                 <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
@@ -2841,10 +2969,11 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
               </Box>
             </Box>
           </Box>
+          </>
         )}
 
         {/* 移动端控制面板抽屉 */}
-        {isMobile && leftPanelMode !== 'comic' && (
+        {isMobile && !isCanvasWorkspace && (
           <SwipeableDrawer
             anchor="bottom"
             open={mobileDrawerOpen}
@@ -2942,11 +3071,12 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                 {renderAnlasStatus()}
               </Paper>
             </Box>
+            <Box ref={setDrawerToolbarContainer} sx={{ px: 2, pt: 1, flexShrink: 0, bgcolor: 'background.paper', borderTop: 1, borderColor: 'divider' }} />
           </SwipeableDrawer>
         )}
 
         {/* 移动端下的固定生成按钮 */}
-        {isMobile && leftPanelMode !== 'comic' && (
+        {isMobile && !isCanvasWorkspace && (
           <Box
             sx={{
               position: 'fixed',
@@ -2959,12 +3089,13 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
               borderTop: `1px solid ${themeColors.mobileBottomBorder}`,
               zIndex: 1200,
               display: 'flex',
-              flexWrap: 'wrap',
-              alignItems: 'center',
-              gap: 1,
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              alignItems: 'stretch',
             }}
           >
-            {/* 移动端底栏沿用原状态位展示 NovelAI Anlas 总额。 */}
+            <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+            {/* 验证状态小组件 - 使用统一的 renderVerificationIcon */}
             <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
               {renderAnlasStatus()}
 
@@ -3129,6 +3260,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
                 </Box>
               );
             })()}
+            </Box>
           </Box>
         )}
 
@@ -3250,10 +3382,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null }) => {
 };
 
 // 包装了Context Provider的根组件
-const AIPaintingPage = ({ userId, accountSnapshot = null }) => {
+const AIPaintingPage = ({ userId, accountSnapshot = null, active = true }) => {
   return (
     <GenerationProvider>
-      <AIPaintingPageContent userId={userId} accountSnapshot={accountSnapshot} />
+      <AIPaintingPageContent userId={userId} accountSnapshot={accountSnapshot} active={active} />
     </GenerationProvider>
   );
 };

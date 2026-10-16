@@ -188,7 +188,10 @@ async function paintPanel(context, panel) {
       loaded.onerror = () => reject(new Error('Unable to load a comic panel image.'));
       loaded.src = source.dataUrl;
     });
-    context.drawImage(image, source.x, source.y, source.width * source.scale, source.height * source.scale);
+    const width = source.width * source.scale, height = source.height * source.scale;
+    context.translate(source.x + width / 2, source.y + height / 2);
+    context.rotate((source.rotation || 0) * Math.PI / 180);
+    context.drawImage(image, -width / 2, -height / 2, width, height);
   }
   context.restore();
   if (panel.borderWidth > 0) {

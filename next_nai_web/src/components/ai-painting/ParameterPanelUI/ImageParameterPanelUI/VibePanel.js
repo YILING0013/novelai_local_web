@@ -24,10 +24,9 @@ import {
   Style as StyleIcon,
   Sync as SyncIcon,
   CheckCircle as CheckCircleIcon,
-  Warning as WarningIcon,
-  Error as ErrorIcon,
   Download as DownloadIcon,
   Archive as ArchiveIcon,
+  Add as AddIcon,
 } from '@mui/icons-material';
 import TemporaryDisableButton from './TemporaryDisableButton';
 import { useI18n } from '@/i18n/I18nProvider';
@@ -58,36 +57,13 @@ const VibeImageComponent = ({
   } = vibeItem;
   const isDisabled = isTemporarilyDisabled === true;
   
-  const getStatusChip = () => {
-    // 统一为浮层优化的样式
-    const chipProps = {
-      size: "small",
-      variant: "outlined",
-      sx: {
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
-        color: 'white',
-        borderColor: 'rgba(255, 255, 255, 0.5)',
-        '& .MuiChip-icon': {
-          color: 'white',
-          width: '16px',
-          height: '16px',
-        },
-      }
-    };
-
-    switch(status) {
-      case 'converted':
-        return <Chip icon={<CheckCircleIcon />} label={t('painting.workspace.parameters.vibeConverted')} color="success" {...chipProps} />;
-      case 'unconverted':
-        return <Chip icon={<WarningIcon />} label={t('painting.workspace.parameters.vibePendingConversion')} color="warning" {...chipProps} />;
-      case 'converting':
-        return <Chip icon={<CircularProgress size={14} color="inherit" />} label={t('painting.workspace.parameters.vibeConverting')} color="info" {...chipProps} />;
-      case 'error':
-        return <Chip icon={<ErrorIcon />} label={t('painting.workspace.parameters.vibeConversionFailed')} color="error" {...chipProps} />;
-      default:
-        return null;
-    }
-  };
+  const statusLabelKey = {
+    converted: 'vibeConverted',
+    unconverted: 'vibePendingConversion',
+    converting: 'vibeConverting',
+    error: 'vibeConversionFailed',
+  }[status];
+  const statusLabel = statusLabelKey ? t(`painting.workspace.parameters.${statusLabelKey}`) : '';
 
   return (
     <Card elevation={0} sx={{ mb: 2, borderRadius: 1, bgcolor: 'transparent', boxShadow: 'none', overflow: 'hidden', border: '1px solid', borderColor: isDisabled ? 'warning.light' : 'divider' }}>
@@ -134,26 +110,12 @@ const VibeImageComponent = ({
                 <StyleIcon aria-label={t('painting.workspace.parameters.referenceImageAlt')} />
               </Box>
             )}
-            {/* [修改] 将右上角的按钮放入一个容器中 */}
-            <Box sx={{ position: 'absolute', top: 4, right: 4, display: 'flex', gap: 0.5 }}>
-              {/* 下载按钮 */}
-              {isV4Vibe && status === 'converted' && (
-                <Tooltip title={t('painting.workspace.parameters.downloadVibeFile')} placement="top">
-                  <IconButton
-                    size="small"
-                    onClick={() => onDownload(index)}
-                    sx={{
-                      backgroundColor: 'rgba(0, 0, 0, 0.6)',
-                      color: 'white',
-                      '&:hover': {
-                        backgroundColor: 'rgba(0, 123, 255, 0.8)',
-                      }
-                    }}
-                  >
-                    <DownloadIcon sx={{ fontSize: 16 }} />
-                  </IconButton>
-                </Tooltip>
-              )}
+            {isDisabled && (
+              <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(0,0,0,0.35)', pointerEvents: 'none' }}>
+                <Chip size="small" label={t('painting.workspace.parameters.disabled')} sx={{ height: 22, fontSize: '0.6875rem', bgcolor: 'rgba(0,0,0,0.75)', color: 'white' }} />
+              </Box>
+            )}
+            <Box sx={{ position: 'absolute', top: 4, left: 4 }}>
               <TemporaryDisableButton
                 isDisabled={isDisabled}
                 onToggle={() => onToggleDisabled(index)}
@@ -166,12 +128,34 @@ const VibeImageComponent = ({
                   }
                 }}
               />
+            </Box>
+            <Box sx={{ position: 'absolute', top: 4, right: 4, display: 'flex', gap: 0.25 }}>
+              {/* 下载按钮 */}
+              {isV4Vibe && status === 'converted' && (
+                <Tooltip title={t('painting.workspace.parameters.downloadVibeFile')} placement="top">
+                  <IconButton
+                    size="small"
+                    onClick={() => onDownload(index)}
+                    sx={{
+                      p: 0.5,
+                      backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                      color: 'white',
+                      '&:hover': {
+                        backgroundColor: 'rgba(0, 123, 255, 0.8)',
+                      }
+                    }}
+                  >
+                    <DownloadIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Tooltip>
+              )}
               {/* 删除按钮 */}
               <Tooltip title={t('painting.workspace.parameters.delete')} placement="top">
                 <IconButton
                   size="small"
                   onClick={() => onDelete(index)}
                   sx={{
+                    p: 0.5,
                     backgroundColor: 'rgba(0, 0, 0, 0.6)',
                     color: 'white',
                     '&:hover': {
@@ -184,55 +168,45 @@ const VibeImageComponent = ({
               </Tooltip>
             </Box>
 
-            {/* 左上角转换按钮 */}
-            {isV4Vibe && !isReadOnly && (
-              <Tooltip title={status === 'converted'
-                ? t('painting.workspace.parameters.vibeConverted')
-                : t('painting.workspace.parameters.clickToConvert')} placement="top">
-                <span>
-                  <IconButton
-                    size="small"
-                    onClick={() => onConvert(index)}
-                    disabled={status === 'converting' || status === 'converted'}
-                    sx={{
-                      position: 'absolute',
-                      top: 4,
-                      left: 4,
-                      backgroundColor: 'rgba(0, 0, 0, 0.6)',
-                      color: 'white',
-                      '&:hover': {
-                        backgroundColor: status !== 'converted' ? 'rgba(0, 191, 165, 0.8)' : 'rgba(0, 0, 0, 0.6)',
-                      },
-                      '&.Mui-disabled': {
-                          backgroundColor: status === 'converted' ? 'rgba(46, 125, 50, 0.7)' : 'rgba(0,0,0,0.5)',
+            {/* 状态与转换操作共用图片底部浮层，避免遮住左上角的启用按钮。 */}
+            {isV4Vibe && statusLabel && (
+              <Box sx={{ position: 'absolute', bottom: 0, left: 0, right: 0, p: 0.5, display: 'flex', alignItems: 'center', gap: 0.25, background: 'linear-gradient(to top, rgba(0,0,0,0.75), transparent)' }}>
+                <Tooltip title={statusLabel} describeChild>
+                  <Chip label={statusLabel} size="small" variant="outlined" sx={{ height: 22, borderRadius: 0.5, flex: 1, minWidth: 0, fontSize: '0.6875rem', color: 'white', borderColor: 'rgba(255,255,255,0.5)', bgcolor: 'rgba(0,0,0,0.35)', '& .MuiChip-label': { px: 0.5 } }} />
+                </Tooltip>
+                {!isReadOnly && (
+                  <Tooltip title={status === 'converted'
+                    ? t('painting.workspace.parameters.vibeConverted')
+                    : t('painting.workspace.parameters.clickToConvert')} placement="top">
+                    <Box component="span" sx={{ display: 'flex', flexShrink: 0 }}>
+                      <IconButton
+                        aria-label={t('painting.workspace.parameters.clickToConvert')}
+                        size="small"
+                        onClick={() => onConvert(index)}
+                        disabled={status === 'converting' || status === 'converted'}
+                        sx={{
+                          width: 22,
+                          height: 22,
+                          borderRadius: 0.5,
+                          backgroundColor: 'rgba(0, 0, 0, 0.6)',
                           color: 'white',
-                          opacity: 1,
-                      }
-                    }}
-                  >
-                    {status === 'converting' ? <CircularProgress size={16} color="inherit" /> : 
-                     status === 'converted' ? <CheckCircleIcon sx={{ fontSize: 16 }} /> :
-                     <SyncIcon sx={{ fontSize: 16 }} />}
-                  </IconButton>
-                </span>
-              </Tooltip>
-            )}
-
-            {/* 底部信息浮层 (仅含状态) */}
-            {isV4Vibe && (
-              <Box sx={{
-                position: 'absolute',
-                bottom: 0,
-                left: 0,
-                right: 0,
-                p: 1,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1,
-                background: 'linear-gradient(to top, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0) 100%)',
-                pointerEvents: 'none',
-              }}>
-                {getStatusChip()}
+                          '&:hover': {
+                            backgroundColor: status !== 'converted' ? 'rgba(0, 191, 165, 0.8)' : 'rgba(0, 0, 0, 0.6)',
+                          },
+                          '&.Mui-disabled': {
+                              backgroundColor: status === 'converted' ? 'rgba(46, 125, 50, 0.7)' : 'rgba(0,0,0,0.5)',
+                              color: 'white',
+                              opacity: 1,
+                          }
+                        }}
+                      >
+                        {status === 'converting' ? <CircularProgress size={16} color="inherit" /> :
+                         status === 'converted' ? <CheckCircleIcon sx={{ fontSize: 16 }} /> :
+                         <SyncIcon sx={{ fontSize: 16 }} />}
+                      </IconButton>
+                    </Box>
+                  </Tooltip>
+                    )}
               </Box>
             )}
           </Box>
@@ -254,15 +228,7 @@ const VibeImageComponent = ({
         </Box>
         
         {/* 控制器容器 */}
-        <Box sx={{ flexGrow: 1, width: '100%' }}>
-          {isDisabled && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.75, flexWrap: 'wrap' }}>
-              <Chip size="small" label={t('painting.workspace.parameters.disabled')} color="warning" variant="outlined" />
-              <Typography variant="caption" color="warning.main">
-                {t('painting.workspace.parameters.excludedFromRequest')}
-              </Typography>
-            </Box>
-          )}
+        <Box sx={{ flexGrow: 1, width: '100%', minWidth: 0 }}>
           <LockableSlider
             label={t('painting.workspace.parameters.referenceStrength')}
             value={referenceStrength}
@@ -333,8 +299,17 @@ const VibePanel = ({
   
   return (
     <Accordion 
+      data-drop-zone="vibe"
       expanded={expandedPanels.vibe} 
       onChange={(_, isExpanded) => onExpandedPanelsChange('vibe', isExpanded)}
+      onDragOver={blocked ? event => event.preventDefault() : handleVibeDragOver}
+      onDragEnter={blocked ? undefined : handleVibeDragEnter}
+      onDragLeave={handleVibeDragLeave}
+      onDrop={event => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!blocked) handleVibeDrop(event);
+      }}
       disableGutters
       sx={{
         m: 0,
@@ -342,7 +317,10 @@ const VibePanel = ({
         borderTop: '1px solid',
         borderColor: 'divider',
         borderRadius: 0,
-        bgcolor: 'transparent',
+        bgcolor: isVibeDragging && !blocked ? 'action.hover' : 'transparent',
+        outline: isVibeDragging && !blocked ? '2px solid' : 'none',
+        outlineColor: 'primary.main',
+        outlineOffset: -2,
         backgroundImage: 'none',
         boxShadow: 'none',
         '&::before': { display: 'none' },
@@ -361,11 +339,16 @@ const VibePanel = ({
           '& .MuiAccordionSummary-content, & .MuiAccordionSummary-content.Mui-expanded': { margin: 0 },
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
-          <StyleIcon sx={{ mr: 1, fontSize: 18, color: 'text.secondary' }} />
-          <Typography sx={{ fontSize: 15, fontWeight: 500 }}>
-            {t('painting.workspace.parameters.vibeTransfer')}
-          </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0, flexWrap: 'wrap', columnGap: 1, rowGap: 0.25 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+            <StyleIcon sx={{ mr: 1, fontSize: 18, color: 'text.secondary' }} />
+            <Typography sx={{ fontSize: 15, fontWeight: 500 }}>{t('painting.workspace.parameters.vibeTransfer')}</Typography>
+          </Box>
+          {vibeImages.length > 0 && <Tooltip title={blocked ? t(blockedMessageKey) : ''} describeChild arrow>
+            <Typography component="span" variant="caption" sx={{ color: blocked ? 'warning.main' : enabledVibeCount > 0 ? 'primary.main' : 'text.secondary' }}>
+              {t(blocked ? 'painting.workspace.parameters.vibePausedCount' : 'painting.workspace.parameters.vibeCount', { count: vibeImages.length, enabled: enabledVibeCount })}
+            </Typography>
+          </Tooltip>}
         </Box>
       </AccordionSummary>
       <AccordionDetails sx={{ px: 0, py: 2, position: 'relative' }}>
@@ -375,144 +358,75 @@ const VibePanel = ({
           </Alert>
         )}
 
-        <Typography color="text.secondary" sx={{ display: 'block', mb: 2, fontSize: 14, lineHeight: 1.6 }}>
-          {params.isV4Model
-            ? t('painting.workspace.parameters.vibeV4Description')
-            : t('painting.workspace.parameters.vibeV3Description')}
-        </Typography>
-
-        {params.isV4Model ? (
-          <>
-            <input
-              ref={vibeFileInputRef}
-              type="file"
-              accept=".naiv4vibe,.naiv4vibebundle,image/*"
-              multiple
-              onChange={handleVibeV4FileUpload}
-              style={{ display: 'none' }}
-            />
-
-            <Box
-              data-drop-zone="vibe"
-              sx={{
-                mt: 1,
-                mb: 2,
-                minHeight: 80,
-                p: 2,
-                border: '1px dashed',
-                borderColor: isVibeDragging ? 'primary.main' : 'divider',
-                borderRadius: 1,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: isVibeDragging ? 'action.hover' : 'transparent',
-                transition: 'all 0.2s',
-                cursor: blocked ? 'not-allowed' : 'pointer',
-                opacity: blocked ? 0.5 : 1,
-              }}
-              onClick={() => {
-                if (!blocked) {
-                  vibeFileInputRef.current.click();
-                }
-              }}
-              onDragOver={blocked ? undefined : handleVibeDragOver}
-              onDragEnter={blocked ? undefined : handleVibeDragEnter}
-              onDragLeave={blocked ? undefined : handleVibeDragLeave}
-              onDrop={blocked ? undefined : handleVibeDrop}
-            >
-              <Box sx={{ display: 'flex', alignItems: 'center', textAlign: 'center' }}>
-                <UploadIcon sx={{ mr: 1, color: isVibeDragging ? 'primary.main' : 'text.secondary' }} />
-                <Typography sx={{ fontSize: 14 }} color={isVibeDragging ? 'primary.main' : 'text.secondary'}>
-                  {isVibeDragging
-                    ? t('painting.workspace.parameters.releaseToUploadFile')
-                    : t('painting.workspace.parameters.clickOrDropVibeFile')}
-                </Typography>
-              </Box>
-            </Box>
-
-            {vibeImages.length > 0 && (
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
-                {t('painting.workspace.parameters.vibeCount', {
-                  count: vibeImages.length,
-                  enabled: enabledVibeCount,
-                })}
-              </Typography>
-            )}
-          </>
-        ) : (
-          <>
-            <input
-              ref={vibeFileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleVibeImageUpload}
-              style={{ display: 'none' }}
-            />
-
-            <Box
-              data-drop-zone="vibe"
-              sx={{
-                mt: 0.5,
-                mb: 2,
-                minHeight: 80,
-                p: 2,
-                border: '1px dashed',
-                borderColor: isVibeDragging ? 'primary.main' : 'divider',
-                borderRadius: 1,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: isVibeDragging ? 'action.hover' : 'transparent',
-                transition: 'all 0.2s',
-                cursor: blocked ? 'not-allowed' : 'pointer',
-                opacity: blocked ? 0.5 : 1,
-              }}
-              onClick={() => {
-                if (!blocked) {
-                  vibeFileInputRef.current.click();
-                }
-              }}
-              onDragOver={blocked ? undefined : handleVibeDragOver}
-              onDragEnter={blocked ? undefined : handleVibeDragEnter}
-              onDragLeave={blocked ? undefined : handleVibeDragLeave}
-              onDrop={blocked ? undefined : handleVibeDrop}
-            >
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <UploadIcon sx={{ mr: 1, color: isVibeDragging ? 'primary.main' : 'text.secondary' }} />
-                <Typography sx={{ fontSize: 14 }} color={isVibeDragging ? 'primary.main' : 'text.secondary'}>
-                  {isVibeDragging
-                    ? t('painting.workspace.parameters.releaseToUploadImage')
-                    : t('painting.workspace.parameters.clickOrDropMultipleImages')}
-                </Typography>
-              </Box>
-            </Box>
-          </>
-        )}
-
-        {params.isV4Model && vibeImages.length > 0 && (
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1, gap: 1, flexWrap: 'wrap' }}>
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<DownloadIcon />}
-              onClick={onDownloadBundle}
-              disabled={!hasDownloadableVibes}
-            >
-              {t('painting.workspace.parameters.downloadBundle')}
-            </Button>
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<ArchiveIcon />}
-              onClick={onDownloadZip}
-            >
-              {t('painting.workspace.parameters.downloadZip')}
-            </Button>
+        <input
+          ref={vibeFileInputRef}
+          type="file"
+          accept={params.isV4Model ? '.naiv4vibe,.naiv4vibebundle,image/*' : 'image/*'}
+          multiple
+          onChange={params.isV4Model ? handleVibeV4FileUpload : handleVibeImageUpload}
+          style={{ display: 'none' }}
+        />
+        {vibeImages.length === 0 && (
+          <Box
+            sx={{
+              mt: 0.5, mb: 2, minHeight: 80, p: 2,
+              border: '1px dashed', borderColor: isVibeDragging ? 'primary.main' : 'divider', borderRadius: 1,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              bgcolor: isVibeDragging ? 'action.hover' : 'transparent',
+              cursor: blocked ? 'not-allowed' : 'pointer', opacity: blocked ? 0.5 : 1,
+            }}
+            onClick={() => { if (!blocked) vibeFileInputRef.current.click(); }}
+          >
+            <UploadIcon sx={{ mr: 1, color: isVibeDragging ? 'primary.main' : 'text.secondary' }} />
+            <Typography sx={{ fontSize: 14 }} color={isVibeDragging ? 'primary.main' : 'text.secondary'}>
+              {isVibeDragging
+                ? t(params.isV4Model ? 'painting.workspace.parameters.releaseToUploadFile' : 'painting.workspace.parameters.releaseToUploadImage')
+                : t(params.isV4Model ? 'painting.workspace.parameters.clickOrDropVibeFile' : 'painting.workspace.parameters.clickOrDropMultipleImages')}
+            </Typography>
           </Box>
         )}
-
         <Box sx={{ maxHeight: 400, overflowY: 'auto', pr: 0.5 }}>
+          {vibeImages.length > 0 && (
+            <Box sx={{ position: 'sticky', top: 0, zIndex: 1, bgcolor: 'background.paper', display: 'flex', alignItems: 'center', pb: 1, gap: 1 }}>
+              <Button
+                variant="outlined"
+                size="small"
+                disabled={blocked}
+                startIcon={<AddIcon fontSize="small" />}
+                onClick={() => vibeFileInputRef.current.click()}
+                sx={{ height: 32, flex: 1, minWidth: 0 }}
+              >
+                {t('painting.workspace.parameters.continueVibeUpload')}
+              </Button>
+              {params.isV4Model && <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
+                <Tooltip title={t('painting.workspace.parameters.downloadBundle')} arrow>
+                  <span>
+                    <IconButton
+                      aria-label={t('painting.workspace.parameters.downloadBundle')}
+                      color="primary"
+                      size="small"
+                      onClick={onDownloadBundle}
+                      disabled={!hasDownloadableVibes}
+                      sx={{ width: 32, height: 32, border: 1, borderColor: 'divider', borderRadius: 1 }}
+                    >
+                      <DownloadIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+                <Tooltip title={t('painting.workspace.parameters.downloadZip')} arrow>
+                  <IconButton
+                    aria-label={t('painting.workspace.parameters.downloadZip')}
+                    color="primary"
+                    size="small"
+                    onClick={onDownloadZip}
+                    sx={{ width: 32, height: 32, border: 1, borderColor: 'divider', borderRadius: 1 }}
+                  >
+                    <ArchiveIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Box>}
+            </Box>
+          )}
           {vibeImages.map((item, index) => (
             <VibeImageComponent
               key={item.id}

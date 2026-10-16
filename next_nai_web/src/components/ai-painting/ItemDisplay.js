@@ -23,6 +23,7 @@ import {
   ImportExport as ImportExportIcon,
   AddPhotoAlternate as AddPhotoIcon,
   Brush as BrushIcon,
+  PhotoFilter as PhotoFilterIcon,
   ZoomIn as ZoomInIcon,
   ZoomOut as ZoomOutIcon,
   RestartAlt as ResetIcon,
@@ -405,6 +406,7 @@ ReferenceImageGallery.displayName = 'ReferenceImageGallery';
 
 const ItemDisplay = ({
   item,
+  active = true,
   onActionButtonClick,
   onNextItem,
   onPreviousItem,
@@ -462,6 +464,7 @@ const ItemDisplay = ({
     { icon: <AddPhotoIcon />, tooltip: t('painting.workspace.gallery.useForImg2Img'), action: 'use-as-input' },
     { icon: <BrushIcon />, tooltip: t('painting.workspace.gallery.sendToInpaint'), action: 'use-as-inpaint' },
     { icon: <ImportExportIcon />, tooltip: disableVibeAction ? t('painting.workspace.errors.v5VibeUnsupported') : t('painting.workspace.gallery.useForVibe'), action: 'use-as-vibe', disabled: disableVibeAction },
+    { icon: <PhotoFilterIcon />, tooltip: t('painting.workspace.gallery.sendToImageProcessing'), action: 'use-as-image-processing' },
     { icon: <SaveIcon />, tooltip: t('painting.workspace.gallery.saveProject'), action: 'save', disabled: false },
   ], [disableVibeAction, t]);
 
@@ -642,11 +645,11 @@ const ItemDisplay = ({
 
   useEffect(() => {
     // 仅在有选中项目时才添加键盘事件监听
-    if (item) {
+    if (active && item) {
       document.addEventListener('keydown', handleKeyDown);
       return () => document.removeEventListener('keydown', handleKeyDown);
     }
-  }, [item, handleKeyDown]);
+  }, [active, item, handleKeyDown]);
 
   return (
     <Box

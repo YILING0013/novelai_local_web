@@ -3,7 +3,7 @@
 import React from 'react';
 import { Button, IconButton, Tooltip } from '@mui/material';
 import {
-  RestartAlt as RestartAltIcon,
+  VisibilityOutlined as VisibilityOutlinedIcon,
   VisibilityOffOutlined as VisibilityOffOutlinedIcon,
 } from '@mui/icons-material';
 import { useI18n } from '@/i18n/I18nProvider';
@@ -35,8 +35,8 @@ const TemporaryDisableButton = ({ isDisabled, onToggle, iconOnly = false, sx = {
     : t('painting.workspace.parameters.temporaryDisableHelp');
 
   const icon = isDisabled
-    ? <RestartAltIcon sx={{ fontSize: 16 }} />
-    : <VisibilityOffOutlinedIcon sx={{ fontSize: 16 }} />;
+    ? <VisibilityOffOutlinedIcon sx={{ fontSize: 16 }} />
+    : <VisibilityOutlinedIcon sx={{ fontSize: 16 }} />;
 
   const handleClick = (event) => {
     event.stopPropagation();

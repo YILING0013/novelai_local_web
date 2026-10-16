@@ -41,6 +41,7 @@ import {
   createInitialViewportRect,
   fitSceneToStage,
   getAspectRatio,
+  getRectCenter,
   moveViewportRect,
   normalizeViewportRect,
   pointInRect,
@@ -1865,7 +1866,7 @@ const InpaintWorkspacePanel = forwardRef(({
   }, [handleGlobalPointerMove, handleGlobalPointerUp, isPointerInteractionActive]);
 
   const handleStageWheel = useCallback((event) => {
-    if (!hasSourceImage || isMobile || isGenerationLocked) {
+    if (!hasSourceImage || !viewportRect || isMobile || isGenerationLocked) {
       return;
     }
 
@@ -1883,7 +1884,8 @@ const InpaintWorkspacePanel = forwardRef(({
     if (insideViewport) {
       zoomGlobal(factor, point);
     } else {
-      zoomScene(factor, point);
+      // 选框使用舞台坐标，框外缩放时固定框中心对应的图像位置。
+      zoomScene(factor, getRectCenter(viewportRect));
     }
   }, [getPointerPoint, hasSourceImage, isGenerationLocked, isMobile, pendingPatch, viewportRect, zoomGlobal, zoomScene]);
 

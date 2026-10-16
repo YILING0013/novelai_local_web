@@ -281,7 +281,7 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(3, minmax(0, 1fr))', lg: 'repeat(4, minmax(0, 1fr))' }, gap: 1.5 }}>
               {THEME_PRESETS.filter((preset) => preset.mode === mode).map((preset) => {
                 const selected = selectedPreset?.id === preset.id;
-                const textColor = mode === 'dark' ? '#E7E9EE' : '#272B32';
+                const textColor = theme.palette.text.primary;
                 return <ButtonBase key={preset.id} aria-label={preset.name} aria-pressed={selected}
                   onClick={() => setThemeDraft({
                     ...themeSettings, mode: preset.mode,

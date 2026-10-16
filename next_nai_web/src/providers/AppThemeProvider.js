@@ -154,10 +154,10 @@ export function AppThemeProvider({ children }) {
       error: { main: settings.mode === 'light' ? '#B55455' : '#DB9292' },
       info: { main: settings.mode === 'light' ? '#58779A' : '#8EAAC8' },
       text: {
-        primary: settings.mode === 'light' ? '#272B32' : '#E7E9EE',
-        secondary: settings.mode === 'light' ? '#58616D' : '#A2A8B2',
+        primary: settings.mode === 'light' ? '#272B32' : '#D4D7DE',
+        secondary: settings.mode === 'light' ? '#58616D' : '#A5ABB6',
       },
-      divider: settings.mode === 'light' ? 'rgba(39,43,50,0.12)' : 'rgba(231,233,238,0.12)',
+      divider: settings.mode === 'light' ? 'rgba(39,43,50,0.12)' : 'rgba(212,215,222,0.12)',
       background: settings.backgroundColors[settings.mode],
     },
     components: {
@@ -256,14 +256,16 @@ export function AppThemeProvider({ children }) {
       },
       MuiSlider: {
         styleOverrides: {
-          root: { height: 3 },
+          root: { height: 3, borderRadius: 0 },
           thumb: ({ theme }) => ({
             width: 12,
             height: 12,
+            borderRadius: 0,
             boxShadow: 'none',
             '&:hover, &.Mui-focusVisible': { boxShadow: `0 0 0 5px ${alpha(theme.palette.primary.main, 0.12)}` },
           }),
-          rail: { opacity: 0.15 },
+          rail: { opacity: 0.15, borderRadius: 0 },
+          track: { borderRadius: 0 },
         },
       },
       MuiAlert: {

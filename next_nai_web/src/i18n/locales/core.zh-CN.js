@@ -40,6 +40,10 @@ const messages = {
     "languageAria": "选择界面语言"
   },
   "main": {
+    "navigation": "主导航",
+    "showSidebarIcons": "显示图标菜单",
+    "hideSidebar": "隐藏菜单",
+    "expandSidebar": "展开菜单",
     "accountDialog": {
       "loadError": "获取用户信息时发生错误",
       "refreshData": "刷新数据"
@@ -120,6 +124,7 @@ const messages = {
     "logout": "退出登录"
   },
   "common": {
+    "retry": "重试",
     "copied": "已复制",
     "copyFailed": "复制失败，请选中文字后手动复制。",
     "close": "关闭",

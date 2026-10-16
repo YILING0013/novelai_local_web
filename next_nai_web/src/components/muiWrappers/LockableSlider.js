@@ -2,6 +2,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Box,
+  ButtonBase,
+  Popover,
   Slider,
   Typography,
   Tooltip,
@@ -32,6 +34,7 @@ const LockableSlider = ({
   const { t } = useI18n();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [isLocked, setIsLocked] = useState(true);
+  const [labelAnchor, setLabelAnchor] = useState(null);
   const timeoutRef = useRef(null);
   const clickStartTimeRef = useRef(0);
   const sliderContainerRef = useRef(null);
@@ -128,19 +131,27 @@ const LockableSlider = ({
   };
   
   return (
-    <Box sx={{ mt: 1 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', fontSize: '0.9375rem', lineHeight: 1.5 }}>
-          {label}
+    <Box sx={{ mt: 1, minWidth: 0 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
+        <ButtonBase
+          aria-label={label}
+          aria-haspopup="dialog"
+          aria-expanded={Boolean(labelAnchor)}
+          onClick={(event) => setLabelAnchor(event.currentTarget)}
+          sx={{ flex: 1, minWidth: 0, justifyContent: 'flex-start', color: 'text.secondary', borderRadius: 0.5, '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}
+        >
+          <Typography variant="body2" noWrap sx={{ minWidth: 0, fontSize: '0.9375rem', lineHeight: 1.5, textAlign: 'left' }}>
+            {label}
+          </Typography>
           {tooltip && (
             <Tooltip title={tooltip} arrow placement="top">
-              <InfoIcon sx={{ ml: 0.5, fontSize: 16, opacity: 0.7 }} />
+              <InfoIcon sx={{ ml: 0.5, flexShrink: 0, fontSize: 16, opacity: 0.7 }} />
             </Tooltip>
           )}
-        </Typography>
+        </ButtonBase>
         
-        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-          <Typography variant="body2" fontWeight="medium" sx={{ ml: 1, minWidth: 36, textAlign: 'right', fontSize: '0.9375rem', fontVariantNumeric: 'tabular-nums' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+          <Typography variant="body2" fontWeight="medium" sx={{ minWidth: 36, textAlign: 'right', fontSize: '0.9375rem', fontVariantNumeric: 'tabular-nums' }}>
             {valueLabelFormat ? valueLabelFormat(value) : value}
           </Typography>
           
@@ -165,6 +176,19 @@ const LockableSlider = ({
           )}
         </Box>
       </Box>
+      <Popover
+        open={Boolean(labelAnchor)}
+        anchorEl={labelAnchor}
+        onClose={() => setLabelAnchor(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        slotProps={{ paper: { sx: { p: 1.5, width: 280, maxWidth: 'calc(100vw - 32px)' } } }}
+      >
+        <Box role="dialog" aria-label={label}>
+          <Typography variant="body2" fontWeight="medium" sx={{ overflowWrap: 'anywhere' }}>{label}</Typography>
+          {tooltip && <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75, overflowWrap: 'anywhere' }}>{tooltip}</Typography>}
+        </Box>
+      </Popover>
       
       <Box 
         ref={sliderContainerRef}

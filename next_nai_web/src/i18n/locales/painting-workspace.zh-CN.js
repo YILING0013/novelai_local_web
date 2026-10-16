@@ -130,7 +130,8 @@ const paintingWorkspacezhCN = {
         "closeParameters": "关闭参数面板",
         "closeBatchStatus": "关闭批量状态",
         "viewErrorDetailsCount": "查看 {count} 条错误",
-        "cancel": "取消"
+        "cancel": "取消",
+        "resizeParameters": "拖拽调整宽度 · 双击恢复默认"
       },
       "anlas": {
         "openDetails": "查看 Anlas 明细",
@@ -159,7 +160,8 @@ const paintingWorkspacezhCN = {
       },
       "tabs": {
         "generation": "生成",
-        "inpaint": "局部重绘"
+        "inpaint": "局部重绘",
+        "imageProcessing": "图像处理"
       },
       "parameters": {
         "title": "生成参数",
@@ -321,7 +323,7 @@ const paintingWorkspacezhCN = {
         "vibeV3Description": "V3 模型使用编码后的 Vibe 文件控制画风。",
         "releaseToUploadFile": "松开以上传文件",
         "clickOrDropVibeFile": "点击或拖放 Vibe 文件",
-        "vibeCount": "{count} 个 Vibe",
+        "vibeCount": "{count} 个 Vibe · 已启用 {enabled}",
         "clickOrDropMultipleImages": "点击或拖放多张图像",
         "downloadBundle": "下载文件包",
         "downloadZip": "下载 ZIP",
@@ -333,7 +335,16 @@ const paintingWorkspacezhCN = {
         "modelV5Medium": "Medium 快速版 · 固定 14 步 · 每张 0.6 点额度",
         "modelV5MediumSettings": "Medium 固定 14 步和 Euler Ancestral，使用官方固定 Heavy 负向提示，不支持自定义负向或 CFG Rescale。",
         "fixedNegativeTab": "负面（固定）",
-        "modelV5MediumNegativeHelp": "Medium 使用官方固定 Heavy 负向提示，角色负向不参与生成。自定义负向草稿会保留，切回 High 可继续使用。"
+        "modelV5MediumNegativeHelp": "Medium 使用官方固定 Heavy 负向提示，角色负向不参与生成。自定义负向草稿会保留，切回 High 可继续使用。",
+        "collapseCharacter": "收起角色编辑",
+        "expandCharacter": "展开角色编辑",
+        "gridPositionEditorHelp": "选择一个角色，再点击 5×5 网格中的格子，将角色放在格子中心。",
+        "continueVibeUpload": "继续上传 Vibe",
+        "deleteSourceImage": "删除源图像",
+        "stepsShort": "步数",
+        "guidanceShort": "引导",
+        "quickGenerationSettings": "生成参数快捷设置",
+        "vibePausedCount": "{count} 个 Vibe · 已暂停"
       },
       "batch": {
         "statusTitle": "批量生成状态"
@@ -470,7 +481,10 @@ const paintingWorkspacezhCN = {
         "delete": "删除",
         "download": "下载",
         "clearAll": "清空全部",
-        "downloadAllArchive": "下载全部压缩包"
+        "downloadAllArchive": "下载全部压缩包",
+        "collapseHistory": "收起历史记录",
+        "expandHistory": "展开历史记录",
+        "sendToImageProcessing": "发送到图像处理"
       },
       "common": {
         "loading": "加载中…",

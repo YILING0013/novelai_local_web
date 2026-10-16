@@ -1,0 +1,80 @@
+.group {
+  border-top: 1px solid var(--border);
+  padding: 0 0 9px;
+}
+.group summary {
+  cursor: pointer;
+  padding: 11px 0;
+  color: var(--text);
+  font-size: 11px;
+  user-select: none;
+}
+.group summary::marker { color: var(--muted); }
+.group summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.help {
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 0 0 12px;
+}
+.field { margin-bottom: 12px; }
+.field :global(.slider-field) { margin-bottom: 1px; }
+.range {
+  display: flex;
+  justify-content: space-between;
+  color: var(--faint);
+  font-size: 9px;
+  line-height: 1.4;
+}
+.hslChannels {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 3px;
+  margin: 2px 0 8px;
+}
+.hslChannels > button {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 0;
+  font-size: 9px;
+  color: var(--muted);
+}
+.hslChannels > button[aria-pressed="true"] {
+  background: var(--accent-dark);
+  color: var(--text);
+  border-color: var(--accent);
+}
+.hslColor {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--border) 20%, transparent);
+}
+.channelTabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  margin: 0 0 12px;
+}
+.channelTabs button { padding: 6px 2px; font-size: 10px; }
+.channelTabs button[aria-pressed="true"] {
+  background: var(--accent-dark);
+  border-color: var(--accent);
+  color: var(--text);
+}
+.mappingToggles { display: flex; align-items: center; justify-content: space-between; gap: 5px; margin: 12px 0; }
+.mappingToggles label { display: flex; align-items: center; gap: 4px; font-size: 10px; white-space: nowrap; }
+.mappingToggles input { margin: 0; }
+.lutActions { display: flex; gap: 6px; margin-bottom: 10px; }
+.lutActions button { flex: 1; padding: 6px; font-size: 11px; }
+.lutMeta { color: var(--text); font-size: 11px; overflow-wrap: anywhere; }
+.lutMeta span { display: block; color: var(--muted); font-size: 10px; margin-top: 4px; }
+.error { color: var(--error); }
+.targetField { display: flex; align-items: center; gap: 8px; font-size: 11px; margin-bottom: 12px; }
+.targetField select { flex: 1; min-width: 0; font-size: 11px; }

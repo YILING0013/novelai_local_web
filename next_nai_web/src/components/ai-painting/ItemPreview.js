@@ -31,6 +31,8 @@ import {
   Close as CloseIcon,
   Archive as ArchiveIcon,
   Tune as TuneIcon,
+  ExpandMore as ExpandMoreIcon,
+  ExpandLess as ExpandLessIcon,
 } from '@mui/icons-material';
 import { alpha, useTheme } from '@mui/material/styles';
 import JSZip from 'jszip';
@@ -91,6 +93,8 @@ const ItemPreview = ({
   const scrollContainerRef = useRef(null);
   const selectedItemRef = useRef(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const [historyCollapsed, setHistoryCollapsed] = useState(false);
+  const historyHidden = !isMobile && historyCollapsed;
   const [copyingId, setCopyingId] = useState(null);
   const [imageCopySupported, setImageCopySupported] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
@@ -311,16 +315,16 @@ const ItemPreview = ({
         });
       }
     }
-  }, [currentItemId]);
+  }, [currentItemId, historyHidden]);
 
   return (
-    <Box sx={{ height: '100%', position: 'relative', display: 'flex', flexDirection: 'column' }}>
+    <Box sx={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
+      <Box id="generation-history" hidden={historyHidden}>
       {items.length > 0 ? (
         <Box
           ref={scrollContainerRef}
           sx={{
-            flex: 1,
-            minHeight: 0,
+            height: { xs: 72, sm: 80 },
             width: '100%',
             overflowX: 'auto',
             overflowY: 'hidden',
@@ -354,8 +358,10 @@ const ItemPreview = ({
                 onClick={() => onSelectItem(item)}
                 sx={{
                   position: 'relative',
-                  height: '100%',
-                  width: { xs: 56, sm: 80, md: 110 },
+                  // 缩略图不随容器高度拉伸，横图、竖图都占用同样的正方形。
+                  height: { xs: 56, sm: 64 },
+                  width: { xs: 56, sm: 64 },
+                  boxSizing: 'border-box',
                   flexShrink: 0,
                   borderRadius: 1.5,
                   overflow: 'hidden',
@@ -364,15 +370,14 @@ const ItemPreview = ({
                   border: currentItemId === item.id
                     ? `2px solid ${theme.palette.primary.main}`
                     : `1px solid ${theme.palette.divider}`,
-                  transform: currentItemId === item.id ? 'scale(1.05)' : 'scale(1)',
-                  '&:hover': { transform: 'scale(1.05)', borderColor: theme.palette.primary.light },
+                  '&:hover': { borderColor: theme.palette.primary.light },
                 }}
               >
                 <Box
                   component="img"
                   src={item.src}
                   alt={t('painting.workspace.gallery.previewImageAlt', { id: item.id })}
-                  sx={{ height: '100%', width: '100%', objectFit: 'cover' }}
+                  sx={{ height: '100%', width: '100%', display: 'block', objectFit: 'cover' }}
                 />
 
               </Paper>
@@ -392,26 +397,41 @@ const ItemPreview = ({
           </Stack>
         </Box>
       ) : (
-        <Box sx={{ height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', color: theme.palette.text.secondary, p: 1 }}>
+        <Box sx={{ height: { xs: 72, sm: 80 }, display: 'flex', justifyContent: 'center', alignItems: 'center', color: theme.palette.text.secondary, p: 1 }}>
           <Typography variant="body2">{t('painting.workspace.gallery.previewEmpty')}</Typography>
         </Box>
       )}
+      </Box>
 
-      {currentItem && (
+      {(currentItem || !isMobile) && (
         <Box
           sx={{
             flexShrink: 0,
-            mt: 0.5,
+            mt: historyHidden ? 0 : 0.5,
             px: 0.75,
             py: 0.5,
-            borderTop: `1px solid ${alpha(theme.palette.divider, 0.6)}`,
-            bgcolor: alpha(theme.palette.primary.main, 0.05),
+            borderTop: historyHidden ? 0 : `1px solid ${theme.palette.divider}`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 1,
           }}
         >
+          {!isMobile && (
+            <Tooltip title={t(historyHidden ? 'painting.workspace.gallery.expandHistory' : 'painting.workspace.gallery.collapseHistory')} arrow>
+              <IconButton
+                size="small"
+                aria-label={t(historyHidden ? 'painting.workspace.gallery.expandHistory' : 'painting.workspace.gallery.collapseHistory')}
+                aria-expanded={!historyHidden}
+                aria-controls="generation-history"
+                onClick={() => setHistoryCollapsed((collapsed) => !collapsed)}
+                sx={{ color: 'text.secondary', flexShrink: 0 }}
+              >
+                {historyHidden ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+              </IconButton>
+            </Tooltip>
+          )}
+          {currentItem ? <>
           <Stack
             direction="row"
             spacing={showActionText ? 0.5 : 0}
@@ -475,30 +495,20 @@ const ItemPreview = ({
               />
             </Tooltip>
           )}
+          </> : <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>{t('gallery.sessionHistory')}</Typography>}
+          {items.length > 0 && (
+            <Tooltip title={t('painting.workspace.gallery.openGallery')} arrow>
+              <IconButton
+                size="small"
+                aria-label={t('painting.workspace.gallery.openGallery')}
+                onClick={() => window.dispatchEvent(new CustomEvent('novelai:open-page', { detail: 'generation-gallery' }))}
+                sx={{ color: 'text.secondary', flexShrink: 0 }}
+              >
+                <CollectionsIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
         </Box>
-      )}
-
-      {/* 图库按钮 */}
-      {items.length > 0 && (
-        <Tooltip title={t('painting.workspace.gallery.openGallery')} arrow placement="top">
-          <IconButton
-            aria-label={t('painting.workspace.gallery.openGallery')}
-            onClick={() => setGalleryOpen(true)}
-            sx={{
-              position: 'absolute',
-              right: -4,
-              top: -4,
-              color: 'white',
-              bgcolor: alpha(theme.palette.primary.main, 0.85),
-              border: `1px solid ${alpha(theme.palette.primary.main, 0.3)}`,
-              '&:hover': { bgcolor: theme.palette.primary.main },
-              zIndex: 10,
-            }}
-            size="small"
-          >
-            <CollectionsIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
       )}
 
       {/* 图库展开面板 */}
