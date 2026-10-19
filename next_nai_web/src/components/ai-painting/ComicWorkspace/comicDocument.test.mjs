@@ -3,8 +3,38 @@ import assert from 'node:assert/strict';
 import {
   COMIC_LAYOUTS, COMIC_TEMPLATES, applyTemplate, convertPanelType, createComicPage,
   createComicTemplate, createRectanglePanel, fitPanelImage, movePanel, movePanelEdge,
-  movePanelVertex, panelBounds, sectionBounds, splitPanel,
+  movePanelVertex, panelBounds, sectionBounds, splitPanel, comicContentBounds,
 } from './comicDocument.mjs';
+
+function createLegacyPage(layout) {
+  const sizes = { spreadPortrait: [1600, 1120], spreadLandscape: [1120, 1600] };
+  const [width, height] = sizes[layout];
+  let page = { ...createComicPage(layout), layoutVersion: 1, width, height, panels: [] };
+  for (let section = 0; section < 2; section += 1) page = applyTemplate(page, 'blank', section);
+  return page;
+}
+
+test('新页内容区符合生成分辨率，留白为32像素，分镜内部仍保留14像素沟槽', () => {
+  const expected = { portrait: [896, 1280, 832, 1216], landscape: [1280, 896, 1216, 832], spreadPortrait: [2560, 896, 1216, 832], spreadLandscape: [1280, 1792, 1216, 832] };
+  for (const [layout, [width, height, contentWidth, contentHeight]] of Object.entries(expected)) {
+    const page = createComicPage(layout);
+    assert.equal(page.layoutVersion, 2);
+    assert.deepEqual([page.width, page.height], [width, height]);
+    for (const panel of page.panels) {
+      const bounds = panelBounds(panel);
+      assert.deepEqual(bounds, comicContentBounds(page, panel.section));
+      assert.deepEqual([bounds.width, bounds.height], [contentWidth, contentHeight]);
+    }
+    const divided = applyTemplate(page, 'two-vertical', 0);
+    const [left, right] = divided.panels.filter((panel) => panel.section === 0).map(panelBounds);
+    assert.equal(right.x - left.x - left.width, 14);
+    assert.equal(left.x, 32);
+    assert.equal(right.x + right.width, 32 + contentWidth);
+  }
+  const old = createLegacyPage('spreadPortrait');
+  assert.deepEqual(sectionBounds(old, 1), { x: 800, y: 0, width: 800, height: 1120 });
+  assert.deepEqual(panelBounds(old.panels[0]), { x: 39, y: 39, width: 722, height: 1042 });
+});
 
 test('四种版式有正确尺寸，28 个空分镜模板都能在每个半页完整创建', () => {
   assert.equal(COMIC_TEMPLATES.length, 28);
@@ -79,7 +109,7 @@ test('经过两个角的斜切可生成三角框，后续继续切割仍保持�
 });
 
 test('拖拽矩形和顶点限制在所属半页，交叉边与零面积画框被拒绝', () => {
-  const page = createComicPage('spreadPortrait');
+  const page = createLegacyPage('spreadPortrait');
   const bounds = sectionBounds(page, 1);
   const panel = createRectanglePanel(page, 1, { x: 600, y: -20 }, { x: 1900, y: 1200 });
   assert.deepEqual(panelBounds(panel), bounds);
@@ -93,7 +123,7 @@ test('拖拽矩形和顶点限制在所属半页，交叉边与零面积画框�
 });
 
 test('叠加框可跨越跨页中线且初始无边框，独立保留透明图像源', () => {
-  const page = createComicPage('spreadLandscape');
+  const page = createLegacyPage('spreadLandscape');
   const panel = createRectanglePanel(page, -1, { x: 100, y: 600 }, { x: 1000, y: 1100 });
   assert.equal(panel.type, 'overlay');
   assert.equal(panel.borderWidth, 0);
@@ -104,7 +134,7 @@ test('叠加框可跨越跨页中线且初始无边框，独立保留透明图�
 });
 
 test('整体拖动画框保留凸形、编号和任务，图像同步移动且原对象不变', () => {
-  const page = createComicPage('spreadPortrait');
+  const page = createLegacyPage('spreadPortrait');
   const bounds = sectionBounds(page, 1);
   const rectangle = createRectanglePanel(page, 1, { x: 900, y: 150 }, { x: 1250, y: 500 });
   const panel = movePanelVertex(rectangle, 0, { x: 930, y: 185 }, bounds);
@@ -121,7 +151,7 @@ test('整体拖动画框保留凸形、编号和任务，图像同步移动且�
 });
 
 test('整体移动在半页边缘停止，不压扁画框；叠加框可越过中线但不越过整页', () => {
-  const page = createComicPage('spreadPortrait');
+  const page = createLegacyPage('spreadPortrait');
   const panel = createRectanglePanel(page, 1, { x: 900, y: 150 }, { x: 1250, y: 500 });
   const bounds = sectionBounds(page, 1);
   const bottomRight = movePanel(panel, { x: 5000, y: 5000 }, bounds);
@@ -150,7 +180,7 @@ test('图片按外接矩形居中铺满，保留完整原图以便再次裁剪',
 });
 
 test('跨页叠加框转回普通框时裁入目标半页，完全落在另一页时不转换', () => {
-  const page = createComicPage('spreadPortrait');
+  const page = createLegacyPage('spreadPortrait');
   const overlay = createRectanglePanel(page, -1, { x: 600, y: 100 }, { x: 1100, y: 900 });
   const converted = convertPanelType(overlay, 'regular', page, 0);
   assert.equal(converted.type, 'regular');
@@ -182,7 +212,7 @@ test('模板保留叠加框类型，同页回套及重复套用都不会复制�
 });
 
 test('跨页叠加框保存为半页模板时只替换该半页，另一半页仍保留原图', () => {
-  let page = createComicPage('spreadPortrait');
+  let page = createLegacyPage('spreadPortrait');
   const overlay = createRectanglePanel(page, -1, { x: 600, y: 100 }, { x: 1100, y: 900 });
   overlay.image = { dataUrl: 'original-alpha' };
   page = { ...page, panels: [...page.panels, overlay] };

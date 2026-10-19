@@ -145,7 +145,7 @@ def test_inference_routes_require_session_csrf_and_known_models(client):
     assert client.get("/api/local/inference").status_code == 401
     csrf = login(client)
     status = client.get("/api/local/inference").get_json()
-    assert len(status["models"]) == 9
+    assert len(status["models"]) == 10
     assert any(model["id"] == "pixai-tagger-v1-fp32" for model in status["models"])
     assert client.post("/api/local/inference/jobs", json={}).status_code == 403
     response = client.post("/api/local/inference/jobs", json={"action": "download", "model_id": "../../external"}, headers={"Origin": ORIGIN, "X-CSRF-Token": csrf})

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""只连接 NovelAI 官方图像主机的轻量客户端。"""
+"""只连接 NovelAI 官方图像与文本主机的轻量客户端。"""
 
 from __future__ import annotations
 
@@ -40,6 +40,7 @@ from .account_change import (
 
 NOVELAI_ORIGIN = "https://image.novelai.net"
 NOVELAI_HOST = "image.novelai.net"
+NOVELAI_CHAT_PATH = "/oa/v1/chat/completions"
 MAX_UPSTREAM_BODY_BYTES = 80 * 1024 * 1024
 OFFICIAL_OPERATION_NAMES = {
     ("POST", "/user/login"): "password_login",
@@ -54,6 +55,7 @@ OFFICIAL_OPERATION_NAMES = {
     ("POST", "/ai/augment-image"): "augment_image",
     ("POST", "/ai/upscale"): "upscale_image",
     ("GET", "/ai/generate-image/suggest-tags"): "suggest_tags",
+    ("POST", NOVELAI_CHAT_PATH): "comic_plan",
 }
 logger = logging.getLogger(__name__)
 
@@ -181,7 +183,7 @@ class _NovelAITLSAdapter(HTTPAdapter):
 
 
 class NovelAIClient:
-    """固定连接 NovelAI 官方图像主机，不接受运行时上游地址。"""
+    """固定连接 NovelAI 官方主机，不接受运行时上游地址。"""
 
     def __init__(
         self,
@@ -325,15 +327,20 @@ class NovelAIClient:
         tls_identity: str | None = None,
         correlation_id: str | None = None,
         accepted_error_statuses: frozenset[int] = frozenset(),
+        response_diagnostic_path: Path | None = None,
+        log_correlation_id: str | None = None,
         **kwargs: Any,
     ) -> Any:
         """向固定官方主机发送一次不跟随重定向的请求。"""
 
         if not path.startswith("/"):
             raise ValueError("NovelAI API path must start with '/'.")
-        url = f"{NOVELAI_ORIGIN}{path}"
+        # 文本仅开放这一条明确的官方接口，页面不能自行指定上游主机。
+        host = "text.novelai.net" if method.upper() == "POST" and path == NOVELAI_CHAT_PATH else NOVELAI_HOST
+        origin = "https://text.novelai.net" if host == "text.novelai.net" else NOVELAI_ORIGIN
+        url = f"{origin}{path}"
         parsed = urlsplit(url)
-        if parsed.scheme != "https" or parsed.hostname != NOVELAI_HOST:
+        if parsed.scheme != "https" or parsed.hostname != host:
             raise ValueError("NovelAI API host is not allowed.")
 
         headers = dict(kwargs.pop("headers", {}) or {})
@@ -358,14 +365,14 @@ class NovelAIClient:
             (normalized_method, path),
             "official_request",
         )
-        safe_correlation_id = _safe_log_correlation_id(upstream_correlation_id)
+        safe_correlation_id = _safe_log_correlation_id(log_correlation_id or upstream_correlation_id)
         started_at = time.perf_counter()
         logger.info(
             "event=novelai_request_start operation=%s method=%s host=%s "
             "correlation_id=%s",
             operation_name,
             logged_method,
-            NOVELAI_HOST,
+            host,
             safe_correlation_id,
         )
         try:
@@ -385,7 +392,7 @@ class NovelAIClient:
                 "certain=false correlation_id=%s",
                 operation_name,
                 logged_method,
-                NOVELAI_HOST,
+                host,
                 (time.perf_counter() - started_at) * 1000,
                 safe_correlation_id,
             )
@@ -401,7 +408,7 @@ class NovelAIClient:
                 "error_code=NOVELAI_UNAVAILABLE certain=false correlation_id=%s",
                 operation_name,
                 logged_method,
-                NOVELAI_HOST,
+                host,
                 (time.perf_counter() - started_at) * 1000,
                 safe_correlation_id,
             )
@@ -441,7 +448,7 @@ class NovelAIClient:
             "result=%s elapsed_ms=%.2f error_code=%s certain=%s correlation_id=%s",
             operation_name,
             logged_method,
-            NOVELAI_HOST,
+            host,
             status_code,
             "success" if 200 <= status_code < 300 else (
                 "failed" if status_code >= 500 else "rejected"
@@ -451,6 +458,24 @@ class NovelAIClient:
             str(status_code < 500).lower(),
             safe_correlation_id,
         )
+        if response_diagnostic_path is not None and not 200 <= status_code < 300:
+            # 编排诊断必须先保存上游拒绝原文，再沿用下面的公开错误映射。
+            try:
+                content_type = response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+                response_diagnostic_path.with_suffix(".bin").write_bytes(response.content)
+                response_diagnostic_path.with_suffix(".response.txt").write_bytes(response.content)
+                response_diagnostic_path.with_suffix(".text.txt").write_bytes(b"")
+                response_diagnostic_path.with_suffix(".json").write_text(json.dumps({
+                    "correlation_id": safe_correlation_id,
+                    "shape": {
+                        "status_code": status_code,
+                        "content_type": content_type if content_type in ("text/event-stream", "application/json") else "other",
+                        "body_bytes": len(response.content), "error_code": error_code,
+                        "content_status": "empty",
+                    },
+                }, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
+            except OSError:
+                logger.warning("event=novelai_chat_diagnostic_failed stage=http_error correlation_id=%s", safe_correlation_id)
         if status_code in accepted_error_statuses:
             return response
         if 300 <= status_code < 400:
@@ -494,6 +519,232 @@ class NovelAIClient:
                 "NOVELAI_RESPONSE_TOO_LARGE",
             )
         return response
+
+    def chat_completion(
+        self,
+        token: str,
+        payload: dict[str, Any],
+        correlation_id: str | None = None,
+    ) -> str:
+        """使用当前登录身份请求一次完整的漫画编排文本，不自动重试。
+
+        Args:
+            token: 当前内存会话中的 NovelAI 访问令牌。
+            payload: 已校验的模型、消息和生成预算。
+            correlation_id: 用于排查请求的非敏感编号。
+
+        Returns:
+            模型完整返回的文本；截断或无正文时明确失败。
+        """
+
+        request_payload = {**payload, "stream": True, "enable_thinking": payload.get("enable_thinking", False)}
+        diagnostic_path = None
+        diagnostic_dir = os.environ.get("NAI_COMIC_RESPONSE_DIAGNOSTIC_DIR")
+        if diagnostic_dir:
+            # 用户显式开启时，在发送前记录同一份请求正文；不包含认证令牌或请求头。
+            try:
+                directory = Path(diagnostic_dir).expanduser().resolve()
+                directory.mkdir(parents=True, exist_ok=True)
+                diagnostic_path = directory / f"comic-response-{_safe_log_correlation_id(correlation_id)}-{time.time_ns()}"
+                diagnostic_path.with_suffix(".request.json").write_text(
+                    json.dumps(request_payload, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n",
+                )
+            except OSError:
+                diagnostic_path = None
+                logger.warning("event=novelai_chat_diagnostic_failed stage=request correlation_id=%s", _safe_log_correlation_id(correlation_id))
+        # 官方请求头只接收六位字母数字；阶段后缀仅用于本地日志和诊断文件。
+        upstream_correlation_id = (correlation_id or "").split("-", 1)[0]
+        if len(upstream_correlation_id) != 6 or not upstream_correlation_id.isascii() or not upstream_correlation_id.isalnum():
+            upstream_correlation_id = tools.correlation_id_generator()
+        response = self._request(
+            "POST", NOVELAI_CHAT_PATH, token=token,
+            correlation_id=upstream_correlation_id,
+            response_diagnostic_path=diagnostic_path,
+            log_correlation_id=correlation_id,
+            headers={"Accept": "text/event-stream"},
+            json=request_payload,
+            timeout=(10.0, max(180.0, self.timeout_seconds)),
+        )
+        content_type = response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+        response_shape = {
+            "content_type": content_type if content_type in ("text/event-stream", "application/json") else "other",
+            "body_bytes": len(response.content), "error_code": None,
+        }
+        if diagnostic_path is not None:
+            try:
+                diagnostic_path.with_suffix(".bin").write_bytes(response.content)
+                # 文本副本保留原始 UTF-8 字节，包含全部 SSE 事件，不转换换行或截断。
+                diagnostic_path.with_suffix(".response.txt").write_bytes(response.content)
+            except OSError:
+                diagnostic_path = None
+                logger.warning("event=novelai_chat_diagnostic_failed stage=body correlation_id=%s", _safe_log_correlation_id(correlation_id))
+        parts, text, completed = None, None, False
+        try:
+            if content_type == "text/event-stream":
+                # 官方非流式响应可能只有 token_ids 而没有 text；单次请求流式正文后在本地收齐。
+                # _request 已缓冲完整响应并检查大小，这里不建立第二条请求或做 token 解码。
+                try:
+                    lines = response.content.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+                except UnicodeDecodeError as exc:
+                    raise NovelAIUpstreamError("NovelAI 返回了无效的漫画编排流。", 502, "COMIC_PLAN_INVALID_RESPONSE") from exc
+                # SSE 只认 CR/LF；splitlines 会把模型正文中的 U+2028 等字符误当成协议换行。
+                response_shape.update({
+                    "line_count": len(lines), "data_line_count": 0, "event_count": 0,
+                    "comment_line_count": 0, "unknown_line_count": 0, "text_length": 0,
+                    "token_id_count": 0, "done": False, "finish_reason": None,
+                    "top_fields": [], "choice_fields": [], "delta_fields": [],
+                })
+                parts, data_lines = [], []
+                finish_reason, usage, event_name, done = None, None, "", False
+                for line in [*lines, ""]:
+                    if line.startswith("data:"):
+                        response_shape["data_line_count"] += 1
+                        data_lines.append(line[5:].removeprefix(" "))
+                    elif line.startswith("event:"):
+                        event_name = line[6:].strip()
+                    elif line.startswith(":"):
+                        response_shape["comment_line_count"] += 1
+                    elif line and not line.startswith(("id:", "retry:")):
+                        response_shape["unknown_line_count"] += 1
+                        # 官方超时可能以 HTTP 200 开始，最后直接追加未带 data: 的 JSON 错误。
+                        if line.lstrip().startswith("{"):
+                            try:
+                                stream_error = json.loads(line)
+                            except json.JSONDecodeError:
+                                stream_error = None
+                            if isinstance(stream_error, dict) and stream_error.get("statusCode") == 504:
+                                raise NovelAIUpstreamError("NovelAI 漫画编排超时，请稍后重新编排。", 504, "NOVELAI_TIMEOUT")
+                    elif not line:
+                        if event_name == "error":
+                            raise NovelAIUpstreamError("NovelAI 漫画编排流返回错误，请稍后重新编排。", 502, "COMIC_PLAN_STREAM_ERROR")
+                        event_name = ""
+                        if not data_lines:
+                            continue
+                        data = "\n".join(data_lines)
+                        data_lines = []
+                        response_shape["event_count"] += 1
+                        if data == "[DONE]":
+                            response_shape["done"] = True
+                            done = True
+                            break
+                        try:
+                            chunk = json.loads(data)
+                        except json.JSONDecodeError as exc:
+                            raise NovelAIUpstreamError("NovelAI 返回了无效的漫画编排流。", 502, "COMIC_PLAN_INVALID_RESPONSE") from exc
+                        if not isinstance(chunk, dict):
+                            raise NovelAIUpstreamError("NovelAI 返回了无效的漫画编排流。", 502, "COMIC_PLAN_INVALID_RESPONSE")
+                        response_shape["top_fields"] = sorted(set(response_shape["top_fields"]) | {
+                            key for key in ("choices", "usage", "error", "data", "text", "token", "token_ids", "finish_reason", "done") if key in chunk
+                        })
+                        if chunk.get("error"):
+                            raise NovelAIUpstreamError("NovelAI 漫画编排流返回错误，请稍后重新编排。", 502, "COMIC_PLAN_STREAM_ERROR")
+                        if isinstance(chunk.get("usage"), dict):
+                            usage = chunk["usage"]
+                        chunk_choices = chunk.get("choices")
+                        # 流末尾可单独附带用量，不包含新的正文。
+                        if chunk_choices == [] and isinstance(chunk.get("usage"), dict):
+                            continue
+                        if not isinstance(chunk_choices, list) or not chunk_choices or not isinstance(chunk_choices[0], dict):
+                            raise NovelAIUpstreamError("NovelAI 返回了无效的漫画编排流。", 502, "COMIC_PLAN_INVALID_RESPONSE")
+                        stream_choice = chunk_choices[0]
+                        response_shape["choice_fields"] = sorted(set(response_shape["choice_fields"]) | {
+                            key for key in ("message", "delta", "text", "finish_reason", "token_ids") if key in stream_choice
+                        })
+                        token_ids = stream_choice.get("token_ids")
+                        if isinstance(token_ids, list):
+                            response_shape["token_id_count"] += len(token_ids)
+                        delta = stream_choice.get("delta")
+                        if isinstance(delta, dict):
+                            response_shape["delta_fields"] = sorted(set(response_shape["delta_fields"]) | {
+                                key for key in ("role", "content", "reasoning", "reasoning_content", "refusal", "tool_calls") if key in delta
+                            })
+                        piece = delta.get("content") if isinstance(delta, dict) else None
+                        if piece is None:
+                            piece = stream_choice.get("text", "")
+                        if piece is None:
+                            piece = ""
+                        if not isinstance(piece, str):
+                            raise NovelAIUpstreamError("NovelAI 返回了无效的漫画编排流。", 502, "COMIC_PLAN_INVALID_RESPONSE")
+                        parts.append(piece)
+                        response_shape["text_length"] += len(piece)
+                        if stream_choice.get("finish_reason") is not None and finish_reason in (None, "stop"):
+                            finish_reason = stream_choice["finish_reason"]
+                            response_shape["finish_reason"] = finish_reason if finish_reason in ("stop", "length", "content_filter", "tool_calls") else "other"
+                if not done and finish_reason is None:
+                    raise NovelAIUpstreamError("漫画编排流意外中断，未返回完整计划。请重新编排。", 502, "COMIC_PLAN_INCOMPLETE")
+                result = {"choices": [{"text": "".join(parts), "finish_reason": finish_reason}], "usage": usage}
+            else:
+                # 兼容官方在 stream 请求下仍返回 completion-style JSON 的情况。
+                result = self._json_object(response)
+                response_shape["top_fields"] = [key for key in ("choices", "usage", "error", "message", "text", "token_ids") if key in result]
+            choices = result.get("choices")
+            valid_choice = isinstance(choices, list) and bool(choices) and isinstance(choices[0], dict)
+            choice = choices[0] if valid_choice else {}
+            message = choice.get("message")
+            content = message.get("content") if isinstance(message, dict) else None
+            # 与现有对话项目一致：只有缺失或 null 的正文才读取 completion-style text。
+            text = choice.get("text") if content is None else content
+            invalid_choices = bool(result.get("error")) or not valid_choice
+            empty_content = choice.get("finish_reason") in (None, "stop") and (not isinstance(text, str) or not text.strip())
+            if invalid_choices or empty_content:
+                upstream_error = result.get("error")
+                error_code = upstream_error.get("code") if isinstance(upstream_error, dict) else None
+                known_error_codes = {"invalid_api_key", "invalid_request_error", "model_not_found", "context_length_exceeded",
+                                     "rate_limit_exceeded", "insufficient_quota", "content_filter", "server_error"}
+                reasoning = message.get("reasoning_content", message.get("reasoning")) if isinstance(message, dict) else None
+                delta = choice.get("delta")
+                delta_content = delta.get("content") if isinstance(delta, dict) else None
+                usage = result.get("usage")
+                # 不记录提示词、正文、错误消息或未知字段值，真实账号日志只保留协议形状。
+                shape = {
+                    "branch": "invalid_choices" if invalid_choices else "empty_content",
+                    "top_fields": [key for key in ("choices", "error", "message", "messages", "output", "data", "response", "text", "usage") if key in result],
+                    "choices_type": type(choices).__name__, "choices_count": len(choices) if isinstance(choices, list) else None,
+                    "choice_fields": [key for key in ("message", "delta", "text", "finish_reason", "token_ids") if key in choice],
+                    "message_type": type(message).__name__,
+                    "message_fields": [key for key in ("role", "content", "reasoning", "reasoning_content", "refusal", "tool_calls") if isinstance(message, dict) and key in message],
+                    "content_type": type(content).__name__, "content_length": len(content) if isinstance(content, (str, list)) else None,
+                    "text_type": type(choice.get("text")).__name__, "text_length": len(choice["text"]) if isinstance(choice.get("text"), str) else None,
+                    "delta_content_type": type(delta_content).__name__, "delta_content_length": len(delta_content) if isinstance(delta_content, str) else None,
+                    "reasoning_length": len(reasoning) if isinstance(reasoning, str) else None,
+                    "finish_reason": choice.get("finish_reason") if choice.get("finish_reason") in (None, "stop", "length", "content_filter", "tool_calls") else "other",
+                    "error_type": type(upstream_error).__name__,
+                    "error_code": error_code if isinstance(error_code, str) and error_code in known_error_codes else "other" if error_code is not None else None,
+                    "top_message_type": type(result.get("message")).__name__,
+                    "top_message_length": len(result["message"]) if isinstance(result.get("message"), str) else None,
+                    "completion_tokens": usage.get("completion_tokens") if isinstance(usage, dict) and type(usage.get("completion_tokens")) is int else None,
+                }
+                logger.warning("event=novelai_chat_invalid_response correlation_id=%s shape=%s",
+                               _safe_log_correlation_id(correlation_id), json.dumps(shape, separators=(",", ":")))
+            if invalid_choices:
+                raise NovelAIUpstreamError("NovelAI 未返回有效的漫画编排内容。", 502, "COMIC_PLAN_INVALID_RESPONSE")
+            if choice.get("finish_reason") == "length":
+                raise NovelAIUpstreamError("漫画编排达到回复长度上限，尚未生成完整计划。请减少内容后重新编排。", 502, "COMIC_PLAN_TRUNCATED")
+            if choice.get("finish_reason") not in (None, "stop"):
+                raise NovelAIUpstreamError("漫画编排未正常完成，请调整内容后重新编排。", 502, "COMIC_PLAN_INCOMPLETE")
+            if not isinstance(text, str) or not text.strip():
+                raise NovelAIUpstreamError("NovelAI 未返回有效的漫画编排内容。", 502, "COMIC_PLAN_INVALID_RESPONSE")
+            completed = True
+            return text
+        except NovelAIUpstreamError as exc:
+            response_shape["error_code"] = exc.code
+            raise
+        finally:
+            collected_text = "".join(parts) if parts is not None else text if isinstance(text, str) else ""
+            response_shape["content_status"] = "complete" if completed else "partial" if collected_text else "empty"
+            # 日志只保留白名单字段名、计数与固定错误码，正文和 token_ids 仅存在可选诊断文件。
+            logger.log(logging.WARNING if response_shape["error_code"] else logging.INFO,
+                       "event=novelai_chat_response correlation_id=%s shape=%s",
+                       _safe_log_correlation_id(correlation_id), json.dumps(response_shape, separators=(",", ":")))
+            if diagnostic_path is not None:
+                try:
+                    diagnostic_path.with_suffix(".text.txt").write_bytes(collected_text.encode("utf-8"))
+                    diagnostic_path.with_suffix(".json").write_text(json.dumps({
+                        "correlation_id": _safe_log_correlation_id(correlation_id),
+                        "shape": response_shape,
+                    }, ensure_ascii=False, indent=2), encoding="utf-8")
+                except OSError:
+                    logger.warning("event=novelai_chat_diagnostic_failed stage=metadata correlation_id=%s", _safe_log_correlation_id(correlation_id))
 
     @staticmethod
     def _json_object(response: Any) -> dict[str, Any]:

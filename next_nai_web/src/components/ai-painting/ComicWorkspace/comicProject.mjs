@@ -1,5 +1,6 @@
 import { COMIC_LAYOUTS } from './comicDocument.mjs';
 import { ensureComicLayers } from './comicLayers.mjs';
+import { validateComicAIPlan } from './comicAI.mjs';
 
 const FORMAT = 'novelai-comic-project';
 const MANIFEST = 'comic-project.json';
@@ -63,13 +64,15 @@ export async function exportComicProject({ pages, templates, draft }) {
 }
 
 // 项目文件是外部输入，写入浏览器前检查绘制必需的字段，坏包不会污染已有漫画库。
-function validatePage(page) {
+function validatePage(page, allowWorkflow = true) {
   const finite = (value) => typeof value === 'number' && Number.isFinite(value);
   const points = (value, minimum) => Array.isArray(value) && value.length >= minimum && value.every((point) => point && finite(point.x) && finite(point.y));
   const collection = (value) => Array.isArray(value) && value.every((item) => item && typeof item.id === 'string') && new Set(value.map((item) => item.id)).size === value.length;
   const image = (value) => typeof value === 'string' && /^data:image\/(png|jpeg|webp|svg\+xml);base64,/.test(value);
+  const legacySizes = { portrait: [800, 1120], landscape: [1120, 800], spreadPortrait: [1600, 1120], spreadLandscape: [1120, 1600] };
+  const size = page?.layoutVersion === 2 ? [COMIC_LAYOUTS[page.layout]?.width, COMIC_LAYOUTS[page.layout]?.height] : legacySizes[page?.layout];
   if (!page || typeof page.id !== 'string' || typeof page.title !== 'string' || !Object.hasOwn(COMIC_LAYOUTS, page.layout) ||
-    page.width !== COMIC_LAYOUTS[page.layout].width || page.height !== COMIC_LAYOUTS[page.layout].height ||
+    ![undefined, 1, 2].includes(page.layoutVersion) || page.width !== size?.[0] || page.height !== size?.[1] ||
     !collection(page.panels) || !collection(page.strokes) || !collection(page.elements) || !collection(page.layers) || !page.layers.length || !collection(page.fonts)) throw new Error('Invalid comic page.');
   const layers = new Set(page.layers.map((layer) => layer.id));
   if (page.layers.some((layer) => typeof layer.name !== 'string' || typeof layer.visible !== 'boolean' || typeof layer.locked !== 'boolean') ||
@@ -86,6 +89,44 @@ function validatePage(page) {
     if (element.balloonContours && (!Array.isArray(element.balloonContours) || element.balloonContours.some((contour) => !Array.isArray(contour) || contour.length < 3 || contour.some((node) => !['x', 'y', 'inX', 'inY', 'outX', 'outY'].every((key) => finite(node[key])))))) throw new Error('Invalid comic curve.');
   }
   for (const font of page.fonts) if (typeof font.family !== 'string' || typeof font.name !== 'string' || !/^data:font\/(ttf|otf|woff|woff2);base64,/.test(font.dataUrl)) throw new Error('Invalid comic font.');
+  if (page.aiWorkflow !== undefined) {
+    const workflow = page.aiWorkflow;
+    if (!allowWorkflow || !workflow || workflow.version !== 1 || typeof workflow.id !== 'string'
+      || !workflow.sourceInput || typeof workflow.sourceInput !== 'object' || !workflow.sections || typeof workflow.sections !== 'object' || Array.isArray(workflow.sections)) throw new Error('Invalid comic AI workflow.');
+    if (workflow.plan != null) validateComicAIPlan(workflow.plan, { forGeneration: false });
+    const input = workflow.sourceInput;
+    if (['model', 'inputType', 'text', 'style', 'language', 'readingDirection'].some((key) => typeof input[key] !== 'string')
+      || !['story', 'prompt'].includes(input.inputType) || !['ltr', 'rtl'].includes(input.readingDirection)
+      || typeof input.characters !== 'string' || !Array.isArray(input.sections) || !input.sections.length || input.sections.length > 2) throw new Error('Invalid comic AI input.');
+    for (const section of input.sections) {
+      if (!Number.isInteger(section.id) || section.id < 0 || section.id >= COMIC_LAYOUTS[page.layout].sections
+        || !((section.width === 832 && section.height === 1216) || (section.width === 1216 && section.height === 832)) || !Array.isArray(section.referencePanels)
+        || section.referencePanels.some((panel) => typeof panel.id !== 'string' || !Number.isInteger(panel.number)
+          || ![panel.width, panel.height, panel.center?.x, panel.center?.y].every((value) => finite(value) && value >= 0 && value <= 1))) throw new Error('Invalid comic AI reference panel.');
+    }
+    if (workflow.referenceSnapshot) validatePage(workflow.referenceSnapshot, false);
+    for (const [id, state] of Object.entries(workflow.sections)) {
+      if (!input.sections.some((section) => String(section.id) === id) || !state || typeof state.status !== 'string') throw new Error('Invalid comic AI state.');
+      for (const key of ['originalImage', 'cleanedImage', 'maskImage']) {
+        const asset = state[key];
+        if (asset && (!image(asset.dataUrl) || !finite(asset.width) || asset.width <= 0 || !finite(asset.height) || asset.height <= 0)) throw new Error('Invalid comic AI image.');
+      }
+      if (state.assignments && (typeof state.assignments !== 'object' || Array.isArray(state.assignments) || Object.values(state.assignments).some((value) => value !== null && typeof value !== 'string'))) throw new Error('Invalid comic AI assignment.');
+      if (state.result) {
+        const result = state.result;
+        if (!/^[a-f0-9]{64}$/.test(result.sourceHash) || !collection(result.blocks) || !Array.isArray(result.unmatchedDialogueIds)
+          || result.unmatchedDialogueIds.some((value) => typeof value !== 'string')) throw new Error('Invalid comic AI text result.');
+        for (const block of result.blocks) {
+          if (!block.bounds || !['x', 'y', 'width', 'height'].every((key) => Number.isInteger(block.bounds[key]))
+            || block.bounds.x < 0 || block.bounds.y < 0 || block.bounds.width <= 0 || block.bounds.height <= 0
+            || !['horizontal-tb', 'vertical-rl'].includes(block.direction) || typeof block.ocrText !== 'string' || typeof block.text !== 'string'
+            || (block.dialogueId !== null && typeof block.dialogueId !== 'string') || typeof block.needsReview !== 'boolean' || typeof block.applied !== 'boolean'
+            || !/^#[a-f0-9]{6}$/i.test(block.color) || !finite(block.fontSize) || block.fontSize <= 0
+            || !finite(block.confidence) || block.confidence < 0 || block.confidence > 1) throw new Error('Invalid comic AI text block.');
+        }
+      }
+    }
+  }
 }
 
 /**
@@ -123,7 +164,7 @@ export async function readComicProject(file) {
     return value;
   }
   const pages = unpack(manifest.pages);
-  pages.forEach(validatePage);
+  pages.forEach((page) => validatePage(page));
   if (new Set(pages.map((page) => page.id)).size !== pages.length || !pages.some((page) => page.id === manifest.activePageId)) throw new Error('Invalid comic page order.');
   const templates = unpack(manifest.templates);
   for (const template of templates) if (!template || typeof template.id !== 'string' || typeof template.name?.zh !== 'string' || typeof template.name?.en !== 'string' || !Array.isArray(template.panels) || template.panels.some((panel) => !Number.isFinite(panel.borderWidth) || !Array.isArray(panel.points) || panel.points.length < 3 || panel.points.some((point) => !Number.isFinite(point.x) || !Number.isFinite(point.y)))) throw new Error('Invalid comic template.');

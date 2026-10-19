@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import JSZip from 'jszip';
-import { createComicPage, createComicTemplate, fitPanelImage } from './comicDocument.mjs';
+import { applyTemplate, createComicPage, createComicTemplate, fitPanelImage } from './comicDocument.mjs';
+import { applyComicAIImage, buildComicAISections, validateComicAIPlan } from './comicAI.mjs';
 import { createComicElement } from './comicElements.mjs';
 import { comicBalloonContours } from './comicBalloonPaths.mjs';
 import { exportComicProject, readComicProject } from './comicProject.mjs';
@@ -73,4 +74,66 @@ test('拒绝图片 ZIP、未知项目版本、缺失素材及损坏结构，不�
     await assert.rejects(readComicProject(await zip.generateAsync({ type: 'uint8array' })));
   }
   await assert.rejects(readComicProject(new Uint8Array([1, 2, 3])));
+});
+
+test('旧尺寸项目与新AI页面可同包导入，保留原图、计划、参考快照和可编辑文本', async (t) => {
+  const legacy = { ...createComicPage('spreadPortrait'), width: 1600, height: 1120, panels: [] };
+  delete legacy.layoutVersion;
+  let oldPage = applyTemplate(legacy, 'blank', 0);
+  oldPage = applyTemplate(oldPage, 'blank', 1);
+  const reference = createComicPage();
+  const sourceInput = { model: 'glm-4-6', inputType: 'story', text: '旅人问候', style: '', language: 'zh', readingDirection: 'ltr', characters: '旅人：银色长发。', sections: buildComicAISections(reference) };
+  const plan = { version: 1, summary: '旅人问候', storyDraft: '第一阶段原文：\n旅人在车站挥手。\n构图：远景引入，近景回应。', planningModels: { story: 'xialong-v1', format: 'glm-4-6' }, characters: [{ id: 'c1', name: '旅人', appearance: 'silver hair' }], sections: [{
+    id: 0, width: 832, height: 1216, globalPrompt: 'comic', negativePrompt: '', panels: [{ id: 'p1', number: 1, summary: '问候' }],
+    instances: [{ id: 'i1', panelId: 'p1', characterId: 'c1', prompt: '1girl', negativePrompt: '', center: { x: 0.5, y: 0.5 } }],
+    dialogues: [{ id: 'd1', panelId: 'p1', speakerId: 'c1', text: '你好', type: 'speech', order: 1, direction: 'horizontal' }],
+  }] };
+  const image = { dataUrl: png, width: 832, height: 1216 };
+  const text = createComicElement('text', { x: 80, y: 80, width: 100, height: 50 }, { text: '你好' });
+  const draft = applyComicAIImage(reference, 0, image, { taskId: 'workflow', textElements: [text] });
+  draft.aiWorkflow = { version: 1, id: 'workflow', sourceInput, referenceSnapshot: reference, plan, sections: { '0': {
+    status: 'completed', originalImage: image, cleanedImage: image, assignments: { 'text-1': 'd1' },
+    result: { sourceHash: 'a'.repeat(64), image: { id: 'gallery-image' }, mask: { id: 'gallery-mask' }, unmatchedDialogueIds: [], blocks: [{
+      id: 'text-1', bounds: { x: 48, y: 48, width: 100, height: 50 }, direction: 'horizontal-tb', ocrText: '你号', text: '你好', dialogueId: 'd1',
+      needsReview: false, applied: true, reason: null, color: '#111111', fontSize: 24, confidence: 0.9,
+    }] },
+  } }, updatedAt: 123 };
+  const blob = await exportComicProject({ pages: [oldPage], templates: [], draft });
+  const result = await readComicProject(blob);
+  assert.deepEqual(result.pages[0], { ...oldPage, order: 0 });
+  assert.deepEqual(result.pages[1], { ...draft, order: 1 });
+  assert.equal(result.pages[1].aiWorkflow.plan.storyDraft, plan.storyDraft);
+  assert.deepEqual(result.pages[1].aiWorkflow.plan.planningModels, plan.planningModels);
+  await t.test('生成受限的编辑草稿仍可完整导出导入，恢复后生成仍受校验', async () => {
+    for (const { change, tooLong } of [
+      { change: (section) => { section.dialogues[0].text = '字'.repeat(751); }, tooLong: true },
+      { change: (section) => { section.globalPrompt += '\nText: 待整理文字'; }, tooLong: false },
+      { change: (section) => { section.instances[0].prompt += ', "你好"'; }, tooLong: false },
+    ]) {
+      const edited = structuredClone(draft);
+      change(edited.aiWorkflow.plan.sections[0]);
+      if (tooLong) assert.throws(() => validateComicAIPlan(edited.aiWorkflow.plan));
+      else assert.doesNotThrow(() => validateComicAIPlan(edited.aiWorkflow.plan));
+      const archive = await exportComicProject({ pages: [oldPage], templates: [], draft: edited });
+      const restored = await readComicProject(archive);
+      assert.deepEqual(restored.pages[1], { ...edited, order: 1 });
+      if (tooLong) assert.throws(() => validateComicAIPlan(restored.pages[1].aiWorkflow.plan));
+      else assert.doesNotThrow(() => validateComicAIPlan(restored.pages[1].aiWorkflow.plan));
+    }
+  });
+  const bytes = await blob.arrayBuffer();
+  for (const change of [
+    (workflow) => { workflow.plan.storyDraft = { content: 'unexpected object' }; },
+    (workflow) => { workflow.plan.planningModels = { story: 'xialong-v1', format: null }; },
+    (workflow) => { workflow.plan.sections[0].instances[0].center.x = null; },
+    (workflow) => { workflow.referenceSnapshot.aiWorkflow = { version: 1 }; },
+    (workflow) => { workflow.sections['0'].originalImage.dataUrl = 'https://example.com/image.png'; },
+    (workflow) => { workflow.sections['0'].result.blocks[0].bounds.width = -1; },
+  ]) {
+    const zip = await JSZip.loadAsync(bytes);
+    const manifest = JSON.parse(await zip.file('comic-project.json').async('string'));
+    change(manifest.pages[1].aiWorkflow);
+    zip.file('comic-project.json', JSON.stringify(manifest));
+    await assert.rejects(readComicProject(await zip.generateAsync({ type: 'uint8array' })));
+  }
 });

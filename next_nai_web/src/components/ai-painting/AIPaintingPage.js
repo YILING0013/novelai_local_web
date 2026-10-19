@@ -372,11 +372,13 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
   const comicWorkspaceRef = useRef(null);
   const comicTargetRef = useRef(null);
   const comicFlightRef = useRef(null);
+  const comicAIFlightRef = useRef(false);
   const regularPaintingSnapshotRef = useRef(null);
   const [comicSelectedTarget, setComicSelectedTarget] = useState(null);
   const [comicEditorOpen, setComicEditorOpen] = useState(false);
   const [comicPanelBounds, setComicPanelBounds] = useState(null);
   const [comicGenerationBusy, setComicGenerationBusy] = useState(false);
+  const [comicAIBusy, setComicAIBusy] = useState(false);
   const [comicWorkspaceVisited, setComicWorkspaceVisited] = useState(false);
   const [imageProcessingVisited, setImageProcessingVisited] = useState(false);
   const [processingGalleryRequest, setProcessingGalleryRequest] = useState(null);
@@ -868,7 +870,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
     }
 
     // 正在进行单次生成
-    if (isGenerating || imageToolBusy || comicGenerationBusy) {
+    if (isGenerating || imageToolBusy || comicGenerationBusy || comicAIBusy) {
       return {
         text: isInpaintMode
           ? t('painting.workspace.actions.inpaintingProgress', {
@@ -1397,7 +1399,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
 
   // 源图和参数在打开弹窗时固定，切换历史图或修改侧栏不会悄悄改变本次增强。
   const handleImageTool = async (tool, settings = null) => {
-    if (imageToolBusyRef.current || comicFlightRef.current || isGenerating || batchStatus.active || inpaintPreviewBatch.active) return;
+    if (imageToolBusyRef.current || comicFlightRef.current || comicAIFlightRef.current || isGenerating || batchStatus.active || inpaintPreviewBatch.active) return;
     imageToolBusyRef.current = true;
     setImageToolBusy(true);
     try {
@@ -1559,7 +1561,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
 
   // 图像生成请求
   const handleGenerate = async () => {
-    if (imageToolBusyRef.current || comicFlightRef.current || isGenerating) return;
+    if (imageToolBusyRef.current || comicFlightRef.current || comicAIFlightRef.current || isGenerating) return;
     let requestedModel = generationParams.model;
     const comicTarget = leftPanelMode === 'comic' ? comicTargetRef.current : null;
     if (leftPanelMode === 'comic' && !comicTarget) return;
@@ -2279,7 +2281,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
   );
 
 
-  const comicGenerationAction = { ...getGenerateButtonState(), loading: comicGenerationBusy || isGenerating };
+  const comicGenerationAction = { ...getGenerateButtonState(), loading: comicGenerationBusy || comicAIBusy || isGenerating };
 
   return (
     <>
@@ -2570,6 +2572,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
                   onSaveTask={getPaintingSnapshot}
                   onGenerate={comicGenerationAction.action}
                   generationAction={comicGenerationAction}
+                  onAIBusyChange={(value) => { comicAIFlightRef.current = value; setComicAIBusy(value); }}
                   isGenerating={comicGenerationBusy || isGenerating}
                 />
               </Box>

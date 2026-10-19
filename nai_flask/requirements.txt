@@ -7,6 +7,8 @@ urllib3>=2,<3
 waitress>=3,<4
 numpy>=2.2,<3
 onnxruntime>=1.24,<2
+rapidocr==3.10.0
+opencv-python-headless==4.14.0.94
 
 # Tests
 pytest>=9.0.3,<10

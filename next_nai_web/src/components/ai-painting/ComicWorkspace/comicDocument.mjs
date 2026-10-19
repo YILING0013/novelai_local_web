@@ -5,10 +5,10 @@ const PAGE_MARGIN = 32;
 const FRAME_WIDTH = 3;
 
 export const COMIC_LAYOUTS = {
-  portrait: { name: { zh: '竖版', en: 'Portrait' }, width: 800, height: 1120, sections: 1, sectionWidth: 800, sectionHeight: 1120 },
-  landscape: { name: { zh: '横版', en: 'Landscape' }, width: 1120, height: 800, sections: 1, sectionWidth: 1120, sectionHeight: 800 },
-  spreadPortrait: { name: { zh: '双列竖版', en: 'Portrait spread' }, width: 1600, height: 1120, sections: 2, sectionWidth: 800, sectionHeight: 1120 },
-  spreadLandscape: { name: { zh: '双行横版', en: 'Landscape spread' }, width: 1120, height: 1600, sections: 2, sectionWidth: 1120, sectionHeight: 800 },
+  portrait: { name: { zh: '竖版', en: 'Portrait' }, width: 896, height: 1280, sections: 1, sectionWidth: 896, sectionHeight: 1280 },
+  landscape: { name: { zh: '横版', en: 'Landscape' }, width: 1280, height: 896, sections: 1, sectionWidth: 1280, sectionHeight: 896 },
+  spreadPortrait: { name: { zh: '双列', en: 'Side by side' }, width: 2560, height: 896, sections: 2, sectionWidth: 1280, sectionHeight: 896 },
+  spreadLandscape: { name: { zh: '双行', en: 'Stacked pages' }, width: 1280, height: 1792, sections: 2, sectionWidth: 1280, sectionHeight: 896 },
 };
 
 const rectangle = (x, y, width, height) => [
@@ -87,8 +87,21 @@ export function panelBounds(panelOrPoints) {
  */
 export function sectionBounds(page, section = 0) {
   if (section === -1) return { x: 0, y: 0, width: page.width, height: page.height };
-  const layout = COMIC_LAYOUTS[page.layout];
-  return { x: page.layout === 'spreadPortrait' ? section * layout.sectionWidth : 0, y: page.layout === 'spreadLandscape' ? section * layout.sectionHeight : 0, width: layout.sectionWidth, height: layout.sectionHeight };
+  // 旧漫画保留自己的画布尺寸，不能随着新建页面默认尺寸一起变形。
+  const width = page.layout === 'spreadPortrait' ? page.width / 2 : page.width;
+  const height = page.layout === 'spreadLandscape' ? page.height / 2 : page.height;
+  return { x: page.layout === 'spreadPortrait' ? section * width : 0, y: page.layout === 'spreadLandscape' ? section * height : 0, width, height };
+}
+
+/**
+ * 获取漫画生成内容区；页外留白不进入模型图像或角色坐标。
+ * @param {object} page 漫画页。
+ * @param {number} section 单页或跨页的分区编号。
+ * @returns {{x:number,y:number,width:number,height:number}} 去掉四边 32 像素留白的页面绝对坐标范围。
+ */
+export function comicContentBounds(page, section = 0) {
+  const bounds = sectionBounds(page, section);
+  return { x: bounds.x + PAGE_MARGIN, y: bounds.y + PAGE_MARGIN, width: bounds.width - PAGE_MARGIN * 2, height: bounds.height - PAGE_MARGIN * 2 };
 }
 
 function signedArea(points) {
@@ -122,9 +135,17 @@ function clipPolygon(points, start, end, offset, side) {
   });
 }
 
-function insetPolygon(points, amount) {
+function insetPolygon(points, amount, outerBounds) {
   const direction = Math.sign(signedArea(points));
-  return points.reduce((result, start, index) => clipPolygon(result, start, points[(index + 1) % points.length], amount * direction, direction), points);
+  return points.reduce((result, start, index) => {
+    const end = points[(index + 1) % points.length];
+    // 新页面只给相邻分镜留沟槽，整页最外沿不再额外缩进半个沟槽。
+    const outerEdge = outerBounds && (
+      [outerBounds.x, outerBounds.x + outerBounds.width].some((x) => Math.abs(start.x - x) < 0.00001 && Math.abs(end.x - x) < 0.00001)
+      || [outerBounds.y, outerBounds.y + outerBounds.height].some((y) => Math.abs(start.y - y) < 0.00001 && Math.abs(end.y - y) < 0.00001)
+    );
+    return clipPolygon(result, start, end, (outerEdge ? 0 : amount) * direction, direction);
+  }, points);
 }
 
 function isUsablePolygon(points) {
@@ -172,7 +193,7 @@ export function applyTemplate(page, templateId, section = 0, customTemplates = [
     const layer = targetLayerId ? editableLayers[0] : preferred || editableLayers.at(-1);
     if (!editableIds.has(layer.id)) return [];
     const points = item.points.map((point) => ({ x: Math.max(bounds.x, Math.min(bounds.x + bounds.width, bounds.x + PAGE_MARGIN + point.x * (bounds.width - PAGE_MARGIN * 2))), y: Math.max(bounds.y, Math.min(bounds.y + bounds.height, bounds.y + PAGE_MARGIN + point.y * (bounds.height - PAGE_MARGIN * 2))) }));
-    return [{ id: createClientId(), type: item.type || 'regular', layerId: layer.id, section: item.type === 'overlay' ? -1 : section, ...(item.type === 'overlay' ? { templateSection: section } : {}), points: template.gutter ? insetPolygon(points, template.gutter / 2) : points, borderWidth: item.borderWidth, image: null, task: null }];
+    return [{ id: createClientId(), type: item.type || 'regular', layerId: layer.id, section: item.type === 'overlay' ? -1 : section, ...(item.type === 'overlay' ? { templateSection: section } : {}), points: template.gutter ? insetPolygon(points, template.gutter / 2, page.layoutVersion === 2 ? comicContentBounds(page, section) : undefined) : points, borderWidth: item.borderWidth, image: null, task: null }];
   });
   const sourceOverlays = new Set(template.panels.filter((panel) => panel.type === 'overlay').map((panel) => panel.sourcePanelId));
   const regular = [...ready.panels.filter((panel) => panel.type !== 'overlay' && (panel.section !== section || !editableIds.has(panel.layerId))), ...panels.filter((panel) => panel.type !== 'overlay')].sort((a, b) => a.section - b.section);
@@ -198,7 +219,7 @@ export function applyTemplate(page, templateId, section = 0, customTemplates = [
  */
 export function createComicPage(layout = 'portrait', templateId = 'blank') {
   const size = COMIC_LAYOUTS[layout];
-  let page = ensureComicLayers({ id: createClientId(), layout, title: '', width: size.width, height: size.height, panels: [], strokes: [], createdAt: Date.now(), updatedAt: Date.now() });
+  let page = ensureComicLayers({ id: createClientId(), layout, layoutVersion: 2, title: '', width: size.width, height: size.height, panels: [], strokes: [], createdAt: Date.now(), updatedAt: Date.now() });
   for (let section = 0; section < size.sections; section += 1) page = applyTemplate(page, templateId, section);
   return page;
 }

@@ -62,6 +62,7 @@ def normalize_image_parameters(values):
         "strength": ("strength",), "noise": ("noise",),
         "upscaled_enhance": ("upscaled_enhance",), "image_tool": ("image_tool",),
         "local_upscale_model": ("local_upscale_model",), "local_upscale_factor": ("local_upscale_factor",),
+        "comic_lettering_source_hash": ("comic_lettering_source_hash",),
         "characterTabs": ("characterTabs",), "use_coords": ("use_coords",),
         "v4_prompt": ("v4_prompt",), "v4_negative_prompt": ("v4_negative_prompt",),
         "ucPresetId": ("ucPresetId",), "qualityPresetId": ("qualityPresetId",),

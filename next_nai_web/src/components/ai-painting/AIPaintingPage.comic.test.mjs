@@ -7,7 +7,7 @@ const source = readFileSync(new URL('./AIPaintingPage.js', import.meta.url), 'ut
 const start = source.indexOf('  const handleGenerate = async () => {');
 const implementation = source.slice(start, source.indexOf('  // 添加取消批量生成', start));
 
-function generationScenario({ count = 1, fail = false, saveError = null, cancel = false } = {}) {
+function generationScenario({ count = 1, fail = false, saveError = null, cancel = false, aiBusy = false } = {}) {
   const target = { pageId: 'page-one', panelId: 'frame-one', panelNumber: 1 };
   const comicTargetRef = { current: target };
   const comicFlightRef = { current: null };
@@ -16,7 +16,7 @@ function generationScenario({ count = 1, fail = false, saveError = null, cancel 
   let saved = 0;
   let busy = false;
   const context = {
-    imageToolBusyRef: { current: false }, comicTargetRef, comicFlightRef,
+    imageToolBusyRef: { current: false }, comicTargetRef, comicFlightRef, comicAIFlightRef: { current: aiBusy },
     isGenerating: false, isMobile: false, mobileDrawerOpen: false,
     leftPanelMode: 'comic', generationParams: params,
     getAllParametersRef: { current: () => params },
@@ -75,6 +75,12 @@ test('漫画生成固定最初画框和参数，连续生成沿用本地批次�
   assert.equal(scenario.notices.at(-1)[0], 'received');
   assert.equal(scenario.comicFlightRef.current, null);
   assert.deepEqual(scenario.state(), { saved: 1, busy: false });
+});
+
+test('AI整页流程占用生成期间不启动另一项画框生成', async () => {
+  const scenario = generationScenario({ aiBusy: true });
+  await scenario.generate();
+  assert.equal(scenario.requests.length, 0);
 });
 
 test('磁盘保存失败仍保留已返回的图像，明确警告并停止后续生成', async () => {

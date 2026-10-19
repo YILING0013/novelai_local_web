@@ -1,5 +1,28 @@
 [
   {
+    "id": "comic-lettering",
+    "name": "Comic lettering · CTD + RapidOCR + LaMa",
+    "kind": "comic-lettering",
+    "sizeLabel": "302.7 MB + bundled OCR 31.7 MB",
+    "sourceUrl": "https://github.com/dmMaze/comic-text-detector",
+    "license": "GPL-3.0 (CTD); Apache-2.0 (RapidOCR, LaMa)",
+    "revision": "ctd-beta-0.3-rapidocr-3.10.0-lama-c3c0c9e",
+    "files": [
+      {
+        "name": "comictextdetector.pt.onnx",
+        "url": "https://github.com/zyddnys/manga-image-translator/releases/download/beta-0.3/comictextdetector.pt.onnx",
+        "bytes": 94669756,
+        "sha256": "1a86ace74961413cbd650002e7bb4dcec4980ffa21b2f19b86933372071d718f"
+      },
+      {
+        "name": "lama_fp32.onnx",
+        "url": "https://huggingface.co/Carve/LaMa-ONNX/resolve/c3c0c9e468934d62e79c329e35d82dd09ff8c444/lama_fp32.onnx",
+        "bytes": 208044816,
+        "sha256": "1faef5301d78db7dda502fe59966957ec4b79dd64e16f03ed96913c7a4eb68d6"
+      }
+    ]
+  },
+  {
     "id": "wd-swinv2-tagger-v3",
     "name": "SwinV2 v3",
     "kind": "tagger",

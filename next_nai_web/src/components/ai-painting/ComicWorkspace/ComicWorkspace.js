@@ -19,6 +19,9 @@ import ComicElementArt from './ComicElementArt';
 import PageArt from './ComicPageArt';
 import ComicElementDialog from './ComicElementDialog';
 import ComicLayerPanel from './ComicLayerPanel';
+import ComicAIStudio from './ComicAIStudio';
+import { applyComicAIImage, comicAISectionFingerprint } from './comicAI.mjs';
+import { buildComicLetteringElements } from './comicLettering.mjs';
 import { COMIC_BALLOON_PRESETS, comicElementMatrix, createComicElement, loadComicFonts, readComicAsset } from './comicElements.mjs';
 import { ensureComicLayers, getComicRenderItems, reorderComicItem } from './comicLayers.mjs';
 import messages from './comicMessages';
@@ -52,7 +55,7 @@ async function readImage(blob) {
 }
 
 /** 左侧工具、中央画布与右侧页面库；生成表单由生成页复用现有参数面板。 */
-const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [], onSelectTask, onEditTask, onSaveTask, onGenerate, generationAction, active = true }, ref) {
+const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [], onSelectTask, onEditTask, onSaveTask, onGenerate, generationAction, onAIBusyChange, active = true }, ref) {
   const { locale } = useI18n();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -63,12 +66,15 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
   const pageRef = useRef(null);
   const [pages, setPages] = useState([]);
   const pagesRef = useRef([]);
+  const deletingPages = useRef(new Set());
   const [templates, setTemplates] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [selectedElementId, setSelectedElementId] = useState(null);
   const [selectedStrokeId, setSelectedStrokeId] = useState(null);
   const [activeLayerId, setActiveLayerId] = useState('panels');
   const [layersOpen, setLayersOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
   const [balloonPicker, setBalloonPicker] = useState(false);
   const [elementEditorId, setElementEditorId] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
@@ -294,6 +300,48 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
     setNotice({ severity: 'success', text: c.generated }); return true;
   }
   useImperativeHandle(ref, () => ({ saveTask: rememberTask, receiveGeneratedImage: receiveImage, getCurrentPage: () => pageRef.current }));
+
+  function getAIPage(pageId) {
+    if (deletingPages.current.has(pageId)) return null;
+    return pageRef.current?.id === pageId ? pageRef.current : pagesRef.current.find((item) => item.id === pageId);
+  }
+  async function updateAIPage(pageId, update, { record = false } = {}) {
+    const current = getAIPage(pageId);
+    if (!current) return null;
+    const next = update(current);
+    if (next === current) return current;
+    if (pageRef.current?.id === pageId) replacePage(next, record);
+    // AI 任务开始即保存到页面库；切换当前草稿后仍能向发起页交付结果。
+    pagesRef.current = pagesRef.current.some((item) => item.id === pageId)
+      ? pagesRef.current.map((item) => item.id === pageId ? next : item)
+      : [...pagesRef.current, next];
+    setPages(pagesRef.current);
+    const saved = await saveComicPage(next);
+    pagesRef.current = pagesRef.current.map((item) => item.id === pageId ? { ...item, order: saved.order, updatedAt: saved.updatedAt } : item);
+    setPages(pagesRef.current);
+    if (pageRef.current?.id === pageId) await saveComicDraft(pageRef.current);
+    return getAIPage(pageId);
+  }
+  async function applyAIResult({ pageId, sectionId, image, originalImage, result, taskId, expectedFingerprint, force = false, record = true, undoToken = null }) {
+    // 当前页的撤销栈不能记录后台页；切页后只保存待应用结果，回到发起页再明确替换。
+    if (pageRef.current?.id !== pageId) return { applied: false, fingerprint: null };
+    let applied = false;
+    let fingerprint = null;
+    const saving = updateAIPage(pageId, (current) => {
+      if (!force && comicAISectionFingerprint(current, sectionId) !== expectedFingerprint) return current;
+      const textElements = result ? buildComicLetteringElements(current, sectionId, image, result) : [];
+      applied = true;
+      const next = applyComicAIImage(current, sectionId, image, { originalImage, taskId, textElements });
+      // 比较基线必须是本次回填本身，不能把磁盘保存期间的新编辑纳入基线。
+      fingerprint = comicAISectionFingerprint(next, sectionId);
+      return next;
+    // 两次回填之间若有其他可撤销编辑，文字结果必须单独记录，避免撤销无关编辑时连带丢字。
+    }, { record: record || !undoToken || history.current.undo.at(-1) !== undoToken });
+    const appliedUndoToken = history.current.undo.at(-1);
+    await saving;
+    if (applied && pageRef.current?.id === pageId) choose(null, pageRef.current, { savePrevious: false });
+    return { applied, fingerprint, undoToken: appliedUndoToken };
+  }
 
   async function savePage() {
     let snapshot;
@@ -750,7 +798,14 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
           <Box component="svg" viewBox={`0 0 ${item.width} ${item.height}`} sx={{ display: 'block', width: '100%', height: 104, bgcolor: 'action.hover' }}><PageArt page={item} prefix={`thumb-${item.id}`} /></Box>
           <Typography variant="caption" noWrap component="div" sx={{ mt: 0.5 }}>{String(index + 1).padStart(3, '0')} · {item.title || c.pages}</Typography>
         </ButtonBase>
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}><IconButton size="small" aria-label={c.moveUp} disabled={!index || busy} onClick={() => perform(() => reorderPage(index, -1))}><ArrowUpward sx={{ fontSize: 16 }} /></IconButton><IconButton size="small" aria-label={c.moveDown} disabled={index === pages.length - 1 || busy} onClick={() => perform(() => reorderPage(index, 1))}><ArrowDownward sx={{ fontSize: 16 }} /></IconButton><IconButton size="small" aria-label={c.deletePage} onClick={() => setConfirmation({ kind: 'delete', action: async () => { await deleteComicPage(item.id); pagesRef.current = pagesRef.current.filter((saved) => saved.id !== item.id); setPages(pagesRef.current); if (pageRef.current.id === item.id) loadPage(createComicPage(item.layout), true); } })}><DeleteOutline sx={{ fontSize: 16 }} /></IconButton></Box>
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}><IconButton size="small" aria-label={c.moveUp} disabled={!index || busy} onClick={() => perform(() => reorderPage(index, -1))}><ArrowUpward sx={{ fontSize: 16 }} /></IconButton><IconButton size="small" aria-label={c.moveDown} disabled={index === pages.length - 1 || busy} onClick={() => perform(() => reorderPage(index, 1))}><ArrowDownward sx={{ fontSize: 16 }} /></IconButton><IconButton size="small" aria-label={c.deletePage} onClick={() => setConfirmation({ kind: 'delete', action: async () => {
+          deletingPages.current.add(item.id);
+          try {
+            await deleteComicPage(item.id);
+            pagesRef.current = pagesRef.current.filter((saved) => saved.id !== item.id); setPages(pagesRef.current);
+            if (pageRef.current.id === item.id) loadPage(createComicPage(item.layout), true);
+          } catch (error) { deletingPages.current.delete(item.id); throw error; }
+        } })}><DeleteOutline sx={{ fontSize: 16 }} /></IconButton></Box>
       </Paper>)}
     </Box>);
   const panelColor = selected?.type === 'overlay' ? '#bd7110' : '#287bcc';
@@ -786,6 +841,7 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
     <Box component="aside" sx={{ p: { xs: 0.4, md: 0.8 }, minHeight: 0, bgcolor: 'background.paper', borderRight: 1, borderColor: 'divider', overflowY: 'auto', '& .MuiButton-root': { justifyContent: { xs: 'center', md: 'flex-start' }, width: '100%' }, '& .MuiTypography-subtitle2': { fontSize: 11 } }}>
       <Typography variant="subtitle2" sx={{ mb: 0.5, display: { xs: 'none', md: 'block' } }}>{c.templates}</Typography>
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.4 }}>
+        <ComicButton variant="contained" icon={AutoAwesome} label={language === 'zh' ? 'AI 制作漫画页' : 'AI comic page'} onClick={() => setAiOpen(true)} />
         <ComicButton variant="outlined" icon={DashboardOutlined} label={language === 'zh' ? '选择模板' : 'Templates'} onClick={() => setTemplatePicker(true)} />
         <ComicButton icon={Add} label={c.blank} onClick={() => applyPreset(COMIC_TEMPLATES[0])} />
         <ComicButton icon={SaveOutlined} label={c.saveTemplate} shortcut="Ctrl+Shift+S" onClick={() => { setTemplateName(''); setTemplateDialog(true); }} />
@@ -956,7 +1012,7 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
           <ComicButton icon={SaveOutlined} label={c.saveTask} onClick={() => { const snapshot = onSaveTask?.(); if (snapshot) { rememberTask(target, snapshot); setNotice({ severity: 'success', text: c.taskSaved }); } }} />
         </> : selectedElement ? <><Chip size="small" label={selectedElement.kind === 'bubble' ? c.dialogue : c[selectedElement.kind]} /><ComicButton icon={SettingsOutlined} label={c.editElement} onClick={() => setElementEditorId(selectedElement.id)} /></> : <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', md: 'block' } }}>{c.noPanel}</Typography>}
         {(selected || generationAction?.loading) && <>
-          <ComicButton icon={PlayArrow} variant="contained" disabled={busy || generationAction?.disabled} onClick={onGenerate} label={`${generationAction?.text || `${c.generate} ${selectedNumber}`}${generationAction?.costLabel ? ` · ${generationAction.costLabel}` : ''}`} />
+          <ComicButton icon={PlayArrow} variant="contained" disabled={busy || aiBusy || generationAction?.disabled} onClick={onGenerate} label={`${generationAction?.text || `${c.generate} ${selectedNumber}`}${generationAction?.costLabel ? ` · ${generationAction.costLabel}` : ''}`} />
           {isMobile && generationAction?.costLabel && <Typography variant="caption">{generationAction.costLabel}</Typography>}
         </>}
         <Box sx={{ flex: 1 }} /><ComicButton icon={dirty ? SaveOutlined : Check} label={c.savePage} tip={c.savedLocally} shortcut="Ctrl+S" disabled={busy} onClick={() => perform(savePage)} />
@@ -981,6 +1037,9 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
       {selectedItem && [<MenuItem key="duplicate" onClick={duplicateSelection}>{c.duplicate}<Typography component="span" sx={{ ml: 'auto', pl: 3, color: 'text.secondary', fontSize: 11 }}>Ctrl+J</Typography></MenuItem>, <MenuItem key="up" onClick={() => moveLayer(1)}>{c.contentForward}</MenuItem>, <MenuItem key="down" onClick={() => moveLayer(-1)}>{c.contentBackward}</MenuItem>, <MenuItem key="delete" sx={{ color: 'error.main' }} onClick={deleteSelection}>{c.deleteContent}</MenuItem>]}
     </Menu>
 
+    <ComicAIStudio open={aiOpen} page={page} language={language} onClose={() => setAiOpen(false)}
+      getPage={getAIPage} onUpdatePage={updateAIPage} onApplyResult={applyAIResult} generationBusy={generationAction?.loading && !aiBusy}
+      onBusyChange={(value) => { setAiBusy(value); onAIBusyChange?.(value); }} />
     <Dialog open={balloonPicker} onClose={() => setBalloonPicker(false)} maxWidth="md" fullWidth aria-labelledby="comic-balloon-title">
       <DialogTitle id="comic-balloon-title" sx={{ py: 1.5, fontSize: 16 }}>{c.dialogue}</DialogTitle>
       <DialogContent dividers sx={{ p: 1.5 }}>

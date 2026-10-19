@@ -67,6 +67,7 @@ const useImageGeneration = () => {
         downloadSrc: result.downloadUrl || result.imageUrl || result.image,
         cachedBlob: result.cachedBlob || null,
         saveError: result.saveError || null,
+        savedFile: result.savedFile || null,
         objectUrlToRevoke: result.objectUrlToRevoke || null,
         seed: result.seed ?? params.seed ?? '',
         prompt: params.positivePrompt || '',

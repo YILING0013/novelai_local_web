@@ -53,6 +53,7 @@ from api_utils.notebook import NotebookValidationError, validate_groups, validat
 from api_utils.reference_store import ReferenceStore
 from api_utils.local_image_library import LocalImageLibrary
 from api_utils.local_inference import LocalInference
+from api_utils.comic_planner import ComicPlanError, plan_comic
 from api_utils.migrate_reference_library import migrate_reference_library
 from api_utils.image_validation import validate_base64_image, validate_generation_images
 from api_utils.novelai_client import NovelAIClient, NovelAIUpstreamError
@@ -1114,6 +1115,7 @@ def create_app(
 
         return _error_response(error)
 
+    @app.errorhandler(ComicPlanError)
     @app.errorhandler(ExposableError)
     def handle_payload_error(error: ExposableError) -> tuple[Response, int]:
         """返回已由原 payload builder 清理过的校验错误。"""
@@ -1530,6 +1532,26 @@ def create_app(
         if created_session:
             _set_session_cookie(response, session_id)
         return response
+
+    @app.post("/api/comic/plan")
+    @session_required(csrf=True)
+    def create_comic_plan() -> Response:
+        """用当前 NovelAI 会话编排漫画，返回完整计划后才允许前端生图。
+
+        Args:
+            None. 剧情、参考分镜和编排设置由 JSON 请求体提供。
+
+        Returns:
+            可编辑的漫画计划及本次请求编号，不包含账号凭据。
+        """
+        _ensure_no_account_recovery()
+        correlation_id = _request_correlation_id()
+        plan = plan_comic(
+            app.extensions["novelai_client"], g.local_session["token"],
+            g.local_session["account_snapshot"]["subscription"], _request_json(),
+            correlation_id=correlation_id,
+        )
+        return jsonify({"plan": plan, "correlation_id": correlation_id})
 
     @app.post("/api/images/generate")
     @session_required(csrf=True)
@@ -2156,8 +2178,17 @@ def create_app(
     @app.post("/api/local/inference/jobs")
     @session_required(csrf=True)
     def start_inference_job() -> tuple[Response, int]:
-        """启动下载、加载、反推或放大任务，立即返回可轮询的任务 ID。"""
-        job = app.extensions["local_inference"].start(g.local_session_id, _request_json())
+        """启动下载、加载或图像处理；图库输入只按受保护的图片 ID 读取。"""
+        payload = _request_json()
+        if payload.get("action") == "comic-lettering" and payload.get("image_id") is not None:
+            image_id = payload["image_id"]
+            if not isinstance(image_id, str) or not image_id:
+                raise ApiError("Choose a gallery image.", 400, "LOCAL_IMAGE_INVALID")
+            path = app.extensions["image_library"].image_path(image_id)
+            if path.stat().st_size > 20 * 1024 * 1024:
+                raise ApiError("The image is too large.", 400, "IMAGE_TOO_LARGE")
+            payload["image"] = base64.b64encode(path.read_bytes()).decode("ascii")
+        job = app.extensions["local_inference"].start(g.local_session_id, payload)
         return jsonify(job), 202
 
     @app.get("/api/local/inference/jobs/<job_id>")

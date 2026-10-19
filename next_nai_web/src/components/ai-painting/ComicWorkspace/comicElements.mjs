@@ -110,6 +110,25 @@ function wrapText(text, width, fontSize, fontFamily) {
 }
 
 /**
+ * 按漫画文字实际渲染规则寻找能放进文字框的字号，供自动嵌字与手动适配共用。
+ * @param {object} element 文字内容、尺寸、字体及横竖排设置。
+ * @param {number} maximum 最大字号，页面缩放时由调用方换算。
+ * @returns {number} 不超出可用区域的字号，过密文字仍可在编辑器中放大文字框。
+ */
+export function fitComicTextFontSize(element, maximum = 32) {
+  const width = element.width * 0.92, height = element.height * 0.92;
+  for (let size = Math.max(1, Math.min(maximum, width, height)); size >= 1; size -= 0.5) {
+    if (element.writingMode === 'vertical-rl') {
+      const capacity = Math.max(1, Math.floor(height / size));
+      const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+      const columns = element.text.replace(/\r\n?/g, '\n').split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil(Array.from(segmenter.segment(line)).length / capacity)), 0);
+      if (columns * size * element.lineHeight <= width) return size;
+    } else if (wrapText(element.text, width, size, element.fontFamily).length * size * element.lineHeight <= height) return size;
+  }
+  return 1;
+}
+
+/**
  * 生成完整的局部 SVG。坐标为 0..width/height；页面变换由 comicElementMatrix 处理。
  * @param {object} element 元素，蒙版使用 0..1 四角坐标，feather 为局部像素。
  * @param {{fonts?:Array}} options 页面上传字体；调用前应 await loadComicFonts(fonts)。

@@ -36,7 +36,7 @@ class InferenceCancelled(Exception):
 
 
 class LocalInference:
-    """一台本地后端同时执行一个模型任务，只保留一个已加载会话。"""
+    """一台本地后端同时执行一个任务，只保留一个已加载模型或漫画模型组。"""
 
     def __init__(self, models_dir, image_library, device="auto", threads=4):
         """
@@ -169,10 +169,15 @@ class LocalInference:
         action = payload.get("action")
         if not isinstance(action, str) or action not in {"download", "load", model["kind"]}:
             raise ExposableError("This action does not match the model.", 400, "LOCAL_INFERENCE_INVALID")
-        device = payload.get("device", self.device)
+        device = payload.get("device", "cpu" if model["kind"] == "comic-lettering" else self.device)
         if not isinstance(device, str) or device not in {"auto", *PROVIDERS}:
             raise ExposableError("Choose auto, cpu, cuda or directml.", 400, "LOCAL_INFERENCE_INVALID")
         options = {"device": device, "thresholds": {}}
+        if model["kind"] == "comic-lettering":
+            if device not in {"auto", "cpu"}:
+                raise ExposableError("Comic lettering currently uses CPU inference.", 400, "LOCAL_DEVICE_UNAVAILABLE")
+            from .comic_lettering import validate_lettering_options
+            options.update(validate_lettering_options(payload))
         for category in ("general", "character"):
             value = payload.get(f"{category}_threshold")
             if value is not None:
@@ -184,7 +189,7 @@ class LocalInference:
             raise ExposableError("Choose 2x, 3x or 4x scaling.", 400, "LOCAL_INFERENCE_INVALID")
         options["scale"] = scale
         image_bytes = None
-        if action in {"tagger", "upscale"}:
+        if action in {"tagger", "upscale", "comic-lettering"}:
             image_bytes = base64.b64decode(validate_base64_image(payload.get("image"), "image"))
             if action == "upscale":
                 with Image.open(io.BytesIO(image_bytes)) as image:
@@ -306,13 +311,15 @@ class LocalInference:
         return folder
 
     def _load_session(self, job_id, model, folder, device):
-        """使用可用的 Python ONNX Runtime 执行设备加载唯一会话。"""
+        """加载唯一模型或 CPU 漫画模型组，切换任务类型时释放上一组引用。"""
         try:
             import onnxruntime as ort
         except (ImportError, OSError) as exc:
             raise ExposableError("Install the Python inference requirements and restart the backend.", 503, "LOCAL_INFERENCE_UNAVAILABLE") from exc
         available = ort.get_available_providers()
-        provider = next((PROVIDERS[name] for name in ("cuda", "directml", "cpu") if PROVIDERS[name] in available), None) if device == "auto" else PROVIDERS[device]
+        provider = "CPUExecutionProvider" if model["kind"] == "comic-lettering" else (
+            next((PROVIDERS[name] for name in ("cuda", "directml", "cpu") if PROVIDERS[name] in available), None)
+            if device == "auto" else PROVIDERS[device])
         if provider not in available:
             raise ExposableError("The selected execution device is not installed.", 400, "LOCAL_DEVICE_UNAVAILABLE")
         key = (model["id"], provider)
@@ -320,17 +327,24 @@ class LocalInference:
         if self.session_key != key:
             self.session = None
             self.session_key = None
-            settings = ort.SessionOptions()
-            settings.intra_op_num_threads = self.threads
-            settings.log_severity_level = 3
-            if provider == "DmlExecutionProvider":
-                settings.enable_mem_pattern = False
-                settings.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
-            providers = [provider] if provider == "CPUExecutionProvider" else [provider, "CPUExecutionProvider"]
-            session = ort.InferenceSession(str(folder / model["modelFile"]), sess_options=settings, providers=providers)
-            session.disable_fallback()
-            if provider not in session.get_providers():
-                raise ExposableError("The selected execution device could not be initialized.", 500, "LOCAL_DEVICE_UNAVAILABLE")
+            if model["kind"] == "comic-lettering":
+                from .comic_lettering import ComicLettering
+                try:
+                    session = ComicLettering(folder, self.threads, self._valid_file, self._check_cancelled)
+                except (ImportError, OSError) as exc:
+                    raise ExposableError("Install the comic lettering requirements and restart the backend.", 503, "COMIC_LETTERING_UNAVAILABLE") from exc
+            else:
+                settings = ort.SessionOptions()
+                settings.intra_op_num_threads = self.threads
+                settings.log_severity_level = 3
+                if provider == "DmlExecutionProvider":
+                    settings.enable_mem_pattern = False
+                    settings.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+                providers = [provider] if provider == "CPUExecutionProvider" else [provider, "CPUExecutionProvider"]
+                session = ort.InferenceSession(str(folder / model["modelFile"]), sess_options=settings, providers=providers)
+                session.disable_fallback()
+                if provider not in session.get_providers():
+                    raise ExposableError("The selected execution device could not be initialized.", 500, "LOCAL_DEVICE_UNAVAILABLE")
             self._check_cancelled()
             self.session, self.session_key = session, key
         with self.lock:
@@ -357,6 +371,28 @@ class LocalInference:
                     prediction = session.run(None, {session.get_inputs()[0].name: tensor}, self.run_options)[0]
                     self._check_cancelled()
                     result = decode_tagger_output(prediction, folder / model["labelsFile"], model, options["thresholds"])
+                elif action == "comic-lettering":
+                    with Image.open(io.BytesIO(image_bytes)) as image:
+                        cleaned, mask, details = session.rebuild(
+                            image, options,
+                            lambda stage, completed, total: self._progress(job_id, stage, completed, total),
+                            self._check_cancelled, self.run_options,
+                        )
+                    self._check_cancelled()
+                    self._progress(job_id, "encoding")
+                    clean_output, mask_output = io.BytesIO(), io.BytesIO()
+                    cleaned.save(clean_output, format="PNG")
+                    mask.save(mask_output, format="PNG")
+                    cleaned.close()
+                    mask.close()
+                    with self.lock:
+                        self._check_cancelled()
+                        self.jobs[job_id]["stage"] = "saving"
+                    metadata = {"image_tool": "comic-lettering", "comic_lettering_source_hash": details["sourceHash"]}
+                    saved = self.image_library.save_generated(clean_output.getvalue(), filename=f"comic_text_{job_id}.png", metadata=metadata)
+                    saved_mask = self.image_library.save_generated(mask_output.getvalue(), filename=f"comic_mask_{job_id}.png",
+                                                                  metadata={**metadata, "image_tool": "comic-lettering-mask"})
+                    result = {**details, "image": saved, "mask": saved_mask}
                 elif action == "upscale":
                     self._progress(job_id, "preprocess")
                     metadata = _inspect_image(io.BytesIO(image_bytes))["parameters"]

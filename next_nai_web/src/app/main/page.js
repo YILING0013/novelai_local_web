@@ -476,7 +476,7 @@ const CloseConfirmDialog = ({ open, onClose, onConfirm, pageName }) => {
 };
 
 const drawerWidth = 240;
-const closedDrawerWidth = 80;
+const closedDrawerWidth = 64;
 
 export default function MainPage() {
   const router = useRouter();
@@ -503,6 +503,15 @@ export default function MainPage() {
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
   const [pageToClose, setPageToClose] = useState(null);
+  const sidebarActionSx = {
+    width: openDrawer ? '100%' : 48,
+    height: isMobile ? 48 : openDrawer ? 36 : 44,
+    minHeight: isMobile ? 48 : openDrawer ? 36 : 44,
+    flex: 'none',
+    borderRadius: 2,
+    backgroundColor: alpha(theme.palette.primary.main, mode === 'light' ? 0.08 : 0.15),
+    '& .MuiSvgIcon-root': { fontSize: !isMobile && !openDrawer ? 26 : undefined },
+  };
 
   const applyAccountSnapshot = useCallback((snapshot) => {
     if (!snapshot) return;
@@ -745,7 +754,7 @@ export default function MainPage() {
             </IconButton>
           </Box>}
           {isMobile && <Divider sx={{ mx: 2, mb: 2, opacity: 0.6 }} />}
-          <List sx={{ px: openDrawer ? 1.5 : 1, py: 1, flexGrow: 1 }}>
+          <List sx={{ px: openDrawer ? 1.5 : 1, py: 1, flexGrow: 1, flexShrink: isMobile ? 1 : 0 }}>
             {visiblePages.map((page) => {
               const isActive = activePage === page.id;
               const isHovered = hoveredItem === page.id;
@@ -758,10 +767,11 @@ export default function MainPage() {
                         transition: `all ${animationEnabled ? animationSpeed : 0}ms ease`,
                         '&::before': isActive ? { content: '""', position: 'absolute', left: 0, top: '20%', height: '60%', width: 4, backgroundColor: page.color, borderRadius: '0 4px 4px 0' } : {},
                         '&:hover': { backgroundColor: isActive ? alpha(page.color, mode === 'light' ? 0.18 : 0.25) : alpha(theme.palette.action.hover, 0.15) } }}>
-                      <ListItemIcon sx={{ minWidth: openDrawer ? (isMobile ? 46 : 34) : 0, color: isActive ? page.color : 'text.secondary', opacity: isActive ? 1 : 0.7, mx: openDrawer ? 0 : 'auto' }}>
+                      <ListItemIcon sx={{ minWidth: openDrawer ? (isMobile ? 46 : 34) : 0, color: isActive ? page.color : 'text.secondary', opacity: isActive ? 1 : 0.7, mx: openDrawer ? 0 : 'auto',
+                        '& .MuiSvgIcon-root': { fontSize: !isMobile && !openDrawer ? 26 : undefined } }}>
                         {page.icon}
                       </ListItemIcon>
-                      <ListItemText primary={getPageLabel(page)} sx={{ opacity: openDrawer ? 1 : 0, width: openDrawer ? 'auto' : 0, m: 0,
+                      <ListItemText primary={getPageLabel(page)} sx={{ display: openDrawer ? 'block' : 'none', m: 0,
                         '& .MuiTypography-root': { fontWeight: isActive ? 600 : 500, color: isActive ? page.color : 'text.primary', whiteSpace: 'nowrap', fontSize: '0.95rem' } }} />
                     </ListItemButton>
                   </ListItem>
@@ -770,27 +780,31 @@ export default function MainPage() {
             })}
           </List>
 
-          <Box sx={{ pt: 2, pb: 2, px: 1.5, borderTop: `1px solid ${alpha(theme.palette.divider, 0.1)}`, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <Box sx={{ py: isMobile ? 2 : 1, px: openDrawer ? 1.5 : 1, borderTop: `1px solid ${alpha(theme.palette.divider, 0.1)}`, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: isMobile ? 1 : 0.25, flexShrink: isMobile ? 1 : 0 }}>
             <Tooltip title={openDrawer ? '' : (mode === 'light' ? t('main.themeToDark') : t('main.themeToLight'))} placement="right" arrow>
-              <ListItem disablePadding sx={{ mb: isMobile ? 1 : 0.25, borderRadius: 2, overflow: 'hidden' }}>
-                <ListItemButton onClick={toggleTheme} sx={{ borderRadius: 2, py: isMobile ? 1.25 : openDrawer ? 0.75 : 1.125, px: openDrawer && isMobile ? 2 : 1, backgroundColor: alpha(theme.palette.primary.main, mode === 'light' ? 0.08 : 0.15) }}>
-                  <ListItemIcon sx={{ minWidth: openDrawer ? (isMobile ? 46 : 34) : 0, color: theme.palette.primary.main, mx: openDrawer ? 0 : 'auto' }}>
+              <ListItem disablePadding sx={{ justifyContent: 'center' }}>
+                <ListItemButton onClick={toggleTheme} aria-label={mode === 'light' ? t('main.themeToDark') : t('main.themeToLight')}
+                  sx={{ ...sidebarActionSx, px: openDrawer ? (isMobile ? 2 : 1) : 0, justifyContent: openDrawer ? 'flex-start' : 'center' }}>
+                  <ListItemIcon sx={{ minWidth: openDrawer ? (isMobile ? 46 : 34) : 0, color: theme.palette.primary.main }}>
                     {mode === 'light' ? <DarkModeIcon /> : <LightModeIcon />}
                   </ListItemIcon>
-                  <ListItemText primary={mode === 'light' ? t('main.darkMode') : t('main.lightMode')} sx={{ opacity: openDrawer ? 1 : 0, width: openDrawer ? 'auto' : 0, m: 0 }} />
+                  {openDrawer && <ListItemText primary={mode === 'light' ? t('main.darkMode') : t('main.lightMode')} sx={{ m: 0, whiteSpace: 'nowrap' }} />}
                 </ListItemButton>
               </ListItem>
             </Tooltip>
-            <ListItem disablePadding sx={{ mb: 1, borderRadius: 2, overflow: 'visible' }}>
-              <Box sx={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
-                <LanguageSwitcher compact={!openDrawer} fullWidth={openDrawer} sx={openDrawer ? { width: '100%', '& .MuiOutlinedInput-root': { bgcolor: alpha(theme.palette.primary.main, mode === 'light' ? 0.08 : 0.15) } } : {}} />
-              </Box>
+            <ListItem disablePadding sx={{ justifyContent: 'center' }}>
+              <LanguageSwitcher compact={!openDrawer} fullWidth={openDrawer} sx={{
+                width: openDrawer ? '100%' : 48, minWidth: 0,
+                '& .MuiIconButton-root': sidebarActionSx,
+                '& .MuiOutlinedInput-root': sidebarActionSx,
+              }} />
             </ListItem>
             <Tooltip title={openDrawer ? '' : t('main.accountInfo')} placement="right" arrow>
-              <ListItem disablePadding sx={{ mb: isMobile ? 1 : 0.25, borderRadius: 2, overflow: 'hidden' }}>
-                <ListItemButton onClick={() => setAccountDialogOpen(true)} sx={{ borderRadius: 2, py: isMobile ? 1.25 : openDrawer ? 0.75 : 1.125, px: openDrawer && isMobile ? 2 : 1, backgroundColor: alpha(theme.palette.primary.main, mode === 'light' ? 0.08 : 0.15) }}>
-                  <ListItemIcon sx={{ minWidth: openDrawer ? (isMobile ? 46 : 34) : 0, color: theme.palette.primary.main, mx: openDrawer ? 0 : 'auto' }}><AccountIcon /></ListItemIcon>
-                  <ListItemText primary={t('main.account')} sx={{ opacity: openDrawer ? 1 : 0, width: openDrawer ? 'auto' : 0, m: 0 }} />
+              <ListItem disablePadding sx={{ justifyContent: 'center' }}>
+                <ListItemButton onClick={() => setAccountDialogOpen(true)} aria-label={t('main.accountInfo')}
+                  sx={{ ...sidebarActionSx, px: openDrawer ? (isMobile ? 2 : 1) : 0, justifyContent: openDrawer ? 'flex-start' : 'center' }}>
+                  <ListItemIcon sx={{ minWidth: openDrawer ? (isMobile ? 46 : 34) : 0, color: theme.palette.primary.main }}><AccountIcon /></ListItemIcon>
+                  {openDrawer && <ListItemText primary={t('main.account')} sx={{ m: 0, whiteSpace: 'nowrap' }} />}
                 </ListItemButton>
               </ListItem>
             </Tooltip>
@@ -801,6 +815,8 @@ export default function MainPage() {
         <Box component="main" sx={{ flexGrow: 1, minWidth: 0, p: 0, display: 'flex', flexDirection: 'column', height: '100vh', bgcolor: theme.palette.background.default, marginLeft: 0, overflow: 'auto' }}>
           {openPages.length > 0 && (
             <>
+              {/* 移动端保留标签页；桌面导航统一使用侧栏，释放画布高度。 */}
+              {isMobile && (
               <Paper elevation={0} sx={{ borderRadius: 0, boxShadow: isMobile ? 'none' : '0 2px 10px rgba(0,0,0,0.03)', position: 'relative', zIndex: 1,
                 borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`, bgcolor: alpha(theme.palette.background.paper, 0.9), backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center' }}>
                 {isMobile && <IconButton color="inherit" aria-label={t('main.openDrawer')} edge="start" onClick={() => setMobileDrawerOpen(!openDrawer)} sx={{ mr: 1, ml: 1 }}><MenuIcon /></IconButton>}
@@ -816,6 +832,7 @@ export default function MainPage() {
                   ))}
                 </Tabs>
               </Paper>
+              )}
               <Box sx={{ flexGrow: 1, overflow: 'auto', p: { xs: 1, sm: 1.5 } }}>
                 {openPages.map((page) => (
                   <Box key={page.id} sx={{ height: '100%', display: page.id === activePage ? 'block' : 'none' }}>
