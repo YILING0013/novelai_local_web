@@ -186,7 +186,7 @@ export default function ComicAIStudio({ open, page, language = 'zh', onClose, ge
           if (current.cancelled) return;
         }
         const storyModel = sourceInput.model === 'xialong-v1' ? 'Xialong' : 'GLM 4.6';
-        setProgress(w(`双阶段编排：${storyModel} 写作 → GLM 4.6 整理分镜与角色位置`, `Two-stage planning: ${storyModel} writes → GLM 4.6 organizes panels and character positions`));
+        setProgress(w(`正在写故事、整理画风与人物并设计分镜（${storyModel} + GLM 4.6）`, `Writing the story, organizing style and characters, and planning panels (${storyModel} + GLM 4.6)`));
         const response = await apiClient.request('/comic/plan', { method: 'POST', body: sourceInput });
         plan = validateComicAIPlan(response.plan);
         await persist({ ...workflowRef.current, plan });
@@ -316,9 +316,9 @@ export default function ComicAIStudio({ open, page, language = 'zh', onClose, ge
             <Stack spacing={1.5}>
               <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.5}>
                 <TextField select size="small" fullWidth label={w('输入类型', 'Input type')} value={input.inputType} disabled={busy} onChange={(event) => setInput({ ...input, inputType: event.target.value })}><MenuItem value="prompt">{w('NovelAI 原生提示词', 'NovelAI prompt')}</MenuItem><MenuItem value="story">{w('剧情', 'Story')}</MenuItem></TextField>
-                <TextField select size="small" fullWidth label={w('剧情写作模型', 'Story writing model')} value={input.model} disabled={busy || !modelReady}
-                  helperText={w('先写故事与构图，再由 GLM 4.6 整理为生图结构。有效 Opus 订阅的新任务默认使用 Xialong。', 'Writes the story and composition first; GLM 4.6 then structures the image plan. New tasks default to Xialong with an active Opus subscription.')}
-                  onChange={(event) => { modelSelected.current = true; setInput({ ...input, model: event.target.value }); }}><MenuItem value="glm-4-6">{w('GLM 4.6 写作 + GLM 4.6 整理', 'GLM 4.6 writing + GLM 4.6 structuring')}</MenuItem><MenuItem value="xialong-v1" disabled={!opus}>{w('Xialong 写作 + GLM 4.6 整理 · Opus', 'Xialong writing + GLM 4.6 structuring · Opus')}</MenuItem></TextField>
+                <TextField select size="small" fullWidth label={w('故事模型', 'Story model')} value={input.model} disabled={busy || !modelReady}
+                  helperText={w('先写 400–800 字故事，再由 GLM 4.6 提取画师、画风与人物，最后设计漫画分镜。有效 Opus 订阅的新任务默认使用 Xialong。', 'First write a 400–800-character story. GLM 4.6 then extracts artists, style and characters, and finally plans the comic panels. New tasks default to Xialong with an active Opus subscription.')}
+                  onChange={(event) => { modelSelected.current = true; setInput({ ...input, model: event.target.value }); }}><MenuItem value="glm-4-6">GLM 4.6</MenuItem><MenuItem value="xialong-v1" disabled={!opus}>Xialong · Opus</MenuItem></TextField>
               </Stack>
               <TextField multiline minRows={2} label={w('人物补充（可选）', 'Character notes (optional)')}
                 helperText={w('留空时由 AI 从输入中提取并完善人物。', 'Leave blank for AI to extract and develop characters from your input.')}

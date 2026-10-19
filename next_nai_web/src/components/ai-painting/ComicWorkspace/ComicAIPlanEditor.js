@@ -12,8 +12,10 @@ const LABELS = {
     coordinate: '角色位置', coordinatePreview: '角色位置与参考分镜示意', coordinateError: '请输入 0 到 1 之间的数值',
     reference: '参考分镜', free: '自由编排', instance: '角色 / 场景控制', speaker: '说话人',
     promptHint: '角色固定外观会带入每次出场，画面提示可继续描述镜头、动作和场景。台词在下方统一编辑：入镜对白加入对应角色，画外音、旁白和拟声词加入整页提示。',
+    completePromptHint: '下方每次出场提示是完整生图内容；角色外观供核对，换装、发型和动作请在对应出场提示中修改。台词在下方统一编辑。',
     previewHint: '位置示意用于编排参考，最终生成图会完整放回漫画页。', emptyDialogue: '此分镜没有对白。',
-    storyDraft: '第一阶段写作原文（只读）', storyDraftHint: '保留写作阶段的故事与构图，供核对结构整理是否忠实。下方编排的修改不会改变此原文。', writing: '写作', formatting: '结构整理',
+    storyDraft: '第一阶段故事原文（只读）', storyDraftHint: '保留第一阶段写出的故事，供核对后续人物与分镜。下方编排的修改不会改变此原文。',
+    visualStyle: '画师与画风（提取结果）', writing: '故事', extracting: '画风与人物', formatting: '漫画分镜',
   },
   en: {
     overview: 'Story overview', page: 'Page ', pageEnd: '', panel: 'Panel', scene: 'Scene', appearance: 'Character appearance',
@@ -22,8 +24,10 @@ const LABELS = {
     coordinate: 'Character position', coordinatePreview: 'Character positions and reference panels', coordinateError: 'Enter a value between 0 and 1',
     reference: 'Reference panels', free: 'Free composition', instance: 'Character / scene controls', speaker: 'Speaker',
     promptHint: 'Each appearance includes the character’s fixed visual description. Use visual prompts for framing, action, and scenery. Edit dialogue below: visible speakers use their character prompt; off-screen speech, narration, and sound effects use the page prompt.',
+    completePromptHint: 'Each appearance prompt below is the complete image prompt. The character description is a reference; edit that appearance prompt to change clothing, hairstyle or action. Edit dialogue below.',
     previewHint: 'Positions guide composition. The complete generated image is placed back on the comic page.', emptyDialogue: 'This panel has no dialogue.',
-    storyDraft: 'Stage 1 writing draft (read-only)', storyDraftHint: 'The original story and composition are retained for reviewing the structured plan. Edits below do not change this draft.', writing: 'Writing', formatting: 'Structuring',
+    storyDraft: 'Stage 1 story (read-only)', storyDraftHint: 'The original story is retained for reviewing the characters and panels. Edits below do not change it.',
+    visualStyle: 'Artists and style (extracted)', writing: 'Story', extracting: 'Style and characters', formatting: 'Comic panels',
   },
 };
 
@@ -47,12 +51,18 @@ export default function ComicAIPlanEditor({ plan, onChange, referenceSections = 
   }
 
   return <Stack spacing={1.5}>
-    {plan.planningModels && <Typography variant="caption" color="text.secondary">{c.writing}: {plan.planningModels.story} → {c.formatting}: {plan.planningModels.format}</Typography>}
+    {plan.planningModels && <Typography variant="caption" color="text.secondary">{c.writing}: {plan.planningModels.story}{plan.planningModels.extract && <> → {c.extracting}: {plan.planningModels.extract}</>} → {c.formatting}: {plan.planningModels.format}</Typography>}
     {plan.storyDraft && <Accordion disableGutters variant="outlined" sx={{ '&:before': { display: 'none' } }}>
       <AccordionSummary expandIcon={<ExpandMore />}><Typography variant="body2">{c.storyDraft}</Typography></AccordionSummary>
       <AccordionDetails>
         <Typography variant="caption" color="text.secondary">{c.storyDraftHint}</Typography>
         <Typography component="div" variant="body2" sx={{ mt: 1, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 420, overflowY: 'auto' }}>{plan.storyDraft}</Typography>
+      </AccordionDetails>
+    </Accordion>}
+    {plan.visualStyle && <Accordion disableGutters variant="outlined" sx={{ '&:before': { display: 'none' } }}>
+      <AccordionSummary expandIcon={<ExpandMore />}><Typography variant="body2">{c.visualStyle}</Typography></AccordionSummary>
+      <AccordionDetails>
+        <Typography component="div" variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{plan.visualStyle}</Typography>
       </AccordionDetails>
     </Accordion>}
     <TextField label={c.overview} value={plan.summary} onChange={(event) => onChange({ ...plan, summary: event.target.value })} disabled={disabled} multiline minRows={2} fullWidth size="small" />
@@ -75,7 +85,7 @@ export default function ComicAIPlanEditor({ plan, onChange, referenceSections = 
               <Stack spacing={1.5}>
                 <TextField label={c.globalPrompt} value={section.globalPrompt} onChange={(event) => updateSection(section.id, { globalPrompt: event.target.value })} disabled={disabled} multiline minRows={4} fullWidth size="small" inputProps={{ 'aria-label': `${pageLabel} ${c.globalPrompt}` }} />
                 <TextField label={c.negativePrompt} value={section.negativePrompt} onChange={(event) => updateSection(section.id, { negativePrompt: event.target.value })} disabled={disabled} multiline minRows={2} fullWidth size="small" inputProps={{ 'aria-label': `${pageLabel} ${c.negativePrompt}` }} />
-                <Typography variant="caption" color="text.secondary">{c.promptHint}</Typography>
+                <Typography variant="caption" color="text.secondary">{section.characterPromptsComplete === true ? c.completePromptHint : c.promptHint}</Typography>
               </Stack>
               <Box>
                 <Box component="svg" role="img" aria-label={`${pageLabel} ${c.coordinatePreview}`} viewBox={`0 0 ${section.width} ${section.height}`}

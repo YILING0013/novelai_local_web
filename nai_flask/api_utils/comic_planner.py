@@ -11,22 +11,63 @@ from .novelai_client import NovelAIClient
 
 
 COMIC_MODELS = ("glm-4-6", "xialong-v1")
-STORY_SYSTEM_PROMPT = """你是漫画编剧兼分镜师。把用户素材改编为有起因、行动、反应和收尾的漫画，结尾用看得见的动作兑现笑点、反转或感情变化。保留用户明确的人设、画风、角色标签和故事重点。给定台词尽量保留原文与语言，可按叙事重排并用 [sN] 标出引用；没有给台词时创作简短自然的对白。画外音可以跨空镜，不要求说话人出现在画面里；明确无字时用动作讲故事。
-先写一段“整页分镜设计”，再用1.、2.、3.连续编号描述镜头。一般用5–8格，根据故事增减，不把这个数量当规则。整页设计必须说清视觉重心、主格与小格的大小关系、画框如何穿插和阅读动线；可以选择纵向主格、窄条切镜、斜切边框、重叠插格、局部破框或留白，但只用适合本段剧情的手法，不每页套同一布局，不把“复杂”理解为多加几排方格。
-每格写出大致位置和画框设计、景别与机位、可见人物或物件、具体动作表情，以及说话人与台词。用远近、俯仰、正背侧面、手脚或物件特写、空镜和双人互动形成节奏，避免连续正面站桩。一个细节可以占小插格，关键行动可撑起主格；镜头中的人与道具关系要能一眼读懂。
-不要输出百分比或精确长宽比例；仍然要具体描述宽窄、高矮、跨行、叠压、斜切和边框关系。参考框存在时围绕其布局编排。把完整故事安排在指定的一张或两张图片里。输出分镜设计与剧本，不输出JSON或分析过程。
+STORY_SYSTEM_PROMPT = """你是短篇故事作者。根据用户的完整原始输入和补充设定，写一篇约400–800字、适合改编成漫画的短故事。保留明确的人物关系、故事重点和原有台词的语言，让起因、行动、反应与收尾自然衔接，用具体动作和简短对白表现情感、笑点或转折。用户要求无字时，以行动和可见变化讲故事。直接输出连续的故事正文。
 """
 
-SYSTEM_PROMPT = """你是NovelAI V5漫画提示词作者。把storyDraft中的分镜设计和故事转成下面的JSON，只输出完整JSON。画面提示采用英文Danbooru标签与自然语言混合，台词使用原语言。
-结构：
-{"summary":"故事概要","characters":[{"id":"c1","name":"姓名","appearance":"稳定的人物外貌和服装标签"}],"sections":[{"globalPrompt":"漫画与画风标签，加具体整页分镜设计","negativePrompt":"本页不希望出现的内容","panels":[{"summary":"景别标签，加这格可画的画框、场景与动作","instances":[{"characterId":"c1","prompt":"本次出场可见的人物特征、机位标签和具体动作"}],"dialogues":[DIALOGUE_SCHEMA]}]}]}
-globalPrompt负责真正的整页设计：先写适用的comic、multiple views、画风与环境标签，再具体描述主格的位置和形状、小格围绕它的排列、宽窄高矮对比、插格或破框与边框关系、阅读动线和光影。沿用storyDraft为本故事选择的设计，不要只写“非对称、电影感、大小不等”等空话，也不要自动排成相同的横向条带或1-2-1-2格子。斜切、叠格、纵向大格、无框画面按剧情选用，不把它们组合成每次固定的模板。
-panel.summary也会传给生图：用from above、from below、from behind、profile、close-up、wide shot、dutch angle、hand focus等合适标签配合自然语言，写出这格的画框设计、景别、环境、道具和共同动作。空镜直接描述no humans与可见场景。不要把重要镜头只留在summary总览里。人物动作、道具状态与结尾变化应清楚可画。
-每个可见人物每次出场使用独立instance；人物表保留固定外貌标签，instance.prompt写本次可见特征、机位、姿势、表情和动作，局部特写明确hands only、feet only或eye focus。一个槽只写这个人，不把另一人的全套描述也塞进来；共同动作放在该格summary。不要在同一人的提示中用solo否定同格实际存在的另一人。画外音没有人物槽，空镜instances可以为空。
-坐标只在JSON元数据中给出：尽量为panel提供与版式设计一致的bounds={x,y,width,height}，是相对全页的近似占位；instance可加center={x,y}，是格内位置。它们用于人物定位，不代表必须把画框画成矩形网格；重叠插格可以占位重叠。没有可用的分镜位置时，程序让图像模型按画面提示自行排位。画面提示要保留版式设计，但不用百分比、精确长宽比或坐标数值。参考框存在时沿用其顺序。人物槽最多22个。
-保留用户的画师、角色、配色和数值权重，不猜未提供的作品或画师。protectedVisualPrefix由程序原样前置，无需复制。未提供画风时可用monochrome、greyscale、screentones、lineart；明确彩色时按用户要求。角色与镜头以实际标签为骨架，用自然语言补充关系，不能整页只输出泛泛的散文。
-NAI权重是n::内容::，负数是-n::概念::，并不固定为-1。按需要选择强度，例如1.4::overlapping panels::、-3::4koma::、-2.5::static composition::；不要把这些示例当每页必加的词。自由布局可针对方格、重复站姿等设负权重，用户明确要四格或网格时尊重它。UC使用正权重列不想要的内容，程序不再固定追加排除词。保留完整闭合的::分组，不使用(tag:1.2)。不要用排除词误伤用户要求的漫画、多视角、文字或画风。
-保留故事的关键镜头和最后的可见收尾。对白放dialogues，不在画面字段重复写引号台词或Text块；程序会添加它们。dialogue默认type="speech"、direction="horizontal"，需要时可用narration/sfx或vertical；画外音可保留speakerId，旁白/sfx用null。无声镜头可省略dialogues，空镜可省略instances。人物之外的编号和顺序由程序生成。每张图的实际文字含分隔符应控制在750字符内。
+EXTRACT_SYSTEM_PROMPT = """从完整原始输入和补充设定整理画风与人物，storyDraft只帮助确认故事里有哪些人。
+
+输出完整JSON：
+{
+  "visualStyle": "画师串与画风标签",
+  "characters": [
+    {"id": "c1", "name": "姓名", "appearance": "固定外貌与服装标签"}
+  ]
+}
+
+visualStyle只收集画师、绘画风格、配色、画质与媒介。画师可能带artist:前缀，也可能直接写名字；已有画师串、画风说明、标签和数值权重按原顺序逐字保留，包括中文说明，n::内容::分组保持完整闭合。场景、动作和分镜安排留给后续故事设计。未指定画风时采用monochrome, greyscale, screentones, lineart。
+
+为每个人物分配稳定id。已有角色名和外貌tags原样保留；需要细化的简短人物说明，用girl、boy等单人标签和明确、稳定的外貌、发型、发色、体态、服装等英文Danbooru标签表达。每份appearance描述一个人，故事中的动作、表情和临时衣发变化由出场提示负责。
+"""
+
+SYSTEM_PROMPT = """你是NovelAI V5漫画分镜与提示词作者。输入是完整故事、提取后的画风与固定人物、原始用户要求和页面规格。把这些素材设计成一页或指定的两张连续漫画，画面提示用英文Danbooru标签加自然语言，台词沿用原语言。
+
+输出完整JSON：
+{
+  "summary": "故事概要",
+  "sections": [
+    {
+      "globalPrompt": "人数、漫画标签、整页空间设计和故事场景",
+      "negativePrompt": "本页需要排除的内容",
+      "panels": [
+        {
+          "summary": "本格画框、镜头、环境和共同动作",
+          "instances": [
+            {
+              "characterId": "c1",
+              "prompt": "本次出场完整人物标签、衣发状态、动作与视角",
+              "center": {"x": 0.3, "y": 0.25}
+            }
+          ],
+          "dialogues": [DIALOGUE_SCHEMA]
+        }
+      ]
+    }
+  ]
+}
+
+先按情节把整页分成上下主次层，再在层内安排左右宽窄列，最后给细节和反应安排局部叠画。例如上层约占三分之二，分窄左列与宽右列：左列上下叠放环境和反应，右列用贯通的大画面承载主要行动，再将手部特写以overlapping panels、zoom layer或cut-in叠在行动画面边缘；底部通栏兑现结尾。根据本故事选择各层高度、列宽、主格和插格位置，让轻重、阅读动线与情节对应。用户已有参考框时沿用其顺序与位置。
+
+globalPrompt写实际选定的整页空间切分、大致故事场景和光影，用comic、multiple views和主场景人数如1girl, 1boy作标签骨架。
+
+panel.summary细写这一格的画框、环境、道具和共同动作，并选用wide shot、close-up、from above、from below、from behind、profile、dutch angle、hand focus等镜头标签。程序按阅读顺序把globalPrompt与各格summary合成最终主提示；两者分别负责整页设计与具体镜头。用这些镜头完整讲出起因、发展和最后的可见变化，近景、远景、背面、侧面、手脚细节、空镜和双人互动按故事交替。空镜使用no humans和具体场景描述。
+
+固定人物表characters由程序保留供编辑核对，每次可见出场各用一个instance并引用characterId。instance.prompt写该人物本次出场的完整提示：继承appearance里稳定的脸型、发色、瞳色、体态和身份标签，按剧情选择当前衣服、发型状态，再加入动作、姿势、表情与视角。已有标签沿用原文，局部出场只保留可见特征并用hands only、feet only或eye focus说明。共同动作和人物关系放在本格summary，单人槽聚焦本人；画外音保留对白即可，空镜instances为空。
+
+动作语法可用source#hug表示主动拥抱、target#hug表示被抱，双方互抱用mutual#hug，再用自然语言说明对象；#后面是动作。权重使用n::内容::并闭合，例如1.4::overlapping panels::、0.6::background::、-3::4koma::，按本页实际需要选择；UC用正权重描述不需要的内容。{内容}每层增强1.05倍，[内容]每层除以1.05；用户已有权重和角色(作品)标签按原样保留。
+
+instance.center采用相对整张图片的0–1坐标，x从左到右、y从上到下。同格两人横向站位时使用相近x和相同y，纵向站位时使用相同x和相近y；跨格人物按实际分镜位置分开。精确坐标只用于人物中心，画框和叠画通过自然语言描述大致比例与空间关系。每张图片最多22个人物出场槽。
+
+visualStyle会由程序原样前置到主提示；本阶段专注分镜、场景与动作。对白集中放dialogues，程序负责角色引号台词与末尾Text清单。type默认speech、direction默认horizontal，旁白和拟声词用narration或sfx以及speakerId:null；画外音可沿用人物speakerId。无声镜头dialogues为空。每张图的文字尽量简短，含分隔符控制在750字符内。
 """
 
 
@@ -168,10 +209,12 @@ def prepare_comic_request(payload: dict[str, Any], subscription: dict[str, Any])
         normalized_sections.append({"id": section["id"], "width": width, "height": height, "referencePanels": panels})
     source["sections"] = normalized_sections
     source.update(preprocess_comic_input(source))
-    # 原始输入留在 source；模型只接收拆分后的素材，标题不再交给它重复分配。
-    model_input = {key: value for key, value in source.items() if key not in {"text", "language"}}
-    model_input["dialogueLanguage"] = source["language"]
-    model_input["visualLanguage"] = "English"
+    # 三个阶段都保留完整原文；拆出的台词只用于方便引用。
+    model_input = {
+        "originalInput": {key: source[key] for key in ("inputType", "text", "style", "characters", "language")},
+        "sections": source["sections"], "readingDirection": source["readingDirection"],
+        "dialogueLanguage": source["language"], "visualLanguage": "English", "title": source["title"],
+    }
     model_input["sourceTexts"] = [
         {"id": entry["id"], "text": entry["text"]} for entry in source["sourceTexts"] if not entry["title"]
     ]
@@ -194,7 +237,7 @@ def prepare_comic_request(payload: dict[str, Any], subscription: dict[str, Any])
     system_prompt += (
         f"\n本次生成{len(normalized_sections)}个区域，sections按输入区域顺序返回；在这些图片内讲完故事。"
     )
-    user_prompt = json.dumps(model_input, ensure_ascii=False, separators=(",", ":"))
+    user_prompt = json.dumps(model_input, ensure_ascii=False, indent=2)
     messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
     # UTF-8 字节数不是 token 数；不再用保守估算拦截中文素材，真实上下文限制交给上游。
     max_tokens = 8192 if opus else 4096
@@ -273,18 +316,19 @@ def compile_comic_plan(draft: Any, source: dict[str, Any]) -> dict[str, Any]:
             ):
                 # 缺少可靠边界时只留编辑占位点，不用程序猜出的布局约束生图。
                 bounds = None
-                if instances:
-                    compiled["useCoords"] = False
             summary = panel.get("summary", "")
             compiled_panel = {"id": panel_id, "number": panel_number, "summary": summary if isinstance(summary, str) else ""}
             if bounds is not None:
                 compiled_panel["bounds"] = dict(bounds)
             compiled["panels"].append(compiled_panel)
             for instance_index, instance in enumerate(instances):
-                if reference:
+                if source.get("coordinateSpace") == "page" and _valid_center(instance.get("center")):
+                    center = dict(instance["center"])
+                elif reference:
                     center = dict(reference["center"])
                 elif bounds is None:
                     center = {"x": 0.5, "y": 0.5}
+                    compiled["useCoords"] = False
                 else:
                     local_center = instance.get("center")
                     if not _valid_center(local_center):
@@ -408,6 +452,8 @@ def validate_comic_plan(plan: Any, source: dict[str, Any]) -> dict[str, Any]:
             if instance["panelId"] in instances_by_panel:
                 instances_by_panel[instance["panelId"]].append(instance)
         for reference, panel in zip(expected["referencePanels"], panels):
+            if source.get("coordinateSpace") == "page":
+                continue
             group = instances_by_panel[panel["id"]]
             for index, instance in enumerate(group):
                 # 已有参考框仍保留中心；多人在框中部横向分布。
@@ -440,7 +486,7 @@ def plan_comic(
     payload: dict[str, Any],
     correlation_id: str | None = None,
 ) -> dict[str, Any]:
-    """先写完整分镜故事，再由 GLM 整理结构，两阶段各请求一次。
+    """依次写故事、提取画风人物、设计漫画，三个阶段各请求一次。
 
     Args:
         client: 复用当前账号身份 TLS 的官方客户端。
@@ -450,33 +496,54 @@ def plan_comic(
         correlation_id: 当前请求的排查编号。
 
     Returns:
-        完整漫画计划、写作原文与阶段模型；任何失败均不生图或自动重试。
+        完整漫画计划、故事正文、提取画风与阶段模型；失败不自动重试。
     """
     request_body, source = prepare_comic_request(payload, subscription)
     story_model = request_body["model"]
-    tier = subscription.get("tier")
-    context_limit = 28672 if type(tier) is int and tier >= 3 else 12288 if tier == 2 else 8192
     stage_id = correlation_id or "comic"
-    story_budget = 2048 if context_limit > 12288 else 1024 if context_limit > 8192 else 768
+    model_input = json.loads(request_body["messages"][-1]["content"])
+    original_input = model_input["originalInput"]
     story_request = {
         "model": story_model,
         "messages": [
             {"role": "system", "content": STORY_SYSTEM_PROMPT},
-            dict(request_body["messages"][-1]),
+            {"role": "user", "content": json.dumps({"originalInput": original_input}, ensure_ascii=False, indent=2)},
         ],
-        "temperature": 0.8, "max_tokens": story_budget,
+        "temperature": 0.8, "max_tokens": 2048,
         "enable_thinking": False, "stream": True,
     }
     story_draft = client.chat_completion(token, story_request, f"{stage_id}-story")
-    # 第一阶段原文完整交给第二阶段，不能截断、替换成摘要或伪造补写内容。
-    model_input = json.loads(request_body["messages"][-1]["content"])
+    extract_request = {
+        "model": "glm-4-6",
+        "messages": [
+            {"role": "system", "content": EXTRACT_SYSTEM_PROMPT},
+            {"role": "user", "content": json.dumps({"originalInput": original_input, "storyDraft": story_draft}, ensure_ascii=False, indent=2)},
+        ],
+        "temperature": 0.25, "max_tokens": 2048,
+        "enable_thinking": False, "stream": True,
+    }
+    extracted_text = client.chat_completion(token, extract_request, f"{stage_id}-extract")
+    try:
+        fenced = re.fullmatch(r"\s*```(?:json)?\s*\n(.*?)\n```\s*", extracted_text, flags=re.DOTALL | re.IGNORECASE)
+        extracted = json.loads(fenced[1] if fenced else extracted_text)
+    except (ValueError, TypeError) as exc:
+        raise ComicPlanError("模型没有返回完整的人物与画风 JSON，请重新编排。", "COMIC_PLAN_INVALID_JSON", 502) from exc
+    if not isinstance(extracted, dict):
+        raise ComicPlanError("模型没有返回可用的人物与画风对象。", "COMIC_PLAN_INVALID_OUTPUT", 502)
+    visual_style = extracted.get("visualStyle", "")
+    if not isinstance(visual_style, str):
+        visual_style = ""
+    characters = extracted.get("characters", [])
+    if not isinstance(characters, list):
+        characters = []
+    # 只有提取的画师与画风进入固定前缀，原动作、场景与旧版式继续作为用户要求。
+    source["protectedVisualPrefix"] = visual_style
+    source["coordinateSpace"] = "page"
     model_input["storyDraft"] = story_draft
-    model_input["formatInstructions"] = (
-        "把整页分镜设计明确写进globalPrompt，用英文标签加自然语言描述画框主次、形状、穿插与动线；"
-        "不要用坐标代替版式描述。panel.summary写具体镜头，instance写该人物这次出场，dialogues保留台词。"
-        "保留结尾的可见变化；不写精确百分比。"
-    )
-    request_body["messages"][-1] = {"role": "user", "content": json.dumps(model_input, ensure_ascii=False, separators=(",", ":"))}
+    model_input["visualStyle"] = visual_style
+    model_input["characters"] = characters
+    model_input["coordinateSpace"] = "page"
+    request_body["messages"][-1] = {"role": "user", "content": json.dumps(model_input, ensure_ascii=False, indent=2)}
     request_body["model"] = "glm-4-6"
     request_body["temperature"] = 0.45
     text = client.chat_completion(token, request_body, f"{stage_id}-format")
@@ -485,10 +552,15 @@ def plan_comic(
         fenced = re.fullmatch(r"\s*```(?:json)?\s*\n(.*?)\n```\s*", text, flags=re.DOTALL | re.IGNORECASE)
         if fenced:
             text = fenced[1]
-        plan = json.loads(text)
+        draft = json.loads(text)
     except (ValueError, TypeError) as exc:
         raise ComicPlanError("模型没有返回完整的 JSON 漫画计划，请重新编排。", "COMIC_PLAN_INVALID_JSON", 502) from exc
-    plan = validate_comic_plan(compile_comic_plan(plan, source), source)
+    if isinstance(draft, dict):
+        draft["characters"] = characters
+    plan = validate_comic_plan(compile_comic_plan(draft, source), source)
+    for section in plan["sections"]:
+        section["characterPromptsComplete"] = True
     plan["storyDraft"] = story_draft
-    plan["planningModels"] = {"story": story_model, "format": "glm-4-6"}
+    plan["visualStyle"] = visual_style
+    plan["planningModels"] = {"story": story_model, "extract": "glm-4-6", "format": "glm-4-6"}
     return plan

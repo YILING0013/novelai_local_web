@@ -163,6 +163,27 @@ test('各角色固定外观带入每次出场，跨格重复人物一致且场�
   assert.doesNotMatch(JSON.stringify(params), /purple hair|black coat/);
 });
 
+test('完整出场提示换装后不会带回人物表中的旧服装，旧两阶段计划仍保留外观前置', () => {
+  const plan = planFixture();
+  plan.planningModels = { story: 'xialong-v1', format: 'glm-4-6' };
+  plan.characters[0].appearance = '1girl, red coat, braided hair';
+  const section = plan.sections[0];
+  section.instances[0].prompt = '1girl, yellow raincoat, loose hair, standing in rain';
+  const legacy = buildComicAIParams(validateComicAIPlan(plan).sections[0], { characters: plan.characters });
+  assert.ok(legacy.characterControl.characterPrompts[0].prompt.startsWith(plan.characters[0].appearance));
+  plan.planningModels.extract = 'glm-4-6';
+  plan.visualStyle = 'watercolor';
+  section.characterPromptsComplete = true;
+  const complete = buildComicAIParams(validateComicAIPlan(plan).sections[0], { characters: plan.characters });
+  const prompt = complete.characterControl.characterPrompts[0].prompt;
+  assert.ok(prompt.startsWith(section.instances[0].prompt));
+  assert.doesNotMatch(prompt, /red coat|braided hair/);
+  assert.match(prompt, /speaking, wide speech bubble.*你好！/);
+  assert.equal(complete.characterControl.characterPrompts[1].prompt, 'mountain');
+  assert.equal(complete.positivePrompt, legacy.positivePrompt);
+  assert.deepEqual(complete.characterControl.characterPrompts[0].center, section.instances[0].center);
+});
+
 test('不同正常分镜数量和空镜可生成，仅角色实例受22槽上限约束', () => {
   const plan = planFixture();
   const section = plan.sections[0];

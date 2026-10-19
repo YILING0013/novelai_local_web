@@ -35,6 +35,7 @@ def comic_data():
 def test_comic_plan_requires_login_and_csrf_then_returns_complete_contract(client, fake_client, monkeypatch, comic_data, tier, story_model):
     source, plan = comic_data
     story_draft = "清晨的街道上，短发旅人停下脚步，回身挥手。对方点头回应，两人带着约定分别。"
+    extracted = {"visualStyle": "黑白漫画", "characters": plan["characters"]}
     calls = []
     account_snapshot = fake_client.account_snapshot
 
@@ -45,7 +46,7 @@ def test_comic_plan_requires_login_and_csrf_then_returns_complete_contract(clien
 
     def completion(token, body, correlation_id):
         calls.append((token, body, correlation_id))
-        return story_draft if len(calls) == 1 else json.dumps(plan, ensure_ascii=False)
+        return [story_draft, json.dumps(extracted, ensure_ascii=False), json.dumps(plan, ensure_ascii=False)][len(calls) - 1]
 
     monkeypatch.setattr(fake_client, "account_snapshot", subscribed_snapshot)
     monkeypatch.setattr(fake_client, "chat_completion", completion, raising=False)
@@ -64,8 +65,11 @@ def test_comic_plan_requires_login_and_csrf_then_returns_complete_contract(clien
     assert actual["version"] == 1
     assert actual["summary"] == plan["summary"]
     assert actual["storyDraft"] == story_draft
-    assert actual["planningModels"] == {"story": story_model, "format": "glm-4-6"}
+    assert actual["planningModels"] == {"story": story_model, "extract": "glm-4-6", "format": "glm-4-6"}
+    assert actual["visualStyle"] == extracted["visualStyle"]
+    assert actual["characters"] == extracted["characters"]
     section = actual["sections"][0]
+    assert section["characterPromptsComplete"] is True
     assert (section["id"], section["width"], section["height"]) == (0, 832, 1216)
     assert section["panels"] == [{
         "id": "p1", "number": 1, "summary": "挥手。",
@@ -74,11 +78,11 @@ def test_comic_plan_requires_login_and_csrf_then_returns_complete_contract(clien
     assert section["instances"][0]["prompt"] == "panel 1, short hair, waving, speech bubble"
     assert section["instances"][0]["panelId"] == section["dialogues"][0]["panelId"] == "p1"
     correlation_id = result.get_json()["correlation_id"]
-    assert [call[2] for call in calls] == [f"{correlation_id}-story", f"{correlation_id}-format"]
+    assert [call[2] for call in calls] == [f"{correlation_id}-story", f"{correlation_id}-extract", f"{correlation_id}-format"]
     assert all(call[0] == "pst-test" for call in calls)
-    assert [call[1]["model"] for call in calls] == [story_model, "glm-4-6"]
+    assert [call[1]["model"] for call in calls] == [story_model, "glm-4-6", "glm-4-6"]
     assert story_draft in calls[1][1]["messages"][-1]["content"]
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert "pst-test" not in result.get_data(as_text=True)
     assert all(call[0] != "generate" for call in fake_client.calls)
 

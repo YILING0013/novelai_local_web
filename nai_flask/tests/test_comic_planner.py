@@ -113,7 +113,7 @@ def test_output_contract_is_derived_from_sections_and_uses_whole_image_coordinat
     assert [{key: section[key] for key in ("id", "width", "height")} for section in result["sections"]] == expected_sections
     if len(section_ids) == 1:
         prepare_comic_request(source, {"tier": 1, "active": True})
-    assert json.loads(request["messages"][1]["content"])["story"] == source["text"]
+    assert json.loads(request["messages"][1]["content"])["originalInput"]["text"] == source["text"]
 
 
 @pytest.mark.parametrize("panel_count", [4, 9])
@@ -153,34 +153,43 @@ def test_native_prompt_without_references_keeps_original_text_at_story_chosen_co
 
 
 @pytest.mark.parametrize("two_sections", [False, True])
-def test_plan_writes_then_formats_once_and_places_occurrences_in_reference_panels(two_sections, caplog):
+def test_plan_writes_extracts_and_designs_once_with_complete_original_input(two_sections, caplog):
     source = sample_request(two_sections)
     output = sample_draft(source)
-    story = "雨后两人重逢。第一格两人隔街相望，第二格林收起伞说：好久不见。\n叶抬眼认出林，露出惊喜。"
+    story = "雨后两人隔街相望，林收起伞说：好久不见。\n叶抬眼认出林，露出惊喜。"
+    extracted = {"visualStyle": "1.2::artist:tester::, monochrome", "characters": output["characters"]}
+    output["characters"] = [{"id": "replacement", "name": "不应替换人物表", "appearance": "red hair"}]
     calls = []
 
     def transport(method, url, **kwargs):
         calls.append((method, url, kwargs))
-        return Response({"choices": [{"message": {"content": story if len(calls) == 1 else json.dumps(output)}, "finish_reason": "stop"}]})
+        content = [story, json.dumps(extracted), json.dumps(output)][len(calls) - 1]
+        return Response({"choices": [{"message": {"content": content}, "finish_reason": "stop"}]})
 
     client = NovelAIClient(request_func=transport)
     plan = plan_comic(client, "private-test-token", OPUS, source, "comic-test")
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert calls[0][2]["json"]["model"] == "xialong-v1"
-    assert "整页分镜设计" in calls[0][2]["json"]["messages"][0]["content"]
-    assert "连续编号" in calls[0][2]["json"]["messages"][0]["content"]
+    story_prompt = calls[0][2]["json"]["messages"][0]["content"]
+    assert "400–800字" in story_prompt
+    assert all(word not in story_prompt for word in ("分镜", "编号", "JSON"))
+    assert calls[0][2]["json"]["max_tokens"] == 2048
     assert len(calls[0][2]["headers"]["X-Correlation-ID"]) == 6
     assert calls[0][2]["headers"]["X-Correlation-ID"].isalnum()
     assert plan["storyDraft"] == story
-    assert plan["planningModels"] == {"story": "xialong-v1", "format": "glm-4-6"}
-    method, url, request = calls[1]
+    assert plan["planningModels"] == {"story": "xialong-v1", "extract": "glm-4-6", "format": "glm-4-6"}
+    assert plan["visualStyle"] == extracted["visualStyle"]
+    assert plan["characters"] == extracted["characters"]
+    assert calls[1][2]["json"]["model"] == "glm-4-6"
+    assert calls[1][2]["json"]["max_tokens"] == 2048
+    method, url, request = calls[2]
     assert (method, url) == ("POST", "https://text.novelai.net/oa/v1/chat/completions")
     assert request["allow_redirects"] is False
     assert request["headers"]["Authorization"] == "Bearer private-test-token"
     assert request["json"]["model"] == "glm-4-6"
     format_system = request["json"]["messages"][0]["content"]
     assert "Danbooru" in format_system
-    assert "-n::概念::" in format_system
+    assert "source#hug" in format_system and "target#hug" in format_system
     assert request["json"]["max_tokens"] == 8192
     assert request["json"]["stream"] is True
     assert request["headers"]["Accept"] == "text/event-stream"
@@ -189,18 +198,67 @@ def test_plan_writes_then_formats_once_and_places_occurrences_in_reference_panel
     assert request["headers"]["X-Correlation-ID"].isalnum()
     format_input = json.loads(request["json"]["messages"][-1]["content"])
     assert format_input["storyDraft"] == story
-    assert "globalPrompt" in format_input["formatInstructions"]
+    assert format_input["visualStyle"] == extracted["visualStyle"]
+    assert format_input["characters"] == extracted["characters"]
+    assert format_input["coordinateSpace"] == "page"
+    for _, _, stage_request in calls:
+        original_input = json.loads(stage_request["json"]["messages"][-1]["content"])["originalInput"]
+        assert original_input == {key: source[key] for key in ("inputType", "text", "style", "characters", "language")}
     assert len(client._tls_bindings) == 1
     for section in plan["sections"]:
+        assert section["characterPromptsComplete"] is True
+        assert section["globalPrompt"].startswith(extracted["visualStyle"] + ", ")
         assert [instance["center"] for instance in section["instances"]] == [
-            {"x": 0.3, "y": 0.25}, {"x": 0.7, "y": 0.25}, {"x": 0.5, "y": 0.75},
+            {"x": 0.1, "y": 0.1}, {"x": 0.9, "y": 0.9}, {"x": 0.2, "y": 0.8},
         ]
         assert section["dialogues"][0]["text"] == "好久不见。"
     assert "private-test-token" not in caplog.text
     assert "好久不见" not in caplog.text
     assert "text.novelai.net" in caplog.text
     assert "correlation_id=comic-test-story" in caplog.text
+    assert "correlation_id=comic-test-extract" in caplog.text
     assert "correlation_id=comic-test-format" in caplog.text
+
+
+def test_native_input_preserves_extracted_artists_and_uses_page_centers_with_partial_dialogue():
+    payload = sample_request()
+    payload.update(inputType="prompt", text=NATIVE_COMIC_PROMPT, style="中文画风补充", characters="保留人物原tag")
+    payload["sections"][0]["referencePanels"] = []
+    draft = sample_draft(payload)
+    visual_style = NATIVE_COMIC_PROMPT.split(", 1girl", 1)[0] + ", 4::greyscale, flat color::, 中文画风补充"
+    characters = draft.pop("characters")
+    characters[0]["appearance"] = "girl, 1.3::short hair::, school uniform"
+    panels = draft["sections"][0]["panels"]
+    panels[0].pop("bounds")
+    panels[0]["instances"][0]["center"] = {"x": 0.3, "y": 0.25}
+    panels[0]["instances"][1]["center"] = {"x": 0.38, "y": 0.25}
+    panels[1]["instances"][0]["center"] = {"x": 0.6, "y": 0.7}
+    panels[1]["dialogues"] = [{"text": "模型本次改写的对白。", "speakerId": "c1"}]
+    outputs = ["故事正文。", json.dumps({"visualStyle": visual_style, "characters": characters}), json.dumps(draft)]
+    calls = []
+
+    def transport(*args, **kwargs):
+        calls.append(kwargs["json"])
+        return Response({"choices": [{"text": outputs[len(calls) - 1], "finish_reason": "stop"}]})
+
+    plan = plan_comic(NovelAIClient(request_func=transport), "test-token", OPUS, payload)
+    assert len(calls) == 3
+    for request in calls:
+        original = json.loads(request["messages"][-1]["content"])["originalInput"]
+        assert original["text"] == NATIVE_COMIC_PROMPT
+        assert (original["style"], original["characters"]) == ("中文画风补充", "保留人物原tag")
+    assert plan["visualStyle"] == visual_style
+    assert plan["characters"] == characters
+    section = plan["sections"][0]
+    assert section["globalPrompt"] == visual_style + ", " + draft["sections"][0]["globalPrompt"]
+    assert "4koma" not in section["globalPrompt"]
+    assert "horizontal split screen" not in section["globalPrompt"]
+    assert section["useCoords"] is True
+    assert "bounds" not in section["panels"][0]
+    assert [instance["center"] for instance in section["instances"]] == [
+        {"x": 0.3, "y": 0.25}, {"x": 0.38, "y": 0.25}, {"x": 0.6, "y": 0.7},
+    ]
+    assert [dialogue["text"] for dialogue in section["dialogues"]] == ["세리나의 귀청소", "模型本次改写的对白。"]
 
 
 @pytest.mark.parametrize("panel_count", [4, 9, 23])
@@ -246,7 +304,7 @@ def test_reference_panels_can_outnumber_character_slots_without_changing_anchors
     assert section["panels"][0]["bounds"]["height"] == pytest.approx(1 / 23)
 
 
-def test_low_tier_uses_glm_twice_and_passes_full_story_without_truncating():
+def test_low_tier_uses_glm_three_times_and_passes_full_story_without_truncating():
     payload = sample_request()
     payload["sections"][0]["referencePanels"] = []
     output = sample_draft(payload)
@@ -258,10 +316,11 @@ def test_low_tier_uses_glm_twice_and_passes_full_story_without_truncating():
         return Response({"choices": [{"text": story if len(calls) == 1 else json.dumps(output), "finish_reason": "stop"}]})
 
     plan = plan_comic(NovelAIClient(request_func=transport), "test-token", {"tier": 1, "active": True}, payload)
-    assert [request["model"] for request in calls] == ["glm-4-6", "glm-4-6"]
+    assert [request["model"] for request in calls] == ["glm-4-6", "glm-4-6", "glm-4-6"]
     assert json.loads(calls[1]["messages"][-1]["content"])["storyDraft"] == story
     assert plan["storyDraft"] == story
-    assert calls[1]["max_tokens"] == 4096
+    assert json.loads(calls[2]["messages"][-1]["content"])["storyDraft"] == story
+    assert [request["max_tokens"] for request in calls] == [2048, 2048, 4096]
 
 
 def test_completion_style_text_is_supported_and_truncation_is_not_retried():
@@ -271,14 +330,14 @@ def test_completion_style_text_is_supported_and_truncation_is_not_retried():
 
     def transport(*args, **kwargs):
         calls.append(kwargs)
-        return Response({"choices": [{"text": output, "finish_reason": "length" if len(calls) == 3 else "stop"}]})
+        return Response({"choices": [{"text": output, "finish_reason": "length" if len(calls) == 4 else "stop"}]})
 
     client = NovelAIClient(request_func=transport)
     assert plan_comic(client, "test-token", OPUS, source)["version"] == 1
     with pytest.raises(NovelAIUpstreamError) as truncated:
         plan_comic(client, "test-token", OPUS, source)
     assert truncated.value.code == "COMIC_PLAN_TRUNCATED"
-    assert len(calls) == 3
+    assert len(calls) == 4
 
 
 @pytest.mark.parametrize("field", ["delta", "text"])
@@ -304,7 +363,7 @@ def test_streamed_plan_is_collected_once_before_parsing(field, ending):
     client = NovelAIClient(request_func=transport)
     plan = plan_comic(client, "private-test-token", OPUS, source)
     assert plan["sections"][0]["dialogues"][0]["text"] == "好久不见。"
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert calls[0]["json"]["stream"] is True
     assert calls[0]["headers"]["Accept"] == "text/event-stream"
 
@@ -380,10 +439,18 @@ def test_invalid_response_logs_only_shape_and_allowed_error_code(payload, branch
 
 @pytest.mark.parametrize("text", ['{"version":1', 'Explanation: {"version":1}', '```json\n{"version":1\n```'])
 def test_incomplete_json_or_extra_explanation_is_rejected_without_salvaging(text):
-    client = NovelAIClient(request_func=lambda *args, **kwargs: Response({"choices": [{"text": text, "finish_reason": "stop"}]}))
+    calls = []
+
+    def transport(*args, **kwargs):
+        calls.append(kwargs)
+        output = ["故事正文。", '{"visualStyle":"","characters":[]}', text][len(calls) - 1]
+        return Response({"choices": [{"text": output, "finish_reason": "stop"}]})
+
+    client = NovelAIClient(request_func=transport)
     with pytest.raises(ComicPlanError) as invalid:
         plan_comic(client, "test-token", OPUS, sample_request())
     assert invalid.value.code == "COMIC_PLAN_INVALID_JSON"
+    assert len(calls) == 3
 
 
 def test_complete_json_code_fence_is_unwrapped_without_changing_plan():
@@ -405,7 +472,7 @@ def test_model_permission_is_checked_without_guessing_context_from_utf8_bytes():
     source = sample_request()
     source["text"] = "完整台词" * 5000
     request, _ = prepare_comic_request(source, OPUS)
-    assert json.loads(request["messages"][-1]["content"])["story"] == source["text"]
+    assert json.loads(request["messages"][-1]["content"])["originalInput"]["text"] == source["text"]
     assert source["text"] == "完整台词" * 5000
 
 
@@ -416,7 +483,7 @@ def test_output_budget_uses_subscription_without_truncating_input(tier, extra_te
     request, _ = prepare_comic_request(source, {"tier": tier, "active": True})
     assert request["enable_thinking"] is False
     assert request["max_tokens"] == expected_tokens
-    assert json.loads(request["messages"][-1]["content"])["story"] == source["text"]
+    assert json.loads(request["messages"][-1]["content"])["originalInput"]["text"] == source["text"]
 
 
 @pytest.mark.parametrize("mutation", ["panels", "empty_panels", "extra_section", "duplicate_order", "dialogue_panel_number", "missing_dialogue_panel", "unknown_speaker", "center", "unhashable_id"])

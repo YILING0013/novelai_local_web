@@ -227,6 +227,21 @@ def test_real_reference_frames_allow_coordinates_without_model_bounds(compiled_m
     assert all("bounds" in panel for panel in section["panels"])
 
 
+def test_page_centers_preserve_vertical_pair_and_only_use_reference_for_missing_position(compiled_material):
+    source, draft = copy.deepcopy(compiled_material)
+    source["coordinateSpace"] = "page"
+    source["sections"][0]["referencePanels"] = sample_request()["sections"][0]["referencePanels"]
+    panels = draft["sections"][0]["panels"]
+    panels[0]["instances"][0]["center"] = {"x": 0.45, "y": 0.15}
+    panels[0]["instances"].append({"prompt": "looking up", "center": {"x": 0.45, "y": 0.22}})
+    panels[1]["instances"][0].pop("center")
+    section = validate_comic_plan(compile_comic_plan(draft, source), source)["sections"][0]
+    assert section["useCoords"] is True
+    assert [instance["center"] for instance in section["instances"]] == [
+        {"x": 0.45, "y": 0.15}, {"x": 0.45, "y": 0.22}, {"x": 0.5, "y": 0.75},
+    ]
+
+
 @pytest.mark.parametrize(("direction", "count", "expected_x"), [
     ("ltr", 1, [0.5]), ("rtl", 1, [0.5]),
     ("ltr", 2, [0.25, 0.75]), ("rtl", 2, [0.75, 0.25]),

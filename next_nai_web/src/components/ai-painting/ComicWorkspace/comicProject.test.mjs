@@ -83,8 +83,8 @@ test('旧尺寸项目与新AI页面可同包导入，保留原图、计划、参
   oldPage = applyTemplate(oldPage, 'blank', 1);
   const reference = createComicPage();
   const sourceInput = { model: 'glm-4-6', inputType: 'story', text: '旅人问候', style: '', language: 'zh', readingDirection: 'ltr', characters: '旅人：银色长发。', sections: buildComicAISections(reference) };
-  const plan = { version: 1, summary: '旅人问候', storyDraft: '第一阶段原文：\n旅人在车站挥手。\n构图：远景引入，近景回应。', planningModels: { story: 'xialong-v1', format: 'glm-4-6' }, characters: [{ id: 'c1', name: '旅人', appearance: 'silver hair' }], sections: [{
-    id: 0, width: 832, height: 1216, globalPrompt: 'comic', negativePrompt: '', panels: [{ id: 'p1', number: 1, summary: '问候' }],
+  const plan = { version: 1, summary: '旅人问候', storyDraft: '第一阶段原文：\n旅人在车站挥手，与旧友重逢。', visualStyle: '1.25::artist:example::, watercolor\nsoft morning light', planningModels: { story: 'xialong-v1', extract: 'glm-4-6', format: 'glm-4-6' }, characters: [{ id: 'c1', name: '旅人', appearance: 'silver hair' }], sections: [{
+    id: 0, width: 832, height: 1216, characterPromptsComplete: true, globalPrompt: 'comic', negativePrompt: '', panels: [{ id: 'p1', number: 1, summary: '问候' }],
     instances: [{ id: 'i1', panelId: 'p1', characterId: 'c1', prompt: '1girl', negativePrompt: '', center: { x: 0.5, y: 0.5 } }],
     dialogues: [{ id: 'd1', panelId: 'p1', speakerId: 'c1', text: '你好', type: 'speech', order: 1, direction: 'horizontal' }],
   }] };
@@ -103,7 +103,9 @@ test('旧尺寸项目与新AI页面可同包导入，保留原图、计划、参
   assert.deepEqual(result.pages[0], { ...oldPage, order: 0 });
   assert.deepEqual(result.pages[1], { ...draft, order: 1 });
   assert.equal(result.pages[1].aiWorkflow.plan.storyDraft, plan.storyDraft);
+  assert.equal(result.pages[1].aiWorkflow.plan.visualStyle, plan.visualStyle);
   assert.deepEqual(result.pages[1].aiWorkflow.plan.planningModels, plan.planningModels);
+  assert.equal(result.pages[1].aiWorkflow.plan.sections[0].characterPromptsComplete, true);
   await t.test('生成受限的编辑草稿仍可完整导出导入，恢复后生成仍受校验', async () => {
     for (const { change, tooLong } of [
       { change: (section) => { section.dialogues[0].text = '字'.repeat(751); }, tooLong: true },

@@ -52,7 +52,7 @@ test('新任务按有效订阅选择写作模型，保留已存草稿并忽略�
 function studioScenario({ count = 1, failGeneration = null, input: inputOverrides = {}, hooks = {} } = {}) {
   const first = { ...createComicPage(count === 2 ? 'spreadPortrait' : 'portrait'), id: 'page-one' };
   const second = { ...createComicPage(), id: 'page-two' };
-  const plan = { version: 1, summary: '清晨旅行', storyDraft: '先写出清晨旅行的完整故事与构图，再整理为分镜。', planningModels: { story: 'xialong-v1', format: 'glm-4-6' }, characters: [], sections: Array.from({ length: count }, (_, id) => ({
+  const plan = { version: 1, summary: '清晨旅行', storyDraft: '旅人在清晨出发，沿街走向车站。', visualStyle: '1.25::artist:example::, watercolor', planningModels: { story: 'xialong-v1', extract: 'glm-4-6', format: 'glm-4-6' }, characters: [], sections: Array.from({ length: count }, (_, id) => ({
     id, width: count === 2 ? 1216 : 832, height: count === 2 ? 832 : 1216,
     globalPrompt: `comic section ${id}`, negativePrompt: '',
     panels: [{ id: `p${id}`, number: 1, summary: '街道远景' }],
@@ -153,16 +153,17 @@ function studioScenario({ count = 1, failGeneration = null, input: inputOverride
   return scenario;
 }
 
-test('一键流程先加载本地模型，再发起双阶段编排；保留写作原文并分别回填原图和去字结果', async () => {
+test('一键流程通过同一请求编排故事、画风人物和分镜，保留三阶段信息并回填图像', async () => {
   const scenario = studioScenario({ input: { model: 'xialong-v1' } });
   await scenario.controls.run('full');
   assert.deepEqual(scenario.events.slice(0, 3), ['load', 'plan', 'comic-lettering']);
   assert.equal(scenario.events.filter((event) => event === 'plan').length, 1);
   assert.equal(scenario.planRequests[0].model, 'xialong-v1');
-  assert.ok(scenario.progress.includes('双阶段编排：Xialong 写作 → GLM 4.6 整理分镜与角色位置'));
+  assert.ok(scenario.progress.includes('正在写故事、整理画风与人物并设计分镜（Xialong + GLM 4.6）'));
   const retainedPlan = scenario.getPage('page-one').aiWorkflow.plan;
-  assert.equal(retainedPlan.storyDraft, '先写出清晨旅行的完整故事与构图，再整理为分镜。');
-  assert.deepEqual(retainedPlan.planningModels, { story: 'xialong-v1', format: 'glm-4-6' });
+  assert.equal(retainedPlan.storyDraft, '旅人在清晨出发，沿街走向车站。');
+  assert.equal(retainedPlan.visualStyle, '1.25::artist:example::, watercolor');
+  assert.deepEqual(retainedPlan.planningModels, { story: 'xialong-v1', extract: 'glm-4-6', format: 'glm-4-6' });
   assert.equal(scenario.requests.length, 1);
   assert.equal(scenario.deliveries.length, 2);
   assert.ok(scenario.deliveries[0].image.dataUrl.includes('original-0'));

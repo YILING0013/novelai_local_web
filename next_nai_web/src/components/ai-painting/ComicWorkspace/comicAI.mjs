@@ -82,7 +82,9 @@ export function validateComicAIPlan(plan, { model = 'nai-diffusion-5-full', forG
   const coordinate = (value) => typeof value === 'number' && Number.isFinite(value);
   if (!plan || plan.version !== 1 || typeof plan.summary !== 'string' || !identified(plan.characters) || !Array.isArray(plan.sections) || !plan.sections.length || plan.sections.length > 2) throw new Error('Invalid comic AI plan.');
   if (plan.storyDraft !== undefined && typeof plan.storyDraft !== 'string') throw new Error('Invalid comic AI story draft.');
-  if (plan.planningModels !== undefined && (!plan.planningModels || typeof plan.planningModels.story !== 'string' || typeof plan.planningModels.format !== 'string')) throw new Error('Invalid comic AI planning models.');
+  if (plan.visualStyle !== undefined && typeof plan.visualStyle !== 'string') throw new Error('Invalid comic AI visual style.');
+  if (plan.planningModels !== undefined && (!plan.planningModels || typeof plan.planningModels.story !== 'string' || typeof plan.planningModels.format !== 'string'
+    || (plan.planningModels.extract !== undefined && typeof plan.planningModels.extract !== 'string'))) throw new Error('Invalid comic AI planning models.');
   if (plan.characters.some((character) => typeof character.name !== 'string' || typeof character.appearance !== 'string')) throw new Error('Invalid comic AI character.');
   const sectionIds = new Set();
   for (const section of plan.sections) {
@@ -130,7 +132,8 @@ export function buildComicAIParams(section, { characters = [], model = 'nai-diff
   const speakers = new Map(dialogues.filter((dialogue) => dialogue.type === 'speech' && dialogue.speakerId !== null).map((dialogue) => [dialogue.id,
     section.instances.find((instance) => instance.panelId === dialogue.panelId && instance.characterId === dialogue.speakerId)?.id]));
   const characterTabs = section.instances.map((instance) => {
-    const appearance = characters.find((character) => character.id === instance.characterId)?.appearance;
+    // 新计划的出场提示已经包含当时的完整外观，避免把人物表里的旧服装重新加回去。
+    const appearance = section.characterPromptsComplete === true ? '' : characters.find((character) => character.id === instance.characterId)?.appearance;
     const lines = dialogues.filter((dialogue) => speakers.get(dialogue.id) === instance.id);
     const spoken = lines.map((dialogue) => {
       const vertical = dialogue.direction === 'vertical';
