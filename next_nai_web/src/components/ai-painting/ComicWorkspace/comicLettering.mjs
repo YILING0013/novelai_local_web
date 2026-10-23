@@ -11,7 +11,8 @@ import { comicAIImagePlacement } from './comicAI.mjs';
  */
 export function buildComicLetteringElements(page, sectionId, image, result) {
   const placement = comicAIImagePlacement(page, sectionId, image);
-  return result.blocks.filter((block) => block.applied).map((block) => {
+  // 仅抹除的区域已写入干净底图，不额外创建空文字层。
+  return result.blocks.filter((block) => block.applied && block.text.trim()).map((block) => {
     const bounds = block.layoutBounds || block.bounds;
     const element = createComicElement('text', {
       x: placement.x + bounds.x * placement.scale,

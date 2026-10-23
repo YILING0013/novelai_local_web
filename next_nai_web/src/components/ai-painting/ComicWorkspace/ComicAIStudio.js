@@ -2,14 +2,14 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress, MenuItem, Paper, Stack, TextField, Typography, useMediaQuery, useTheme } from '@mui/material';
+import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Chip, LinearProgress, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
 import { AutoAwesome, Download, ExpandMore, Stop } from '@mui/icons-material';
 import { saveAs } from 'file-saver';
 import apiClient from '@/utils/ApiClient';
 import { fetchUrlAsBlob } from '@/utils/mediaAssets';
 import { createClientId } from '@/utils/browserCapabilities.mjs';
 import { useGeneration } from '../Generation/GenerationContext';
-import { buildComicAIParams, buildComicAISections, comicAISectionFingerprint, validateComicAIPlan } from './comicAI.mjs';
+import { buildComicAIParams, buildComicAISections, comicAISectionFingerprint, positionComicAIControls, validateComicAIPlan } from './comicAI.mjs';
 import ComicAIPlanEditor from './ComicAIPlanEditor';
 
 const initialInput = { model: 'glm-4-6', inputType: 'prompt', text: '', characters: '', style: '', language: 'zh', readingDirection: 'ltr' };
@@ -31,9 +31,7 @@ async function readAIImage(source) {
  * @param {object} props 当前页、持久保存及可撤销整页替换回调。
  * @returns {React.ReactElement} 可在桌面和手机操作的漫画制作面板。
  */
-export default function ComicAIStudio({ open, page, language = 'zh', onClose, getPage, onUpdatePage, onApplyResult, onBusyChange, generationBusy = false }) {
-  const theme = useTheme();
-  const mobile = useMediaQuery(theme.breakpoints.down('md'));
+export default function ComicAIStudio({ open, page, language = 'zh', llmSettings, selectedControl, getPage, onUpdatePage, onApplyResult, onBusyChange, generationBusy = false }) {
   const { generate, isGenerating } = useGeneration();
   const [input, setInput] = useState(initialInput);
   const [workflow, setWorkflow] = useState(null);
@@ -99,14 +97,6 @@ export default function ComicAIStudio({ open, page, language = 'zh', onClose, ge
     }, 400);
     return () => clearTimeout(timer);
   }, [input, open, busy]);
-
-  function closeStudio() {
-    if (!busy && displayedPageId.current) {
-      void callbacks.current.onUpdatePage(displayedPageId.current, (current) => ({ ...current, aiDraft: input }))
-        .catch((cause) => setError(cause.message));
-    }
-    onClose();
-  }
 
   useEffect(() => () => {
     const current = flight.current;
@@ -185,14 +175,18 @@ export default function ComicAIStudio({ open, page, language = 'zh', onClose, ge
           await runLocal({ action: 'load' });
           if (current.cancelled) return;
         }
-        const storyModel = sourceInput.model === 'xialong-v1' ? 'Xialong' : 'GLM 4.6';
-        setProgress(w(`正在写故事、整理画风与人物并设计分镜（${storyModel} + GLM 4.6）`, `Writing the story, organizing style and characters, and planning panels (${storyModel} + GLM 4.6)`));
+        const storyModel = llmSettings?.provider && llmSettings.provider !== 'novelai'
+          ? `${llmSettings.provider} · ${llmSettings.storyModel || llmSettings.model}`
+          : `${sourceInput.model === 'xialong-v1' ? 'Xialong' : 'GLM 4.6'} + GLM 4.6`;
+        setProgress(w(`正在写故事、整理画风与人物并设计分镜（${storyModel}）`, `Writing the story, organizing style and characters, and planning panels (${storyModel})`));
         const response = await apiClient.request('/comic/plan', { method: 'POST', body: sourceInput });
-        plan = validateComicAIPlan(response.plan);
+        plan = positionComicAIControls(referenceSnapshot, validateComicAIPlan(response.plan));
         await persist({ ...workflowRef.current, plan });
         if (mode === 'plan' || current.cancelled) return;
       } else {
-        validateComicAIPlan(plan);
+        // 画框也可能在预览后被移动；生成前采用当前画布显示的约束坐标。
+        plan = positionComicAIControls(startingPage, validateComicAIPlan(plan));
+        await persist({ ...workflowRef.current, plan });
         setProgress(w('检查本地文字模型', 'Checking local text models'));
         await runLocal({ action: 'load' });
         if (current.cancelled) return;
@@ -295,20 +289,19 @@ export default function ComicAIStudio({ open, page, language = 'zh', onClose, ge
   }
 
   const references = workflow?.sourceInput?.sections || (page ? buildComicAISections(page, input.readingDirection) : []);
-  const targetPage = callbacks.current.getPage(flight.current?.pageId || displayedPageId.current) || page;
   const statusText = { generating: w('生图中', 'Generating'), lettering: w('文字处理中', 'Rebuilding'), completed: w('已完成', 'Complete'), 'needs-review': w('待核对文字', 'Review text'), pending: w('待应用', 'Pending'), failed: w('失败，可重试', 'Failed; retry available'), cancelled: w('已停止', 'Stopped') };
   const percentage = job?.total > 0 ? 100 * job.completed / job.total : null;
   const actionsBusy = busy || isGenerating || generationBusy || !modelReady;
-  return <Dialog open={open} onClose={closeStudio} fullScreen={mobile} maxWidth="lg" fullWidth>
-    <DialogTitle>{w('AI 制作漫画页', 'Create an AI comic page')}<Typography variant="body2" color="text.secondary">{targetPage?.title} · {references.map((section) => `${section.width}×${section.height}`).join(' + ')}</Typography></DialogTitle>
-    <DialogContent dividers>
-      <Stack spacing={2}>
-        <Alert severity="info">{w('输入一条生图提示词或一句剧情，AI 会自动扩展故事、设计分镜和角色位置，直接一键制作。已有分镜仅供参考，生成后用完整漫画图替换旧画框。', 'Enter an image prompt or a story idea. AI expands the story, plans panels and character positions, and creates the comic in one step. Existing panels guide planning; each complete result replaces the old frames.')}</Alert>
+  // 工作流保留在本组件中继续运行；隐藏时卸载自动伸缩输入框，避免它们在零宽度容器里反复测量。
+  if (!open) return null;
+  return <Box data-testid="comic-ai-dock" sx={{ p: 1.5 }}>
+      <Stack spacing={1.5}>
         {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
         {busy && <Paper variant="outlined" sx={{ p: 2 }}><Typography variant="body2">{progress}</Typography><LinearProgress sx={{ my: 1 }} variant={percentage === null ? 'indeterminate' : 'determinate'} value={percentage || 0} />{job && <Typography variant="caption">{job.stage}{percentage !== null ? ` · ${Math.round(percentage)}%` : ''}</Typography>}</Paper>}
+        {workflow?.plan && selectedControl && <ComicAIPlanEditor plan={workflow.plan} selectedControl={selectedControl} selectedOnly language={language} disabled={busy}
+          onChange={(plan) => { void persist({ ...workflowRef.current, plan: positionComicAIControls(callbacks.current.getPage(displayedPageId.current), plan) }).catch((cause) => setError(errorMessage(cause))); }} />}
         <TextField multiline minRows={5} maxRows={12} label={w('生图提示词或一句剧情', 'Image prompt or story idea')}
           placeholder={w('直接粘贴 NovelAI 原生 prompt，或写下你想画的故事。', 'Paste a NovelAI prompt, or describe the story you want to draw.')}
-          helperText={w('AI 会继承原提示词中的画师、权重、画风和人物设定，无需另填人物。原生提示词可用 Text: 和空行列出指定台词。', 'AI inherits artists, weights, style and character details from your prompt. Separate character notes are optional. In a native prompt, list exact dialogue after Text:, separating entries with blank lines.')}
           value={input.text} disabled={busy} onChange={(event) => setInput({ ...input, text: event.target.value })} />
         <Accordion disableGutters variant="outlined" sx={{ '&:before': { display: 'none' } }}>
           <AccordionSummary expandIcon={<ExpandMore />}><Typography variant="body2">{w('高级补充（可选）', 'Advanced details (optional)')}</Typography></AccordionSummary>
@@ -316,15 +309,12 @@ export default function ComicAIStudio({ open, page, language = 'zh', onClose, ge
             <Stack spacing={1.5}>
               <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.5}>
                 <TextField select size="small" fullWidth label={w('输入类型', 'Input type')} value={input.inputType} disabled={busy} onChange={(event) => setInput({ ...input, inputType: event.target.value })}><MenuItem value="prompt">{w('NovelAI 原生提示词', 'NovelAI prompt')}</MenuItem><MenuItem value="story">{w('剧情', 'Story')}</MenuItem></TextField>
-                <TextField select size="small" fullWidth label={w('故事模型', 'Story model')} value={input.model} disabled={busy || !modelReady}
-                  helperText={w('先写 400–800 字故事，再由 GLM 4.6 提取画师、画风与人物，最后设计漫画分镜。有效 Opus 订阅的新任务默认使用 Xialong。', 'First write a 400–800-character story. GLM 4.6 then extracts artists, style and characters, and finally plans the comic panels. New tasks default to Xialong with an active Opus subscription.')}
-                  onChange={(event) => { modelSelected.current = true; setInput({ ...input, model: event.target.value }); }}><MenuItem value="glm-4-6">GLM 4.6</MenuItem><MenuItem value="xialong-v1" disabled={!opus}>Xialong · Opus</MenuItem></TextField>
+                {(!llmSettings || llmSettings.provider === 'novelai') && <TextField select size="small" fullWidth label={w('故事模型', 'Story model')} value={input.model} disabled={busy || !modelReady}
+                  onChange={(event) => { modelSelected.current = true; setInput({ ...input, model: event.target.value }); }}><MenuItem value="glm-4-6">GLM 4.6</MenuItem><MenuItem value="xialong-v1" disabled={!opus}>Xialong · Opus</MenuItem></TextField>}
               </Stack>
               <TextField multiline minRows={2} label={w('人物补充（可选）', 'Character notes (optional)')}
-                helperText={w('留空时由 AI 从输入中提取并完善人物。', 'Leave blank for AI to extract and develop characters from your input.')}
                 value={input.characters} disabled={busy} onChange={(event) => setInput({ ...input, characters: event.target.value })} />
               <TextField size="small" fullWidth label={w('画风补充（可选）', 'Style notes (optional)')}
-                helperText={w('留空继承原提示词中的风格；只有输入完全未给风格时才默认黑白漫画。', 'Leave blank to inherit the prompt style. Black-and-white manga is the default only when no style is supplied.')}
                 value={input.style} disabled={busy} onChange={(event) => setInput({ ...input, style: event.target.value })} />
               <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.5}>
                 <TextField select size="small" fullWidth label={w('对白语言', 'Dialogue language')} value={input.language} disabled={busy} onChange={(event) => setInput({ ...input, language: event.target.value })}>{[['zh', '中文'], ['en', 'English'], ['ja', '日本語']].map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}</TextField>
@@ -334,21 +324,19 @@ export default function ComicAIStudio({ open, page, language = 'zh', onClose, ge
           </AccordionDetails>
         </Accordion>
         <Stack direction="row" flexWrap="wrap" gap={1}>
-          <Button variant="contained" startIcon={<AutoAwesome />} disabled={actionsBusy || !input.text.trim()} onClick={() => run('full')}>{w('一键制作', 'Create comic')}</Button>
-          <Button variant="outlined" disabled={actionsBusy || !input.text.trim()} onClick={() => run('plan')}>{w('仅编排', 'Plan only')}</Button>
-          {workflow?.plan && <Button disabled={actionsBusy} onClick={() => run('resume')}>{w('继续未完成步骤', 'Continue unfinished steps')}</Button>}
+          <Button variant="contained" startIcon={<AutoAwesome />} disabled={actionsBusy || !input.text.trim()} onClick={() => run('plan')}>{w(workflow?.plan ? '重新编排' : '开始编排', workflow?.plan ? 'Replan' : 'Plan comic')}</Button>
+          {workflow?.plan && <Button variant="outlined" disabled={actionsBusy} onClick={() => run('resume')}>{w('确认预览并生成', 'Generate previewed comic')}</Button>}
         </Stack>
-        {!workflow?.plan && <Typography variant="body2" color="text.secondary">{references.map((section) => w(`第 ${section.id + 1} 区：${section.referencePanels.length ? `${section.referencePanels.length} 个参考分镜` : 'AI 自由编排'}`, `Section ${section.id + 1}: ${section.referencePanels.length || 'free'} panels`)).join(' · ')}</Typography>}
         {workflow?.plan && <Accordion disableGutters variant="outlined" sx={{ '&:before': { display: 'none' } }}>
-          <AccordionSummary expandIcon={<ExpandMore />}><Typography variant="body2">{w('查看 / 调整 AI 编排（可选）', 'Review / adjust the AI plan (optional)')}</Typography></AccordionSummary>
-          <AccordionDetails><ComicAIPlanEditor plan={workflow.plan} onChange={(plan) => { void persist({ ...workflowRef.current, plan }).catch((cause) => setError(errorMessage(cause))); }} referenceSections={references} language={language} disabled={busy} /></AccordionDetails>
+          <AccordionSummary expandIcon={<ExpandMore />}><Typography variant="body2">{w('编排参数', 'Plan parameters')}</Typography></AccordionSummary>
+          <AccordionDetails><ComicAIPlanEditor plan={workflow.plan} onChange={(plan) => { void persist({ ...workflowRef.current, plan: positionComicAIControls(callbacks.current.getPage(displayedPageId.current), plan) }).catch((cause) => setError(errorMessage(cause))); }} referenceSections={references} language={language} disabled={busy} /></AccordionDetails>
         </Accordion>}
-        {workflow?.plan && <Typography variant="body2" color="text.secondary">{w('已出图后，修改台词可点击“仅重建文字”；修改画面提示或角色位置后，请重新生成对应区。', 'After an image is generated, rebuild text to apply dialogue edits. Regenerate the section to apply visual prompt or position changes.')}</Typography>}
         {workflow?.plan?.sections.map((section) => {
           const state = workflow.sections[section.id];
           if (!state) return null;
           const interrupted = !busy && ['generating', 'lettering'].includes(state.status);
-          return <Paper key={section.id} variant="outlined" sx={{ p: 2 }}>
+          const hasEmptyCustomText = Object.values(state.assignments || {}).some((value) => value?.action === 'replace' && !value.text.trim());
+          return <Paper key={section.id} variant="outlined" sx={{ p: 1.5, minWidth: 0 }}>
             <Stack spacing={1.5}>
               <Stack direction="row" gap={1} alignItems="center"><Typography fontWeight={600}>{w(`第 ${section.id + 1} 区`, `Section ${section.id + 1}`)}</Typography><Chip size="small" label={interrupted ? w('上次任务中断', 'Previous task interrupted') : statusText[state.status] || state.status} /></Stack>
               {interrupted && <Alert severity="warning">{w('刷新中断了任务。请先检查画廊是否已有结果；重新生图会再次消耗额度。', 'The task was interrupted by a reload. Check the gallery before regenerating, which incurs another generation charge.')}</Alert>}
@@ -362,23 +350,48 @@ export default function ComicAIStudio({ open, page, language = 'zh', onClose, ge
               </Box>}
               <Stack direction="row" flexWrap="wrap" gap={1}>
                 <Button disabled={actionsBusy} onClick={() => run('regenerate', section.id)}>{state.originalImage ? w('重新生成本区（消耗额度）', 'Regenerate section (uses credits)') : w('重试本区', 'Retry section')}</Button>
-                {state.originalImage && <><Button disabled={actionsBusy} onClick={() => run('rebuild', section.id)}>{w('仅重建文字', 'Rebuild text only')}</Button><Button startIcon={<Download />} onClick={() => saveAs(state.originalImage.dataUrl, `comic-original-${section.id + 1}.png`)}>{w('原图', 'Original')}</Button></>}
+                {state.originalImage && <><Button disabled={actionsBusy || hasEmptyCustomText} onClick={() => run('rebuild', section.id)}>{w('仅重建文字', 'Rebuild text only')}</Button><Button startIcon={<Download />} onClick={() => saveAs(state.originalImage.dataUrl, `comic-original-${section.id + 1}.png`)}>{w('原图', 'Original')}</Button></>}
                 {state.pending && state.originalImage && <Button color="warning" variant="contained" disabled={busy} onClick={() => applyPending(section.id)}>{w('替换本区当前内容（可撤销）', 'Replace current section (undoable)')}</Button>}
               </Stack>
               {state.pending && <Alert severity="info">{w('结果已保留。当前页有新编辑或结果尚未应用，点击替换后再写入画布。', 'The result is retained. Apply it explicitly to replace the current section.')}</Alert>}
               {state.result && <>
-                <Typography variant="body2">{w('绿色区域已变为可编辑文字；橙色区域保留原图，请核对后指定台词并点击“仅重建文字”。漏检文字可使用画布文字工具手动添加。', 'Green regions are editable; orange regions retain the original pixels. Assign dialogue and rebuild text. Use the canvas text tool for undetected text.')}</Typography>
-                {state.result.blocks.map((block, index) => <Stack key={block.id} direction={{ xs: 'column', sm: 'row' }} gap={1} alignItems={{ sm: 'center' }}>
-                  <Typography variant="body2" sx={{ flex: 1, overflowWrap: 'anywhere' }}>{index + 1}. {block.ocrText || w('未识别文字', 'Unreadable text')}{block.needsReview ? ` · ${block.reason}` : ''}</Typography>
-                  <TextField select size="small" sx={{ minWidth: { sm: 260 } }} label={w('对应台词', 'Dialogue assignment')} disabled={busy} value={Object.hasOwn(state.assignments || {}, block.id) ? state.assignments[block.id] || '' : block.dialogueId || ''} onChange={(event) => { void updateSection(section.id, { assignments: { ...state.assignments, [block.id]: event.target.value || null } }).catch((cause) => setError(errorMessage(cause))); }}><MenuItem value="">{w('保留原文字，不改写', 'Keep original text')}</MenuItem>{section.dialogues.map((line) => <MenuItem key={line.id} value={line.id}>{line.order}. {line.text}</MenuItem>)}</TextField>
-                </Stack>)}
+                {state.result.blocks.map((block, index) => {
+                  const assignment = Object.hasOwn(state.assignments || {}, block.id) ? state.assignments[block.id] : block.dialogueId;
+                  const mode = typeof assignment === 'string' ? `dialogue:${assignment}` : assignment?.action === 'replace' ? 'custom' : assignment?.action === 'erase' ? 'erase' : 'keep';
+                  return <Stack key={block.id} data-comic-text-region={block.id} spacing={1.5} sx={{ p: 1.25, minWidth: 0, border: 1, borderColor: 'divider', borderRadius: 1 }}>
+                    <Stack direction="row" gap={1} alignItems="center" justifyContent="space-between">
+                      <Typography variant="body2" fontWeight={600}>{w(`文字区域 ${index + 1}`, `Text region ${index + 1}`)}</Typography>
+                      <Chip size="small" variant="outlined" color={block.applied ? 'success' : 'default'} label={block.applied ? w('已处理', 'Applied') : w('待核对', 'Review')} />
+                    </Stack>
+                    <Typography variant="body2" color="text.secondary" sx={{ minWidth: 0, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{block.ocrText || w('未识别出文字，可手动处理此区域', 'Text unreadable; edit this region manually')}</Typography>
+                    <TextField select size="small" fullWidth label={w('处理方式', 'Action')} disabled={actionsBusy} value={mode} onChange={(event) => {
+                      const value = event.target.value;
+                      const next = value === 'keep' ? null : value === 'erase' ? { action: 'erase' } : value === 'custom' ? { action: 'replace', text: block.text || block.ocrText || '', direction: block.direction } : value.slice('dialogue:'.length);
+                      void updateSection(section.id, { assignments: { ...workflowRef.current.sections[section.id].assignments, [block.id]: next } }).catch((cause) => setError(errorMessage(cause)));
+                    }}>
+                      <MenuItem value="keep">{w('保留原文', 'Keep original')}</MenuItem>
+                      <MenuItem value="erase">{w('仅抹除文字', 'Erase text only')}</MenuItem>
+                      <MenuItem value="custom">{w('自定义文本', 'Custom text')}</MenuItem>
+                      {section.dialogues.map((line) => <MenuItem key={line.id} value={`dialogue:${line.id}`} sx={{ whiteSpace: 'normal' }}>{w(`台词 ${line.order}：`, `Line ${line.order}: `)}{line.text}</MenuItem>)}
+                    </TextField>
+                    {mode === 'custom' && <>
+                      <TextField multiline minRows={2} fullWidth label={w('自定义文本', 'Custom text')} value={assignment.text} disabled={actionsBusy}
+                        error={!assignment.text.trim()} helperText={!assignment.text.trim() ? w('请输入新文字，或选择仅抹除文字', 'Enter text or choose Erase text only') : undefined} inputProps={{ maxLength: 2000 }}
+                        onChange={(event) => { void updateSection(section.id, { assignments: { ...workflowRef.current.sections[section.id].assignments, [block.id]: { ...assignment, text: event.target.value } } }).catch((cause) => setError(errorMessage(cause))); }} />
+                      <TextField select size="small" fullWidth label={w('文字方向', 'Text direction')} value={assignment.direction} disabled={actionsBusy}
+                        onChange={(event) => { void updateSection(section.id, { assignments: { ...workflowRef.current.sections[section.id].assignments, [block.id]: { ...assignment, direction: event.target.value } } }).catch((cause) => setError(errorMessage(cause))); }}>
+                        <MenuItem value="horizontal-tb">{w('横排', 'Horizontal')}</MenuItem><MenuItem value="vertical-rl">{w('竖排（从右到左）', 'Vertical (right to left)')}</MenuItem>
+                      </TextField>
+                    </>}
+                  </Stack>;
+                })}
+                {state.result.blocks.length > 0 && <Button fullWidth variant="contained" disabled={actionsBusy || hasEmptyCustomText} onClick={() => run('rebuild', section.id)}>{w('应用文字修改', 'Apply text edits')}</Button>}
                 {state.result.unmatchedDialogueIds.length > 0 && <Alert severity="warning">{w('尚未定位：', 'Not located: ')}{section.dialogues.filter((line) => state.result.unmatchedDialogueIds.includes(line.id)).map((line) => line.text).join(' / ')}</Alert>}
               </>}
             </Stack>
           </Paper>;
         })}
       </Stack>
-    </DialogContent>
-    <DialogActions>{busy && <Button startIcon={<Stop />} color="warning" onClick={cancel}>{w('停止后续步骤', 'Stop subsequent steps')}</Button>}<Button onClick={closeStudio}>{busy ? w('收起，后台继续', 'Hide and continue') : w('关闭', 'Close')}</Button></DialogActions>
-  </Dialog>;
+    <Box sx={{ mt: 1 }}>{busy && <Button startIcon={<Stop />} color="warning" onClick={cancel}>{w('停止后续步骤', 'Stop subsequent steps')}</Button>}</Box>
+  </Box>;
 }

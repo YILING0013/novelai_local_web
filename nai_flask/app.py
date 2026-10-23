@@ -54,6 +54,10 @@ from api_utils.reference_store import ReferenceStore
 from api_utils.local_image_library import LocalImageLibrary
 from api_utils.local_inference import LocalInference
 from api_utils.comic_planner import ComicPlanError, plan_comic
+from api_utils.comic_llm import (
+    ComicLLMKeyStore, PROVIDER_URLS, validate_llm_settings, validate_llm_configuration,
+    llm_key_identity, select_llm_provider, complete_custom_llm,
+)
 from api_utils.migrate_reference_library import migrate_reference_library
 from api_utils.image_validation import validate_base64_image, validate_generation_images
 from api_utils.novelai_client import NovelAIClient, NovelAIUpstreamError
@@ -958,6 +962,20 @@ def create_app(
         app.config["DATA_DIR"],
         app.config["LOCAL_STORE_MAX_BYTES"],
     )
+    app.extensions["comic_llm_keys"] = ComicLLMKeyStore(app.config["DATA_DIR"])
+    llm_configuration = app.extensions["local_store"].read("comic-llm")
+    if "providers" not in llm_configuration:
+        # 只在启动时升级旧单接口配置，密钥仍按原协议和地址读取，不复制秘密文件。
+        previous_settings = validate_llm_settings(llm_configuration)
+        llm_configuration = {"activeProviderId": "novelai", "providers": [
+            {"id": "novelai", "name": "NovelAI", "enabled": True, "settings": validate_llm_settings({})},
+        ]}
+        if previous_settings["provider"] != "novelai":
+            llm_configuration["providers"].append({"id": "legacy", "name": previous_settings["provider"],
+                "enabled": True, "settings": previous_settings})
+            llm_configuration["activeProviderId"] = "legacy"
+        app.extensions["local_store"].write("comic-llm", llm_configuration)
+    validate_llm_configuration(llm_configuration)
     app.extensions["reference_store"] = ReferenceStore(
         app.config["DATA_DIR"],
         Path(app.config["FRONTEND_OUT_DIR"]).parent / "public",
@@ -1533,10 +1551,112 @@ def create_app(
             _set_session_cookie(response, session_id)
         return response
 
+    def comic_llm_response(configuration: dict[str, Any]) -> Response:
+        """返回 Provider 清单与密钥状态，不返回密钥正文。
+
+        Args:
+            configuration: 已保存的不含密钥的配置。
+
+        Returns:
+            前端设置面板和当前编排模型需要的 JSON 响应。
+        """
+        credentials = g.local_session.get("llm_credentials", {})
+        providers = []
+        for provider in configuration["providers"]:
+            identity = llm_key_identity(provider)
+            saved_key = app.extensions["comic_llm_keys"].get(*identity)
+            providers.append({**provider, "hasApiKey": bool(saved_key or credentials.get(identity)), "rememberApiKey": bool(saved_key)})
+        selected = select_llm_provider({**configuration, "providers": providers})
+        return jsonify({"configuration": {**configuration, "providers": providers}, "settings": selected["settings"],
+                        "hasApiKey": selected["hasApiKey"], "rememberApiKey": selected["rememberApiKey"]})
+
+    @app.get("/api/comic/llm-settings")
+    @session_required()
+    def get_comic_llm_settings() -> Response:
+        """读取 Provider 配置和密钥状态。"""
+        return comic_llm_response(app.extensions["local_store"].read("comic-llm"))
+
+    @app.put("/api/comic/llm-settings")
+    @session_required(csrf=True)
+    def comic_llm_settings() -> Response:
+        """保存接口设置，按用户选择把密钥留在会话或记住到本机。"""
+        payload = _request_json()
+        store = app.extensions["local_store"]
+        previous = store.read("comic-llm")
+        if "configuration" in payload:
+            configuration = validate_llm_configuration(payload["configuration"])
+            key_changes = payload.get("credentials", {})
+        else:
+            # 旧页面尚未刷新时仍能保存；升级后的 UI 使用具名配置。
+            settings = validate_llm_settings(payload.get("settings"))
+            provider_id = "novelai" if settings["provider"] == "novelai" else "legacy"
+            providers = [item for item in previous["providers"] if item["id"] != provider_id]
+            providers.append({"id": provider_id, "name": "NovelAI" if provider_id == "novelai" else settings["provider"],
+                              "enabled": True, "settings": settings})
+            configuration = validate_llm_configuration({"providers": providers, "activeProviderId": provider_id})
+            key_changes = {provider_id: payload}
+        if not isinstance(key_changes, dict) or any(not isinstance(value, dict) for value in key_changes.values()):
+            raise ApiError("密钥设置无效。")
+        credentials = g.local_session.setdefault("llm_credentials", {})
+        key_store = app.extensions["comic_llm_keys"]
+        disk_changes, session_changes = {}, {}
+        for provider in configuration["providers"]:
+            change = key_changes.get(provider["id"], {})
+            api_key = change.get("apiKey", "")
+            if not isinstance(api_key, str) or any(char in api_key for char in ("\r", "\n")):
+                raise ApiError("API Key must be a single line of text.")
+            identity = llm_key_identity(provider)
+            saved_key = key_store.get(*identity)
+            remember = change.get("rememberApiKey", bool(saved_key))
+            if not isinstance(remember, bool):
+                raise ApiError("Remember API Key must be true or false.")
+            key = api_key.strip() or saved_key or credentials.get(identity, "")
+            if change.get("clearApiKey") is True:
+                key, remember = "", False
+            disk_changes[identity] = key if remember else ""
+            session_changes[identity] = "" if remember else key
+        current_ids = {item["id"] for item in configuration["providers"]}
+        removed_scopes = tuple(scope for item in previous["providers"] if item["id"] not in current_ids
+            for scope in (tuple(PROVIDER_URLS) if item["id"] == "legacy" else tuple(f"{item['id']}:{protocol}" for protocol in PROVIDER_URLS)))
+        store.write("comic-llm", configuration)
+        key_store.update(disk_changes, removed_scopes)
+        for identity in list(credentials):
+            if identity[0] in removed_scopes:
+                credentials.pop(identity)
+        for identity, key in session_changes.items():
+            if key:
+                credentials[identity] = key
+            else:
+                credentials.pop(identity, None)
+        return comic_llm_response(configuration)
+
+    @app.post("/api/comic/llm-test")
+    @session_required(csrf=True)
+    def test_comic_llm() -> Response:
+        """用已保存接口发送一条小型 JSON 请求，确认密钥、模型与结构化输出可用。"""
+        provider = select_llm_provider(app.extensions["local_store"].read("comic-llm"), _request_json().get("providerId"))
+        settings = provider["settings"]
+        if settings["provider"] == "novelai":
+            raise ApiError("Select a custom AI API before testing it.")
+        identity = llm_key_identity(provider)
+        api_key = app.extensions["comic_llm_keys"].get(*identity) or g.local_session.get("llm_credentials", {}).get(identity, "")
+        text = complete_custom_llm(settings, api_key, {
+            "model": settings["formatModel"] or settings["model"],
+            "messages": [{"role": "user", "content": 'Return this JSON object: {"ok": true}'}],
+        }, {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"], "additionalProperties": False})
+        try:
+            fenced = re.fullmatch(r"\s*```(?:json)?\s*\n(.*?)\n```\s*", text, flags=re.DOTALL | re.IGNORECASE)
+            valid = json.loads(fenced[1] if fenced else text) == {"ok": True}
+        except ValueError:
+            valid = False
+        if not valid:
+            raise ApiError("The model responded but did not return the requested JSON object.", 502, "LLM_INVALID_JSON")
+        return jsonify({"success": True})
+
     @app.post("/api/comic/plan")
     @session_required(csrf=True)
     def create_comic_plan() -> Response:
-        """用当前 NovelAI 会话编排漫画，返回完整计划后才允许前端生图。
+        """用 NovelAI 或已配置的自定义接口编排漫画，返回完整计划后才允许前端生图。
 
         Args:
             None. 剧情、参考分镜和编排设置由 JSON 请求体提供。
@@ -1546,10 +1666,16 @@ def create_app(
         """
         _ensure_no_account_recovery()
         correlation_id = _request_correlation_id()
+        provider = select_llm_provider(app.extensions["local_store"].read("comic-llm"))
+        settings = provider["settings"]
+        identity = llm_key_identity(provider)
+        api_key = app.extensions["comic_llm_keys"].get(*identity) or g.local_session.get("llm_credentials", {}).get(identity, "")
         plan = plan_comic(
             app.extensions["novelai_client"], g.local_session["token"],
             g.local_session["account_snapshot"]["subscription"], _request_json(),
             correlation_id=correlation_id,
+            llm_settings=settings if settings["provider"] != "novelai" else None,
+            llm_api_key=api_key,
         )
         return jsonify({"plan": plan, "correlation_id": correlation_id})
 

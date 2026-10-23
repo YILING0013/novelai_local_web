@@ -78,6 +78,10 @@ def test_unrecognized_lines_join_ocr_in_same_actual_bubble_or_ctd_box(closed_bub
     {"dialogues": [{"id": "one", "text": "Hello", "type": {}}]},
     {"dialogues": [{"id": "one", "text": "Hello", "order": float("nan")}]},
     {"assignments": {"a": "one", "b": "one"}},
+    {"assignments": {"one": {"action": "unknown"}}},
+    {"assignments": {"one": {"action": "replace", "text": " "}}},
+    {"assignments": {"one": {"action": "replace", "text": "字" * 2001}}},
+    {"assignments": {"one": {"action": "replace", "text": "新文本", "direction": []}}},
 ])
 def test_malformed_options_return_clear_request_errors(changes):
     with pytest.raises(ExposableError) as error:
@@ -107,6 +111,31 @@ def synthetic_runtime():
     )
     runtime.lama = None
     return runtime, mask
+
+
+@pytest.mark.parametrize("edit", [{"action": "erase"}, {"action": "replace", "text": "自定义\n新对白", "direction": "vertical-rl"}])
+def test_manual_erase_and_custom_text_only_clean_selected_original_region(synthetic_runtime, edit):
+    runtime, detector_mask = synthetic_runtime
+    pixels = np.full((128, 128, 3), 255, np.uint8)
+    pixels[detector_mask > 0] = 0
+    source = Image.fromarray(pixels)
+    _, _, detected = runtime.rebuild(source, validate_lettering_options({}), lambda *args: None, lambda: None, None)
+    first, second = detected["blocks"]
+    options = validate_lettering_options({"assignments": {first["id"]: edit, second["id"]: None}})
+    cleaned, mask, details = runtime.rebuild(source, options, lambda *args: None, lambda: None, None)
+    updated = details["blocks"][0]
+    assert updated["applied"] and updated["editAction"] == edit["action"]
+    assert updated["text"] == edit.get("text", "") and updated["dialogueId"] is None
+    assert updated["direction"] == edit.get("direction", first["direction"])
+    assert details["sourceHash"] == detected["sourceHash"]
+    assert not details["blocks"][1]["applied"]
+    selected = np.array(mask) > 0
+    assert selected.any() and not selected[75:].any()
+    assert np.array_equal(np.array(cleaned)[~selected], pixels[~selected])
+    assert (np.array(cleaned)[35:43, 25:65] == 255).all()
+    # 无法识别的文字也接受用户明确指定的擦除或改写。
+    manually_matched = match_dialogues([{**first, "ocrText": "", "confidence": 0}], [], {first["id"]: edit})
+    assert not manually_matched[0]["needsReview"]
 
 
 @pytest.mark.parametrize("mode", ["RGB", "RGBA", "JPEG"])

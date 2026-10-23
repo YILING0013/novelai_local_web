@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from 'react';
-import { Accordion, AccordionDetails, AccordionSummary, Box, Chip, Divider, MenuItem, Stack, TextField, Typography, useTheme } from '@mui/material';
+import { useEffect, useRef, useState } from 'react';
+import { Accordion, AccordionDetails, AccordionSummary, Box, Chip, Divider, MenuItem, Stack, TextField, Typography } from '@mui/material';
 import { ExpandMore } from '@mui/icons-material';
 
 const LABELS = {
@@ -36,9 +36,16 @@ const LABELS = {
  * @param {{plan:object,onChange:Function,referenceSections?:Array,language?:'zh'|'en',disabled?:boolean}} props 完整编排、修改回调及参考分镜。
  * @returns {React.ReactNode} 可在桌面和手机查看故事、提示词、角色坐标及对白的编辑面板。
  */
-export default function ComicAIPlanEditor({ plan, onChange, referenceSections = [], language = 'zh', disabled = false }) {
+export default function ComicAIPlanEditor({ plan, onChange, referenceSections = [], selectedControl, selectedOnly = false, language = 'zh', disabled = false }) {
   const c = LABELS[language];
-  const theme = useTheme();
+  const selectedRef = useRef(null);
+  const [expandedPanel, setExpandedPanel] = useState(null);
+  useEffect(() => {
+    const section = plan?.sections.find((item) => item.id === selectedControl?.sectionId);
+    const instance = section?.instances.find((item) => item.id === selectedControl?.instanceId);
+    if (instance) setExpandedPanel(`${section.id}:${instance.panelId}`);
+  }, [selectedControl, plan]);
+  useEffect(() => { selectedRef.current?.scrollIntoView({ block: 'nearest' }); }, [expandedPanel, selectedControl]);
   const [coordinateDrafts, setCoordinateDrafts] = useState({});
   if (!plan) return null;
 
@@ -50,12 +57,50 @@ export default function ComicAIPlanEditor({ plan, onChange, referenceSections = 
     updateSection(section.id, { [collection]: section[collection].map((item) => item.id === id ? { ...item, ...changes } : item) });
   }
 
+  /** 圆点详情与完整编排共用同一组角色参数输入，修改直接写回所属分区。 */
+  function renderInstance(section, instance) {
+    const panel = section.panels.find((item) => item.id === instance.panelId);
+    const panelLabel = `${c.page}${plan.sections.indexOf(section) + 1}${c.pageEnd} · ${c.panel} ${panel?.number || ''}`;
+    const character = plan.characters.find((item) => item.id === instance.characterId);
+    const instanceNumber = section.instances.findIndex((item) => item.id === instance.id) + 1;
+    const instanceLabel = `${panelLabel} · ${character?.name || c.scene} ${instanceNumber}`;
+    return <Box key={instance.id} ref={selectedControl?.sectionId === section.id && selectedControl?.instanceId === instance.id ? selectedRef : null} sx={{ p: 1, border: 1, borderColor: selectedControl?.sectionId === section.id && selectedControl?.instanceId === instance.id ? 'primary.main' : 'divider', borderRadius: 1 }}>
+      <Stack spacing={1.25}>
+        <Typography variant="body2" fontWeight={600}>{instanceNumber} · {character?.name || c.scene}</Typography>
+        {character && <Typography variant="caption" color="text.secondary">{c.appearance}：{character.appearance}</Typography>}
+        <TextField label={c.instancePrompt} value={instance.prompt} onChange={(event) => updateItem(section, 'instances', instance.id, { prompt: event.target.value })} disabled={disabled} multiline minRows={3} fullWidth size="small" inputProps={{ 'aria-label': `${instanceLabel} ${c.instancePrompt}` }} />
+        <TextField label={c.negativePrompt} value={instance.negativePrompt} onChange={(event) => updateItem(section, 'instances', instance.id, { negativePrompt: event.target.value })} disabled={disabled} multiline fullWidth size="small" inputProps={{ 'aria-label': `${instanceLabel} ${c.negativePrompt}` }} />
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'start', gap: 1 }}>
+          {['x', 'y'].map((axis) => {
+            const key = `${section.id}:${instance.id}:${axis}`;
+            const draft = coordinateDrafts[key];
+            const invalid = draft !== undefined && (draft.trim() === '' || !Number.isFinite(Number(draft)) || Number(draft) < 0 || Number(draft) > 1);
+            return <TextField key={axis} type="number" label={`${c.coordinate} ${axis.toUpperCase()}`} value={draft ?? Number(instance.center[axis].toFixed(3))} disabled={disabled}
+              error={invalid} helperText={invalid ? c.coordinateError : undefined} size="small" sx={{ flex: '1 1 110px', minWidth: 100 }}
+              inputProps={{ min: 0, max: 1, step: 0.001, 'aria-label': `${instanceLabel} ${axis.toUpperCase()}` }}
+              onChange={(event) => {
+                const value = event.target.value;
+                setCoordinateDrafts((current) => ({ ...current, [key]: value }));
+                if (value.trim() && Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 1) updateItem(section, 'instances', instance.id, { center: { ...instance.center, [axis]: Number(value) } });
+              }} onBlur={() => setCoordinateDrafts((current) => {
+                const next = { ...current }; delete next[key]; return next;
+              })} />;
+          })}
+        </Box>
+      </Stack>
+    </Box>;
+  }
+
+  if (selectedOnly) {
+    const section = plan.sections.find((item) => item.id === selectedControl?.sectionId);
+    const instance = section?.instances.find((item) => item.id === selectedControl?.instanceId);
+    return instance ? renderInstance(section, instance) : null;
+  }
+
   return <Stack spacing={1.5}>
-    {plan.planningModels && <Typography variant="caption" color="text.secondary">{c.writing}: {plan.planningModels.story}{plan.planningModels.extract && <> → {c.extracting}: {plan.planningModels.extract}</>} → {c.formatting}: {plan.planningModels.format}</Typography>}
     {plan.storyDraft && <Accordion disableGutters variant="outlined" sx={{ '&:before': { display: 'none' } }}>
       <AccordionSummary expandIcon={<ExpandMore />}><Typography variant="body2">{c.storyDraft}</Typography></AccordionSummary>
       <AccordionDetails>
-        <Typography variant="caption" color="text.secondary">{c.storyDraftHint}</Typography>
         <Typography component="div" variant="body2" sx={{ mt: 1, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 420, overflowY: 'auto' }}>{plan.storyDraft}</Typography>
       </AccordionDetails>
     </Accordion>}
@@ -69,7 +114,6 @@ export default function ComicAIPlanEditor({ plan, onChange, referenceSections = 
     {plan.sections.map((section, sectionIndex) => {
       const references = referenceSections.find((reference) => reference.id === section.id)?.referencePanels || [];
       const pageLabel = `${c.page}${sectionIndex + 1}${c.pageEnd}`;
-      const fontSize = Math.max(section.width, section.height) / 34;
       return <Accordion key={section.id} defaultExpanded disableGutters variant="outlined" sx={{ borderRadius: 1, '&:before': { display: 'none' } }}>
         <AccordionSummary expandIcon={<ExpandMore />}>
           <Stack direction="row" alignItems="center" flexWrap="wrap" gap={1}>
@@ -81,42 +125,16 @@ export default function ComicAIPlanEditor({ plan, onChange, referenceSections = 
         </AccordionSummary>
         <AccordionDetails sx={{ pt: 0 }}>
           <Stack spacing={2}>
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(0, 1fr) 200px' }, alignItems: 'start', gap: 2 }}>
-              <Stack spacing={1.5}>
-                <TextField label={c.globalPrompt} value={section.globalPrompt} onChange={(event) => updateSection(section.id, { globalPrompt: event.target.value })} disabled={disabled} multiline minRows={4} fullWidth size="small" inputProps={{ 'aria-label': `${pageLabel} ${c.globalPrompt}` }} />
-                <TextField label={c.negativePrompt} value={section.negativePrompt} onChange={(event) => updateSection(section.id, { negativePrompt: event.target.value })} disabled={disabled} multiline minRows={2} fullWidth size="small" inputProps={{ 'aria-label': `${pageLabel} ${c.negativePrompt}` }} />
-                <Typography variant="caption" color="text.secondary">{section.characterPromptsComplete === true ? c.completePromptHint : c.promptHint}</Typography>
-              </Stack>
-              <Box>
-                <Box component="svg" role="img" aria-label={`${pageLabel} ${c.coordinatePreview}`} viewBox={`0 0 ${section.width} ${section.height}`}
-                  sx={{ width: '100%', maxHeight: 250, display: 'block', bgcolor: 'background.default', border: 1, borderColor: 'divider', borderRadius: 1 }}>
-                  {references.map((reference) => <g key={reference.id}>
-                    <rect x={(reference.center.x - reference.width / 2) * section.width} y={(reference.center.y - reference.height / 2) * section.height}
-                      width={reference.width * section.width} height={reference.height * section.height} fill="none" stroke={theme.palette.text.disabled} strokeWidth={section.width / 300} />
-                    <text x={(reference.center.x - reference.width / 2) * section.width + fontSize / 3} y={(reference.center.y - reference.height / 2) * section.height + fontSize}
-                      fill={theme.palette.text.secondary} fontSize={fontSize}>{reference.number}</text>
-                  </g>)}
-                  {section.instances.map((instance, index) => {
-                    const panel = section.panels.find((item) => item.id === instance.panelId);
-                    const character = plan.characters.find((item) => item.id === instance.characterId);
-                    const label = `${c.panel} ${panel?.number ?? ''} · ${character?.name || c.scene}`;
-                    const x = instance.center.x * section.width, y = instance.center.y * section.height;
-                    return <g key={instance.id}>
-                      <title>{`${label}: ${instance.center.x}, ${instance.center.y}`}</title>
-                      <circle cx={x} cy={y} r={fontSize * 0.65} fill={theme.palette.primary.main} stroke={theme.palette.background.paper} strokeWidth={section.width / 300} />
-                      <text x={x} y={y + fontSize * 0.32} textAnchor="middle" fill={theme.palette.primary.contrastText} fontSize={fontSize}>{index + 1}</text>
-                    </g>;
-                  })}
-                </Box>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>{c.previewHint}</Typography>
-              </Box>
-            </Box>
+            <Stack spacing={1.5}>
+              <TextField label={c.globalPrompt} value={section.globalPrompt} onChange={(event) => updateSection(section.id, { globalPrompt: event.target.value })} disabled={disabled} multiline minRows={3} fullWidth size="small" />
+              <TextField label={c.negativePrompt} value={section.negativePrompt} onChange={(event) => updateSection(section.id, { negativePrompt: event.target.value })} disabled={disabled} multiline fullWidth size="small" />
+            </Stack>
             <Box>
-              {section.panels.map((panel, panelIndex) => {
+              {section.panels.map((panel) => {
                 const panelLabel = `${pageLabel} · ${c.panel} ${panel.number}`;
                 const instances = section.instances.filter((instance) => instance.panelId === panel.id);
                 const dialogues = section.dialogues.filter((dialogue) => dialogue.panelId === panel.id).sort((left, right) => left.order - right.order);
-                return <Accordion key={panel.id} defaultExpanded={panelIndex === 0} disableGutters elevation={0} sx={{ bgcolor: 'transparent', borderTop: 1, borderColor: 'divider', '&:before': { display: 'none' } }}>
+                return <Accordion key={panel.id} expanded={expandedPanel === `${section.id}:${panel.id}`} onChange={(_, expanded) => setExpandedPanel(expanded ? `${section.id}:${panel.id}` : null)} disableGutters elevation={0} sx={{ bgcolor: 'transparent', borderTop: 1, borderColor: 'divider', '&:before': { display: 'none' } }}>
                   <AccordionSummary expandIcon={<ExpandMore />} sx={{ px: 0 }}>
                     <Box sx={{ minWidth: 0 }}>
                       <Typography variant="body2" fontWeight={600}>{c.panel} {panel.number}</Typography>
@@ -126,36 +144,7 @@ export default function ComicAIPlanEditor({ plan, onChange, referenceSections = 
                   <AccordionDetails sx={{ px: 0, pt: 0 }}>
                     <Stack spacing={1.5}>
                       <TextField label={c.panelSummary} value={panel.summary} onChange={(event) => updateItem(section, 'panels', panel.id, { summary: event.target.value })} disabled={disabled} multiline minRows={2} fullWidth size="small" inputProps={{ 'aria-label': `${panelLabel} ${c.panelSummary}` }} />
-                      {instances.map((instance) => {
-                        const character = plan.characters.find((item) => item.id === instance.characterId);
-                        const instanceNumber = section.instances.findIndex((item) => item.id === instance.id) + 1;
-                        const instanceLabel = `${panelLabel} · ${character?.name || c.scene} ${instanceNumber}`;
-                        return <Box key={instance.id} sx={{ p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1 }}>
-                          <Stack spacing={1.25}>
-                            <Typography variant="body2" fontWeight={600}>{instanceNumber} · {character?.name || c.scene}</Typography>
-                            {character && <Typography variant="caption" color="text.secondary">{c.appearance}：{character.appearance}</Typography>}
-                            <TextField label={c.instancePrompt} value={instance.prompt} onChange={(event) => updateItem(section, 'instances', instance.id, { prompt: event.target.value })} disabled={disabled} multiline minRows={3} fullWidth size="small" inputProps={{ 'aria-label': `${instanceLabel} ${c.instancePrompt}` }} />
-                            <TextField label={c.negativePrompt} value={instance.negativePrompt} onChange={(event) => updateItem(section, 'instances', instance.id, { negativePrompt: event.target.value })} disabled={disabled} multiline fullWidth size="small" inputProps={{ 'aria-label': `${instanceLabel} ${c.negativePrompt}` }} />
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'start', gap: 1 }}>
-                              {['x', 'y'].map((axis) => {
-                                const key = `${section.id}:${instance.id}:${axis}`;
-                                const draft = coordinateDrafts[key];
-                                const invalid = draft !== undefined && (draft.trim() === '' || !Number.isFinite(Number(draft)) || Number(draft) < 0 || Number(draft) > 1);
-                                return <TextField key={axis} type="number" label={`${c.coordinate} ${axis.toUpperCase()}`} value={draft ?? instance.center[axis]} disabled={disabled}
-                                  error={invalid} helperText={invalid ? c.coordinateError : undefined} size="small" sx={{ flex: '1 1 110px', minWidth: 100 }}
-                                  inputProps={{ min: 0, max: 1, step: 0.001, 'aria-label': `${instanceLabel} ${axis.toUpperCase()}` }}
-                                  onChange={(event) => {
-                                    const value = event.target.value;
-                                    setCoordinateDrafts((current) => ({ ...current, [key]: value }));
-                                    if (value.trim() && Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 1) updateItem(section, 'instances', instance.id, { center: { ...instance.center, [axis]: Number(value) } });
-                                  }} onBlur={() => setCoordinateDrafts((current) => {
-                                    const next = { ...current }; delete next[key]; return next;
-                                  })} />;
-                              })}
-                            </Box>
-                          </Stack>
-                        </Box>;
-                      })}
+                      {instances.map((instance) => renderInstance(section, instance))}
                       <Divider />
                       {dialogues.length ? dialogues.map((dialogue) => {
                         const speaker = plan.characters.find((character) => character.id === dialogue.speakerId);

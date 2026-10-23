@@ -37,6 +37,19 @@ test('气泡内部排版框优先于擦除框，位置和字号按实际可用�
   assert.deepEqual(block.bounds, { x: 40, y: 30, width: 80, height: 50 }, '排版不改写原擦除框');
 });
 
+test('仅抹除不创建空文本层，自定义内容生成独立可编辑文字', () => {
+  const page = createComicPage();
+  const base = { applied: true, bounds: { x: 40, y: 30, width: 80, height: 50 }, direction: 'horizontal-tb', dialogueId: null };
+  const elements = buildComicLetteringElements(page, 0, { width: 832, height: 1216 }, { blocks: [
+    { ...base, id: 'erase', text: '', editAction: 'erase' },
+    { ...base, id: 'custom', text: '自定义\n新对白', editAction: 'replace', direction: 'vertical-rl' },
+  ] });
+  assert.equal(elements.length, 1);
+  assert.equal(elements[0].comicTextBlockId, 'custom');
+  assert.equal(elements[0].text, '自定义\n新对白');
+  assert.equal(elements[0].writingMode, 'vertical-rl');
+});
+
 test('横排自动缩字保留整段对白和手动换行，最终排版不超出文字框', () => {
   const element = createComicElement('text', { x: 0, y: 0, width: 100, height: 70 }, { text: '这是一段需要自动缩小字号的对白。\n保留下一行。', lineHeight: 1.15 });
   const source = structuredClone(element);

@@ -28,6 +28,8 @@ const ErrorSummaryDialog = ({ open, onClose, onClear, errors = [] }) => {
     if (error.messageKey) return t(error.messageKey);
     const explicitKey = GENERATION_ERROR_MESSAGE_KEYS[error.code];
     if (explicitKey) return t(explicitKey);
+    // 历史记录也包含浏览器异常，不能把切页或脚本错误解释成批量生图失败。
+    if (error.source === 'browser') return t('painting.workspace.errors.generic');
     return t(BATCH_CATEGORY_KEYS[error.category] || BATCH_CATEGORY_KEYS.unknown);
   }, [t]);
 

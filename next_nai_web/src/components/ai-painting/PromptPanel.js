@@ -87,6 +87,7 @@ function PromptEditorFrame({ children, containerRef }) {
   useLayoutEffect(() => {
     const frame = containerRef.current;
     const actions = frame.querySelector('.prompt-editor-actions');
+    let outlineFrame = 0;
     const updateOutline = () => {
       const frameRect = frame.getBoundingClientRect();
       const actionsRect = actions.getBoundingClientRect();
@@ -98,10 +99,11 @@ function PromptEditorFrame({ children, containerRef }) {
       setOutline(`M 6.5 0.5 H ${right - 6} Q ${right} 0.5 ${right} 6.5 V ${bottom - 6} Q ${right} ${bottom} ${right - 6} ${bottom} H ${stepX + 6} Q ${stepX} ${bottom} ${stepX} ${bottom - 6} V ${stepY + 6} Q ${stepX} ${stepY} ${stepX - 6} ${stepY} H 6.5 Q 0.5 ${stepY} 0.5 ${stepY - 6} V 6.5 Q 0.5 0.5 6.5 0.5 Z`);
     };
     updateOutline();
-    const observer = new ResizeObserver(updateOutline);
+    // 模式切换时输入区先显示再排版，将轮廓更新合并到下一帧，避免观察回调内再次刷新布局。
+    const observer = new ResizeObserver(() => { cancelAnimationFrame(outlineFrame); outlineFrame = requestAnimationFrame(updateOutline); });
     observer.observe(frame);
     observer.observe(actions);
-    return () => observer.disconnect();
+    return () => { observer.disconnect(); cancelAnimationFrame(outlineFrame); };
   }, [containerRef]);
 
   return (

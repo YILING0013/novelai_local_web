@@ -43,8 +43,6 @@ import {
   Expand as ExpandIcon,
   ChevronLeft as ChevronLeftIcon,
   Image as ImageIcon,
-  Check as CheckIcon,
-  PlayArrow as PlayArrowIcon,
   ViewQuilt as ComicIcon,
   Warning as WarningIcon,
   MonetizationOn as MonetizationOnIcon,
@@ -58,6 +56,8 @@ import { normalizeNoteCharacters } from './NoteBook/noteCharacters.mjs';
 import ParameterPanel from './ParameterPanel';
 import InpaintWorkspacePanel from './InpaintWorkspace/InpaintWorkspacePanel';
 import ComicWorkspace from './ComicWorkspace/ComicWorkspace';
+import { panelBounds } from './ComicWorkspace/comicDocument.mjs';
+import { getPanelResolutionParameters } from './utils/parameterMapping';
 import { GenerationProvider, useGeneration } from './Generation/GenerationContext';
 import BatchGenerationDialog from './tools/BatchGeneration/BatchGenerationDialog';
 import ErrorSummaryDialog from './tools/BatchGeneration/ErrorSummaryDialog';
@@ -375,7 +375,6 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
   const comicAIFlightRef = useRef(false);
   const regularPaintingSnapshotRef = useRef(null);
   const [comicSelectedTarget, setComicSelectedTarget] = useState(null);
-  const [comicEditorOpen, setComicEditorOpen] = useState(false);
   const [comicPanelBounds, setComicPanelBounds] = useState(null);
   const [comicGenerationBusy, setComicGenerationBusy] = useState(false);
   const [comicAIBusy, setComicAIBusy] = useState(false);
@@ -801,6 +800,30 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
     });
   }, [liveAccountSnapshot?.subscription?.active]);
 
+  /**
+   * 按全部分镜实际生成规则累计点数，每个可编辑画框只生成一张。
+   * @param {object} page 当前漫画页，包含画框、图层和暂存参数。
+   * @returns {{count: number, total: number|null}} 分镜数量及总点数；超限时总点数为空。
+   */
+  const getComicBatchCost = (page) => {
+    const panels = page.panels.filter((panel) => page.layers.some((layer) => layer.id === panel.layerId && layer.visible && !layer.locked));
+    let total = 0;
+    for (const panel of panels) {
+      const isSelected = panel.id === comicTargetRef.current?.panelId;
+      const savedState = !isSelected && panel.task?.params.parameterState;
+      const params = { ...(savedState ? savedState.params : generationParams), batchSize: 1 };
+      // 未暂存的其它画框会按框形匹配尺寸，预估也使用同样的尺寸。
+      if (!panel.task && !isSelected) Object.assign(params, getPanelResolutionParameters(params, panelBounds(panel)));
+      const imageParameters = savedState
+        ? { image: savedState.imagePreview, strength: params.strength }
+        : imageToImageCostParameters;
+      const cost = calculateGenerationCost(params, imageParameters);
+      if (cost.total === null) return { count: panels.length, total: null };
+      total += cost.total;
+    }
+    return { count: panels.length, total };
+  };
+
   // 获取按钮状态的函数
   const getGenerateButtonState = () => {
     if (comicGenerationBusy && comicFlightRef.current?.count > 1) {
@@ -1051,7 +1074,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
         'error',
         true,
         [],
-        { error: error?.error || error, source: 'browser' },
+        { error: error?.error || error, source: 'browser', messageKey: getWorkspaceErrorMessageKey(error?.error || error) },
       );
     };
 
@@ -1504,7 +1527,6 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
       }
       comicTargetRef.current = null;
       setComicSelectedTarget(null);
-      setComicEditorOpen(false);
       applyPaintingSnapshot(regularPaintingSnapshotRef.current);
     } else if (mode === 'comic') {
       regularPaintingSnapshotRef.current = getPaintingSnapshot();
@@ -1560,10 +1582,14 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
   };
 
   // 图像生成请求
-  const handleGenerate = async () => {
+  const handleGenerate = async (allComicPanels = false) => {
     if (imageToolBusyRef.current || comicFlightRef.current || comicAIFlightRef.current || isGenerating) return;
     let requestedModel = generationParams.model;
-    const comicTarget = leftPanelMode === 'comic' ? comicTargetRef.current : null;
+    const comicPage = leftPanelMode === 'comic' ? comicWorkspaceRef.current?.getCurrentPage() : null;
+    const generateEveryPanel = allComicPanels === true && Boolean(comicPage);
+    const availablePanels = generateEveryPanel ? comicPage.panels.filter((panel) => comicPage.layers.some((layer) => layer.id === panel.layerId && layer.visible && !layer.locked)) : [];
+    const firstPanel = availablePanels[0];
+    const comicTarget = leftPanelMode === 'comic' ? comicTargetRef.current || (firstPanel ? { pageId: comicPage.id, panelId: firstPanel.id, panelNumber: comicPage.panels.indexOf(firstPanel) + 1 } : null) : null;
     if (leftPanelMode === 'comic' && !comicTarget) return;
 
     try {
@@ -1702,20 +1728,28 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
       }
 
       if (comicTarget) {
-        saveComicTask();
+        const currentSnapshot = saveComicTask();
         setComicGenerationBusy(true);
-        setComicEditorOpen(false);
-        // 后续切换画框不能改变在途任务的请求参数或接收目标。
+        // 在第一张请求前固定所有画框的参数和目标，切页或切换表单不会改变队列。
         const { getLatestParams: ignoredLatestParams, ...fixedParams } = params;
-        const count = Math.min(8, Math.max(1, Number.parseInt(fixedParams.batchSize, 10) || 1));
+        const queue = generateEveryPanel ? availablePanels.map((panel) => {
+          const snapshot = panel.id === comicTargetRef.current?.panelId ? currentSnapshot : panel.task?.params || currentSnapshot;
+          const panelParams = getAllParametersRef.current(snapshot);
+          if (!panel.task && panel.id !== comicTargetRef.current?.panelId) Object.assign(panelParams, getPanelResolutionParameters(panelParams, panelBounds(panel)));
+          const target = { pageId: comicPage.id, panelId: panel.id, panelNumber: comicPage.panels.indexOf(panel) + 1 };
+          return { target, params: panelParams };
+        }) : Array.from({ length: Math.min(8, Math.max(1, Number.parseInt(fixedParams.batchSize, 10) || 1)) }, () => ({ target: comicTarget, params: fixedParams }));
+        const count = queue.length;
         const batchId = count > 1 ? createClientId() : null;
         comicFlightRef.current = { ...comicTarget, batchId, count, index: 0, cancelled: false };
         let panelReceived = true;
         for (let index = 0; index < count; index += 1) {
           if (comicFlightRef.current.cancelled) break;
           comicFlightRef.current.index = index;
-          const item = await generate({ ...fixedParams, batchSize: 1,
-            ...(batchId ? { batch_id: batchId, index, batch_size: count, seed: '' } : {}),
+          const entry = queue[index];
+          requestedModel = entry.params.model;
+          const item = await generate({ ...entry.params, batchSize: 1,
+            ...(batchId ? { batch_id: batchId, index, batch_size: count, ...(!generateEveryPanel ? { seed: '' } : {}) } : {}),
           });
           if (!item) throw createWorkspaceError('GENERATION_FAILED');
           // 本地生成接口已经把图像写入磁盘画廊，再将结果送回发起任务的画框。
@@ -1732,7 +1766,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
             decoded.onerror = reject;
             decoded.src = dataUrl;
           });
-          panelReceived = await comicWorkspaceRef.current.receiveGeneratedImage({ ...comicTarget, image });
+          panelReceived = await comicWorkspaceRef.current.receiveGeneratedImage({ ...entry.target, image });
           if (item.saveError) {
             // 磁盘失败时保留已生成的图像和画框内容，停止后续付费请求并明确提示。
             showNotification(t('librarySettings.saveFailed'), 'warning', false);
@@ -1740,7 +1774,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
           }
           // 沿用本地版连续生成间隔；取消只阻止下一张，不丢弃已返回的结果。
           if (index < count - 1 && !comicFlightRef.current.cancelled) {
-            await new Promise((resolve) => window.setTimeout(resolve, 15_000));
+            for (let tick = 0; tick < 30 && !comicFlightRef.current.cancelled; tick += 1) await new Promise((resolve) => window.setTimeout(resolve, 500));
           }
         }
         if (comicFlightRef.current.cancelled) {
@@ -2308,43 +2342,6 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
         onDropCapture={handlePageDrop}
       >
         {/* 通知提示框 */}
-        {leftPanelMode === 'comic' && (
-          <Dialog
-            open={comicEditorOpen}
-            keepMounted
-            fullWidth
-            maxWidth="md"
-            fullScreen={isMobile}
-            sx={{ display: comicEditorOpen ? undefined : 'none' }}
-            onClose={() => {
-              saveComicTask();
-              setComicEditorOpen(false);
-            }}
-          >
-            <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              {comicText.edit} #{comicSelectedTarget?.panelNumber}
-              <IconButton aria-label={comicText.close} onClick={() => {
-                saveComicTask();
-                setComicEditorOpen(false);
-              }}><CloseIcon /></IconButton>
-            </DialogTitle>
-            <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {parameterEditor}
-            </DialogContent>
-            <DialogActions sx={{ flexWrap: 'wrap', gap: 1 }}>
-              {renderAnlasStatus()}
-              <Tooltip title={comicText.save}><Button aria-label={comicText.save} onClick={() => {
-                saveComicTask();
-                showNotification(comicText.saved);
-                setComicEditorOpen(false);
-              }}>{isMobile ? <CheckIcon /> : comicText.save}</Button></Tooltip>
-              <Tooltip title={comicGenerationAction.text}><span><Button aria-label={comicGenerationAction.text} variant="contained" disabled={comicGenerationAction.disabled} onClick={comicGenerationAction.action}>
-                {isMobile ? <PlayArrowIcon /> : comicGenerationAction.text}
-                {comicGenerationAction.costLabel && ` · ${comicGenerationAction.costLabel}`}
-              </Button></span></Tooltip>
-            </DialogActions>
-          </Dialog>
-        )}
         {/* 通知提示框 */}
         <Snackbar
           open={notification.open}
@@ -2565,10 +2562,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
                   active={active && leftPanelMode === 'comic'}
                   generatedItems={generatedItems}
                   onSelectTask={handleComicSelectTask}
-                  onEditTask={(bounds) => {
-                    setComicPanelBounds(bounds);
-                    setComicEditorOpen(true);
-                  }}
+                  manualEditor={leftPanelMode === 'comic' ? parameterEditor : null}
+                  onPanelBoundsChange={setComicPanelBounds}
+                  onGenerateAll={() => handleGenerate(true)}
+                  getBatchGenerationCost={getComicBatchCost}
                   onSaveTask={getPaintingSnapshot}
                   onGenerate={comicGenerationAction.action}
                   generationAction={comicGenerationAction}

@@ -8,6 +8,7 @@ import re
 from typing import Any
 
 from .novelai_client import NovelAIClient
+from .comic_llm import COMIC_SCHEMA, EXTRACTION_SCHEMA, complete_custom_llm
 
 
 COMIC_MODELS = ("glm-4-6", "xialong-v1")
@@ -137,12 +138,13 @@ def preprocess_comic_input(source: dict[str, Any]) -> dict[str, Any]:
     return {"story": "", "protectedVisualPrefix": visual, "sourceTexts": texts, "title": title, "textless": textless}
 
 
-def prepare_comic_request(payload: dict[str, Any], subscription: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+def prepare_comic_request(payload: dict[str, Any], subscription: dict[str, Any], *, custom_model: str | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
     """校验漫画输入和模型权限，准备结构整理指令与写作模型选择。
 
     Args:
         payload: 页面故事、风格、语言及一个或两个生成区域。
         subscription: 当前登录会话已验证的订阅信息。
+        custom_model: 自定义接口的写作模型；其权限由第三方接口判断。
 
     Returns:
         待加入写作结果的请求体，以及用于核对模型返回内容的规范化输入。
@@ -151,10 +153,10 @@ def prepare_comic_request(payload: dict[str, Any], subscription: dict[str, Any])
         raise ComicPlanError("请提供漫画编排内容。")
     tier = subscription.get("tier")
     opus = type(tier) is int and tier >= 3 and subscription.get("active") is True
-    model = payload.get("model", "xialong-v1" if opus else "glm-4-6")
-    if model not in COMIC_MODELS:
+    model = custom_model or payload.get("model", "xialong-v1" if opus else "glm-4-6")
+    if not custom_model and model not in COMIC_MODELS:
         raise ComicPlanError("请选择 GLM-4.6 或 Xialong。")
-    if model == "xialong-v1" and not opus:
+    if not custom_model and model == "xialong-v1" and not opus:
         raise ComicPlanError("Xialong 需要有效的 Opus 订阅，请选择 GLM-4.6。", "COMIC_MODEL_FORBIDDEN", 403)
     source = {
         "inputType": payload.get("inputType", "story"),
@@ -485,6 +487,8 @@ def plan_comic(
     subscription: dict[str, Any],
     payload: dict[str, Any],
     correlation_id: str | None = None,
+    llm_settings: dict[str, Any] | None = None,
+    llm_api_key: str = "",
 ) -> dict[str, Any]:
     """依次写故事、提取画风人物、设计漫画，三个阶段各请求一次。
 
@@ -494,12 +498,17 @@ def plan_comic(
         subscription: 当前登录会话的订阅信息。
         payload: 当前页的剧情、角色、画风和生成区域。
         correlation_id: 当前请求的排查编号。
+        llm_settings: 自定义接口设置；为空时沿用 NovelAI 的三个阶段。
+        llm_api_key: 自定义接口的会话密钥，不写入计划或日志。
 
     Returns:
         完整漫画计划、故事正文、提取画风与阶段模型；失败不自动重试。
     """
-    request_body, source = prepare_comic_request(payload, subscription)
+    custom_model = (llm_settings["storyModel"] or llm_settings["model"]) if llm_settings else None
+    request_body, source = prepare_comic_request(payload, subscription, custom_model=custom_model)
     story_model = request_body["model"]
+    extract_model = (llm_settings["extractModel"] or llm_settings["model"]) if llm_settings else "glm-4-6"
+    format_model = (llm_settings["formatModel"] or llm_settings["model"]) if llm_settings else "glm-4-6"
     stage_id = correlation_id or "comic"
     model_input = json.loads(request_body["messages"][-1]["content"])
     original_input = model_input["originalInput"]
@@ -512,9 +521,10 @@ def plan_comic(
         "temperature": 0.8, "max_tokens": 2048,
         "enable_thinking": False, "stream": True,
     }
-    story_draft = client.chat_completion(token, story_request, f"{stage_id}-story")
+    story_draft = (complete_custom_llm(llm_settings, llm_api_key, story_request) if llm_settings
+                   else client.chat_completion(token, story_request, f"{stage_id}-story"))
     extract_request = {
-        "model": "glm-4-6",
+        "model": extract_model,
         "messages": [
             {"role": "system", "content": EXTRACT_SYSTEM_PROMPT},
             {"role": "user", "content": json.dumps({"originalInput": original_input, "storyDraft": story_draft}, ensure_ascii=False, indent=2)},
@@ -522,7 +532,8 @@ def plan_comic(
         "temperature": 0.25, "max_tokens": 2048,
         "enable_thinking": False, "stream": True,
     }
-    extracted_text = client.chat_completion(token, extract_request, f"{stage_id}-extract")
+    extracted_text = (complete_custom_llm(llm_settings, llm_api_key, extract_request, EXTRACTION_SCHEMA) if llm_settings
+                      else client.chat_completion(token, extract_request, f"{stage_id}-extract"))
     try:
         fenced = re.fullmatch(r"\s*```(?:json)?\s*\n(.*?)\n```\s*", extracted_text, flags=re.DOTALL | re.IGNORECASE)
         extracted = json.loads(fenced[1] if fenced else extracted_text)
@@ -544,9 +555,10 @@ def plan_comic(
     model_input["characters"] = characters
     model_input["coordinateSpace"] = "page"
     request_body["messages"][-1] = {"role": "user", "content": json.dumps(model_input, ensure_ascii=False, indent=2)}
-    request_body["model"] = "glm-4-6"
+    request_body["model"] = format_model
     request_body["temperature"] = 0.45
-    text = client.chat_completion(token, request_body, f"{stage_id}-format")
+    text = (complete_custom_llm(llm_settings, llm_api_key, request_body, COMIC_SCHEMA) if llm_settings
+            else client.chat_completion(token, request_body, f"{stage_id}-format"))
     try:
         # 允许完整 JSON 外的一层 Markdown 包装，不摘片段、不补截断内容。
         fenced = re.fullmatch(r"\s*```(?:json)?\s*\n(.*?)\n```\s*", text, flags=re.DOTALL | re.IGNORECASE)
@@ -562,5 +574,6 @@ def plan_comic(
         section["characterPromptsComplete"] = True
     plan["storyDraft"] = story_draft
     plan["visualStyle"] = visual_style
-    plan["planningModels"] = {"story": story_model, "extract": "glm-4-6", "format": "glm-4-6"}
+    plan["planningModels"] = {"story": story_model, "extract": extract_model, "format": format_model}
+    plan["planningProvider"] = llm_settings["provider"] if llm_settings else "novelai"
     return plan

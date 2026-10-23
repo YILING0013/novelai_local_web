@@ -2,6 +2,8 @@
 
 这是当前代码实际使用的三步提示词。每一步分别调用一次文字模型：先写故事，再整理画风与人物，最后设计漫画。
 
+三步提示词也可用于自定义 OpenAI、Claude、Gemini 或 DeepSeek 旧版接口。在“AI 制作漫画页 → AI 接口”保存地址、密钥和模型即可；下文 GLM/Xialong 的模型选择与参数描述适用于 NovelAI 模式。自定义接口使用自己保存的模型、输出长度和温度，并可在提取、分镜阶段启用 JSON Schema。接入方法见[使用自己的 AI API](ai-comic-local.md#使用自己的-ai-api)。
+
 修改前的版本已保存到 GitHub：[77cf098](https://github.com/YILING0013/novelai_local_web/commit/77cf098836dbd6cf9e3e9d07e5f75a1fb09cdf5b)。本文件展示该提交之后的新写法。
 
 ## 第一步：把输入写成短篇故事

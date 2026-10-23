@@ -59,7 +59,7 @@ def validate_lettering_options(payload):
     校验来自浏览器的台词和人工对应关系，不接受旧画框几何作为识别结果。
 
     Args:
-        payload: 包含 dialogues、assignments、reading_direction 和 language 的请求。
+        payload: 台词、逐区处理选择、阅读方向与语言；处理选择支持保留、台词、抹除或自定义文本。
 
     Returns:
         只包含文字重建所需字段的新字典。
@@ -86,17 +86,34 @@ def validate_lettering_options(payload):
                            "type": item.get("type", "speech"), "order": order})
         identifiers.add(item["id"])
     assignments = payload.get("assignments", {})
-    if (not isinstance(assignments, dict) or len(assignments) > 100
-            or any(not isinstance(key, str) or not key or (value is not None and (not isinstance(value, str) or value not in identifiers))
-                   for key, value in assignments.items())
-            or len({value for value in assignments.values() if value is not None}) != sum(value is not None for value in assignments.values())):
+    if not isinstance(assignments, dict) or len(assignments) > 100:
+        raise ExposableError("Provide at most 100 text region choices.", 400, "COMIC_ASSIGNMENTS_INVALID")
+    normalized_assignments = {}
+    for key, value in assignments.items():
+        if not isinstance(key, str) or not key or len(key) > 128:
+            raise ExposableError("A text region needs a valid ID.", 400, "COMIC_ASSIGNMENTS_INVALID")
+        if value is None or isinstance(value, str) and value in identifiers:
+            normalized_assignments[key] = value
+        elif isinstance(value, dict) and value.get("action") == "erase":
+            normalized_assignments[key] = {"action": "erase"}
+        elif isinstance(value, dict) and value.get("action") == "replace":
+            text = value.get("text")
+            direction = value.get("direction", "horizontal-tb")
+            if (not isinstance(text, str) or not text.strip() or len(text) > 2000
+                    or not isinstance(direction, str) or direction not in WRITING_DIRECTIONS):
+                raise ExposableError("Custom text needs 1 to 2000 characters and a supported direction.", 400, "COMIC_ASSIGNMENTS_INVALID")
+            normalized_assignments[key] = {"action": "replace", "text": text, "direction": direction}
+        else:
+            raise ExposableError("Choose a dialogue, keep, erase, or custom text for each region.", 400, "COMIC_ASSIGNMENTS_INVALID")
+    assigned_ids = [value for value in normalized_assignments.values() if isinstance(value, str)]
+    if len(set(assigned_ids)) != len(assigned_ids):
         raise ExposableError("Assign each dialogue to one detected text block.", 400, "COMIC_ASSIGNMENTS_INVALID")
     reading_direction = payload.get("reading_direction", "ltr")
     language = payload.get("language", "zh")
     if reading_direction not in ("ltr", "rtl") or language not in ("zh", "zh-CN", "zh-TW", "en", "ja"):
         raise ExposableError("Choose a supported language and reading direction.", 400, "COMIC_LETTERING_OPTIONS_INVALID")
     return {"dialogues": sorted(normalized, key=lambda item: item["order"]),
-            "assignments": dict(assignments), "reading_direction": reading_direction, "language": language}
+            "assignments": normalized_assignments, "reading_direction": reading_direction, "language": language}
 
 
 def _comparable(text):
@@ -111,7 +128,7 @@ def match_dialogues(blocks, dialogues, assignments):
     Args:
         blocks: 带 id、ocrText 和 confidence 的实际检测结果。
         dialogues: 已校验的规划台词。
-        assignments: 用户明确选择的 blockId 到 dialogueId 对应关系；null 表示保留原字。
+        assignments: 区域对应的台词 ID；null 保留原字，erase 只抹除，replace 使用自定义文本。
 
     Returns:
         新文字块列表；确定对应时填写 dialogueId，其余保持 needsReview。
@@ -123,7 +140,7 @@ def match_dialogues(blocks, dialogues, assignments):
     texts = [_comparable(block["ocrText"]) for block in blocks]
     scripts = [_comparable(item["text"]) for item in dialogues]
     repeated_texts, repeated_scripts = Counter(texts), Counter(scripts)
-    used = {value for value in assignments.values() if value is not None}
+    used = {value for value in assignments.values() if isinstance(value, str)}
     scores = [[SequenceMatcher(None, text, script).ratio() if text and script else 0
                for script in scripts] for text in texts]
     result = []
@@ -131,6 +148,12 @@ def match_dialogues(blocks, dialogues, assignments):
         item = {**block, "text": block["ocrText"], "dialogueId": None,
                 "needsReview": True, "reason": "unmatched-text", "applied": False}
         selected = assignments.get(block["id"])
+        if isinstance(selected, dict):
+            # 人工确认的区域无需 OCR 读对内容也可去字；空文本表示只清理底图。
+            item.update(text=selected.get("text", ""), direction=selected.get("direction", block.get("direction", "horizontal-tb")),
+                        editAction=selected["action"], needsReview=False, reason=None)
+            result.append(item)
+            continue
         if block["id"] in assignments and selected is None:
             item["reason"] = "kept-original"
         elif selected is None and dialogues and texts[index]:

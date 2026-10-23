@@ -111,7 +111,15 @@ function validatePage(page, allowWorkflow = true) {
         const asset = state[key];
         if (asset && (!image(asset.dataUrl) || !finite(asset.width) || asset.width <= 0 || !finite(asset.height) || asset.height <= 0)) throw new Error('Invalid comic AI image.');
       }
-      if (state.assignments && (typeof state.assignments !== 'object' || Array.isArray(state.assignments) || Object.values(state.assignments).some((value) => value !== null && typeof value !== 'string'))) throw new Error('Invalid comic AI assignment.');
+      if (state.assignments) {
+        if (typeof state.assignments !== 'object' || Array.isArray(state.assignments) || Object.keys(state.assignments).length > 100) throw new Error('Invalid comic AI assignment.');
+        for (const value of Object.values(state.assignments)) {
+          if (value === null || typeof value === 'string') continue;
+          if (!value || Array.isArray(value) || !['erase', 'replace'].includes(value.action)) throw new Error('Invalid comic AI assignment.');
+          // 自定义文本允许暂存空草稿；真正应用前由编辑器和请求入口检查非空。
+          if (value.action === 'replace' && (typeof value.text !== 'string' || value.text.length > 2000 || !['horizontal-tb', 'vertical-rl'].includes(value.direction))) throw new Error('Invalid comic AI custom text.');
+        }
+      }
       if (state.result) {
         const result = state.result;
         if (!/^[a-f0-9]{64}$/.test(result.sourceHash) || !collection(result.blocks) || !Array.isArray(result.unmatchedDialogueIds)

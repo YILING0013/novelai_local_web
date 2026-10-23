@@ -20,7 +20,8 @@ FRONTEND_FORBIDDEN = {
     "reCAPTCHA": re.compile(r"recaptcha", re.IGNORECASE),
     "反调试依赖": re.compile(r"disable-devtool|anti[-_]?debug", re.IGNORECASE),
     "安全媒体运行时": re.compile(r"secure[_-]?media|wasm[-_]?security|secure[-_]?runtime", re.IGNORECASE),
-    "非 NovelAI 模型": re.compile(r"\b(?:krea(?:2|muse)?|gemini|wan(?:2(?:\.2)?)?)\b", re.IGNORECASE),
+    # Gemini 已作为漫画编排的文字 API 接入；仍禁止引入其它图片生成器。
+    "非 NovelAI 图片模型": re.compile(r"\b(?:krea(?:2|muse)?|wan(?:2(?:\.2)?)?)\b", re.IGNORECASE),
     "其它生成器元数据": re.compile(
         r"stable\s+diffusion|\ba1111\b|automatic1111|parsewebuimetadata",
         re.IGNORECASE,

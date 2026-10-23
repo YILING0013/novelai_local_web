@@ -22,6 +22,7 @@ class LocalJsonStore:
 
     DEFAULTS = {
         "settings": {},
+        "comic-llm": {},
         "random-prompts": {
             "categories": [],
             "collections": [],
@@ -63,7 +64,7 @@ class LocalJsonStore:
     def _validate(self, name: str, value: Any) -> None:
         """校验三个固定集合的顶层 JSON 结构。"""
 
-        expected_type = dict if name in {"settings", "random-prompts", "notebook"} else list
+        expected_type = dict if name in {"settings", "comic-llm", "random-prompts", "notebook"} else list
         if not isinstance(value, expected_type):
             expected_name = "object" if expected_type is dict else "array"
             raise LocalStoreError(f"Local data file '{name}' must contain a JSON {expected_name}.")

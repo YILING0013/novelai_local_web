@@ -105,7 +105,7 @@ function createPanel(overrides = {}, cached = {}) {
   return {
     writes,
     snapshot: () => editorStateRef.current.getSnapshot(),
-    request: () => getAllParametersRef.current(),
+    request: (snapshot) => getAllParametersRef.current(snapshot),
     update: (next) => Object.assign(props, next),
     render() {
       for (let pass = 0; pass < 25; pass += 1) {
@@ -125,6 +125,23 @@ function elements(tree, type) {
   const children = React.Children.toArray(tree?.props?.children);
   return [tree?.type === type ? tree : null, ...children.flatMap((child) => elements(child, type))].filter(Boolean);
 }
+
+test('AI和手动来回切换时恢复同会话最新快照，切换画框时使用新框参数', () => {
+  for (const sameSession of [true, false]) {
+    const latest = { params: { seed: '42', width: 1216, height: 832 }, imagePreview: 'data:image/png;base64,latest',
+      characterTabs: [{ name: '最新角色', prompt: 'blue hair', disabled: true }], referenceImages: [{ id: 'latest-ref', disabled: true }] };
+    const stale = { params: { seed: '7', width: 832, height: 1216 } };
+    const editorRef = { current: { key: 1, getSnapshot: () => latest } };
+    const panel = createPanel({ editorStateRef: editorRef, editorSessionKey: sameSession ? 1 : 2, editorState: stale, params: sameSession ? latest.params : stale.params });
+    panel.render();
+    const restored = editorRef.current.getSnapshot();
+    assert.equal(restored.params.seed, sameSession ? '42' : '7');
+    assert.equal(restored.params.width, sameSession ? 1216 : 832);
+    assert.equal(restored.imagePreview, sameSession ? latest.imagePreview : null);
+    assert.equal(restored.characterTabs.length, sameSession ? 1 : 0);
+    assert.equal(restored.referenceImages.length, sameSession ? 1 : 0);
+  }
+});
 
 test('新分镜清空参数与角色，不读取或覆盖普通生成缓存，且不能选视频模型', () => {
   const panel = createPanel({}, {
@@ -164,6 +181,26 @@ test('重新载入分镜保留图生图、角色、参考图编辑态及实际�
   const reopened = createPanel({ editorState: snapshot, params: snapshot.params, positivePrompt: 'panel one' });
   reopened.render();
   assert.equal(JSON.stringify(reopened.snapshot()), JSON.stringify(snapshot));
+});
+
+test('批量请求读取另一个分镜的提示词、角色与图生图快照，不改当前表单', () => {
+  const panel = createPanel({ positivePrompt: 'visible frame', params: { model: 'nai-diffusion-4-5-full', seed: '10' } });
+  panel.render();
+  const before = JSON.stringify(panel.snapshot());
+  const model = 'nai-diffusion-5-full';
+  const request = panel.request({
+    parameterState: { params: { model, seed: '99', width: 832, height: 1216, strength: 0.37, noise: 0.1, characterPositionMode: 'custom' },
+      imagePreview: 'data:image/png;base64,other', editedImageData: 'data:image/png;base64,edit',
+      characterTabs: [{ name: 'Other', prompt: 'red hair', uc: 'hat', center: { x: 0.2, y: 0.7 } }] },
+    promptsByModel: { [model]: { positivePrompt: 'other frame', negativePrompt: 'blur' } }, vibeImages: [],
+  });
+  assert.equal(request.positivePrompt, 'other frame'); assert.equal(request.negativePrompt, 'blur');
+  assert.equal(request.width, 832); assert.equal(request.seed, '99');
+  assert.equal(request.imageToImage.strength, 0.37); assert.equal(request.imageToImage.image, 'data:image/png;base64,other');
+  assert.equal(request.characterControl.characterPrompts[0].prompt, 'red hair');
+  assert.equal(request.characterControl.characterPrompts[0].center.y, 0.7);
+  assert.equal(JSON.stringify(panel.snapshot()), before);
+  assert.equal(panel.request().positivePrompt, 'visible frame');
 });
 
 test('切框或退出漫画后丢弃旧会话的异步 Vibe 更新，重开未完成 Vibe 可重试', async () => {

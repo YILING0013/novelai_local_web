@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyComicAIImage, buildComicAIParams, buildComicAISections, comicAIImagePlacement, comicAISectionFingerprint, validateComicAIPlan } from './comicAI.mjs';
+import { applyComicAIImage, buildComicAIParams, buildComicAISections, comicAIControlPosition, positionComicAIControls, comicAIImagePlacement, comicAISectionFingerprint, validateComicAIPlan } from './comicAI.mjs';
 import { applyTemplate, createComicPage, createRectanglePanel, panelBounds } from './comicDocument.mjs';
 import { createComicElement } from './comicElements.mjs';
 
@@ -14,6 +14,28 @@ function planFixture() {
       { id: 'd2', panelId: 'p2', speakerId: null, text: '第二天', type: 'narration', order: 2, direction: 'vertical' }],
   }] };
 }
+
+test('单框坐标直接预览，多框控制点约束到所属多边形且实际生图使用修正坐标', () => {
+  const single = createComicPage();
+  const plan = planFixture();
+  assert.deepEqual(positionComicAIControls(single, plan).sections[0].instances[0].center, plan.sections[0].instances[0].center);
+  const page = createComicPage('portrait', 'two-vertical');
+  const section = plan.sections[0];
+  section.panels.forEach((panel, index) => { panel.id = page.panels[index].id; section.instances[index].panelId = panel.id; });
+  section.instances[0].center = { x: 0.98, y: 0.8 };
+  const positioned = positionComicAIControls(page, plan);
+  const first = positioned.sections[0].instances[0];
+  const control = comicAIControlPosition(page, positioned.sections[0], first);
+  const frame = panelBounds(page.panels[0]);
+  assert.ok(control.point.x >= frame.x && control.point.x <= frame.x + frame.width);
+  assert.ok(control.point.y >= frame.y && control.point.y <= frame.y + frame.height);
+  assert.deepEqual(positionComicAIControls(page, positioned), positioned);
+  const params = buildComicAIParams(positioned.sections[0], { characters: positioned.characters });
+  for (const axis of ['x', 'y']) assert.ok(Math.abs(params.characterControl.characterPrompts[0].center[axis] - first.center[axis]) <= 0.0005);
+  page.panels[0].points = [{ x: 32, y: 32 }, { x: 420, y: 32 }, { x: 32, y: 600 }];
+  const triangle = comicAIControlPosition(page, section, section.instances[0]);
+  assert.ok((triangle.point.x - 32) / 388 + (triangle.point.y - 32) / 568 < 1);
+});
 
 test('单框允许自由编排，多格参考保留编号、阅读方向及每区独立坐标', () => {
   assert.deepEqual(buildComicAISections(createComicPage())[0], { id: 0, width: 832, height: 1216, referencePanels: [] });

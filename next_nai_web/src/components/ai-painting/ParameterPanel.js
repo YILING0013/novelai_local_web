@@ -131,7 +131,8 @@ const ParameterPanel = ({
 }) => {
   const { t } = useI18n();
   const theme = useTheme();
-  const initialEditorState = useRef(editorState).current;
+  // AI/手动切换只卸载编辑控件；重新打开同一会话时读取最后快照，不能用父层早先渲染的旧参数。
+  const initialEditorState = useRef(editorStateRef?.current?.key === editorSessionKey ? editorStateRef.current.getSnapshot() : editorState).current;
   const accountDefaultModel = normalizePaintingModelId('nai-diffusion-4-5-full');
   const defaultParams = useMemo(() => ({
     model: accountDefaultModel,
@@ -160,17 +161,17 @@ const ParameterPanel = ({
     autoSmea: false,
   }), [accountDefaultModel]);
 
-  const [params, setParams] = useState(() => ({ ...defaultParams, ...editorState?.params }));
+  const [params, setParams] = useState(() => ({ ...defaultParams, ...initialEditorState?.params }));
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [metadataDialogOpen, setMetadataDialogOpen] = useState(false);
   const [extractedMetadata, setExtractedMetadata] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isVibeDragging, setIsVibeDragging] = useState(false);
-  const [imagePreview, setImagePreview] = useState(editorState?.imagePreview || null);
+  const [imagePreview, setImagePreview] = useState(initialEditorState?.imagePreview || null);
   const [editorKey, setEditorKey] = useState(0);
   const [editorOpen, setEditorOpen] = useState(false);
-  const [characterTabs, setCharacterTabs] = useState(editorState?.characterTabs || []);
-  const [referenceImages, setReferenceImages] = useState(editorState?.referenceImages || []);
+  const [characterTabs, setCharacterTabs] = useState(initialEditorState?.characterTabs || []);
+  const [referenceImages, setReferenceImages] = useState(initialEditorState?.referenceImages || []);
   const [loadedFromCache, setLoadedFromCache] = useState(false);
   const [randomPromptEnabled, setRandomPromptEnabled] = useState(false);
   const [randomPromptConfig, setRandomPromptConfig] = useState(null);
@@ -184,8 +185,8 @@ const ParameterPanel = ({
   const [characterEditorOpen, setCharacterEditorOpen] = useState(false);
   const [editingCharacterPrompt, setEditingCharacterPrompt] = useState({ index: null, field: '', text: '' });
   const smeaRef = useRef(false);
-  const [editedImageData, setEditedImageData] = useState(editorState?.editedImageData || null);
-  const [directorToolParams, setDirectorToolParams] = useState(editorState?.directorToolParams || null);
+  const [editedImageData, setEditedImageData] = useState(initialEditorState?.editedImageData || null);
+  const [directorToolParams, setDirectorToolParams] = useState(initialEditorState?.directorToolParams || null);
 
   useEffect(() => {
     if (!editorStateRef) return;
@@ -1339,23 +1340,23 @@ const ParameterPanel = ({
     ));
   });
 
-  const getVibeTransferData = useCallback(() => {
-    if (!isNovelAIVibeModel(params.model, isInpaintMode)) {
+  const getVibeTransferData = useCallback((sourceParams = params, sourceVibes = vibeImages) => {
+    if (!isNovelAIVibeModel(sourceParams.model, isInpaintMode)) {
       return null;
     }
 
     const imageReferenceActive = !!(
-      isNovelAIDirectorReferenceModel(params.model)
-      && params.director_reference_images_cached
-      && params.director_reference_images_cached.length > 0
+      isNovelAIDirectorReferenceModel(sourceParams.model)
+      && sourceParams.director_reference_images_cached
+      && sourceParams.director_reference_images_cached.length > 0
     );
-    const activeVibes = vibeImages.filter(item => item.isTemporarilyDisabled !== true).slice(0, MAX_ACTIVE_VIBES);
+    const activeVibes = sourceVibes.filter(item => item.isTemporarilyDisabled !== true).slice(0, MAX_ACTIVE_VIBES);
 
     if (imageReferenceActive || activeVibes.length === 0) {
       return null;
     }
 
-    if (isV4Model(params.model)) {
+    if (isV4Model(sourceParams.model)) {
       const v4Vibes = activeVibes.filter(item => item.isV4Vibe && item.status === 'converted');
 
       if (v4Vibes.length === 0) {
@@ -1373,13 +1374,13 @@ const ParameterPanel = ({
       informationExtracted: activeVibes.map(item => item.informationExtracted),
       referenceStrength: activeVibes.map(item => item.referenceStrength)
     };
-  }, [vibeImages, params.model, params.director_reference_images_cached, isInpaintMode]);
+  }, [vibeImages, params, isInpaintMode]);
 
-  const getCharacterData = useCallback(() => {
-    if (isNovelAIV5Model(params.model)) {
+  const getCharacterData = useCallback((sourceParams = params, sourceTabs = characterTabs) => {
+    if (isNovelAIV5Model(sourceParams.model)) {
       return buildNovelAIV5CharacterControl(
-        characterTabs,
-        params.characterPositionMode === 'custom',
+        sourceTabs,
+        sourceParams.characterPositionMode === 'custom',
       );
     }
 
@@ -1388,46 +1389,53 @@ const ParameterPanel = ({
       col: { 'A': 0.1, 'B': 0.3, 'C': 0.5, 'D': 0.7, 'E': 0.9 }
     };
     const getCenter = (pos) => ({ x: positionMapping.col[pos.charAt(0)], y: positionMapping.row[pos.charAt(1)] });
-    const activeCharacterTabs = characterTabs.filter(tab => tab.isTemporarilyDisabled !== true).slice(0, MAX_ACTIVE_CHARACTERS);
+    const activeCharacterTabs = sourceTabs.filter(tab => tab.isTemporarilyDisabled !== true).slice(0, MAX_ACTIVE_CHARACTERS);
 
     return {
       characterPrompts: activeCharacterTabs.map(t => ({ prompt: t.prompt, uc: t.uc, center: getCenter(t.position) })),
       v4_prompt_char_captions: activeCharacterTabs.map(t => ({ char_caption: t.prompt, centers: [getCenter(t.position)] })),
       v4_negative_prompt_char_captions: activeCharacterTabs.map(t => ({ char_caption: t.uc, centers: [getCenter(t.position)] })),
-      aiDecidePosition: activeCharacterTabs.length > 0 ? params.aiDecidePosition : false,
-      use_coords: activeCharacterTabs.length > 0 && !params.aiDecidePosition,
+      aiDecidePosition: activeCharacterTabs.length > 0 ? sourceParams.aiDecidePosition : false,
+      use_coords: activeCharacterTabs.length > 0 && !sourceParams.aiDecidePosition,
       enabledCharacterCount: activeCharacterTabs.length,
-      characterTabs: characterTabs
+      characterTabs: sourceTabs
     };
-  }, [characterTabs, params.aiDecidePosition, params.characterPositionMode, params.model]);
+  }, [characterTabs, params]);
 
-  const getAllParameters = useCallback(() => {
-    const normalizedParams = normalizeNovelAISmeaParams(params);
+  const getAllParameters = useCallback((snapshot = null) => {
+    // 连续生成使用每个画框保存的编辑态，无需切换可见表单或等待 React 更新。
+    const state = snapshot?.parameterState;
+    const sourceParams = state?.params || params;
+    const prompts = snapshot ? (snapshot.promptsByModel[sourceParams.model] || { positivePrompt: '', negativePrompt: '' }) : { positivePrompt, negativePrompt };
+    const sourceImage = state ? state.imagePreview : imagePreview;
+    const sourceEditedImage = state ? state.editedImageData : editedImageData;
+    const sourceDirector = state ? state.directorToolParams : directorToolParams;
+    const normalizedParams = normalizeNovelAISmeaParams(sourceParams);
     const allParams = {
       ...normalizedParams,
-      positivePrompt: extractActiveContent(positivePrompt, { processRandomPrompts: randomPromptEnabled, randomPromptConfig }),
-      negativePrompt: extractActiveContent(negativePrompt, { processRandomPrompts: randomPromptEnabled, randomPromptConfig }),
-      vibeTransfer: getVibeTransferData(),
-      characterControl: getCharacterData()
+      positivePrompt: extractActiveContent(prompts.positivePrompt, { processRandomPrompts: randomPromptEnabled, randomPromptConfig }),
+      negativePrompt: extractActiveContent(prompts.negativePrompt, { processRandomPrompts: randomPromptEnabled, randomPromptConfig }),
+      vibeTransfer: getVibeTransferData(sourceParams, snapshot ? snapshot.vibeImages : vibeImages),
+      characterControl: getCharacterData(sourceParams, state ? state.characterTabs || [] : characterTabs)
     };
 
-    if (!isNovelAIDirectorReferenceModel(params.model)) {
+    if (!isNovelAIDirectorReferenceModel(sourceParams.model)) {
       NOVELAI_DIRECTOR_REFERENCE_PARAM_KEYS.forEach((key) => delete allParams[key]);
     }
 
-    if (imagePreview) {
+    if (sourceImage) {
       allParams.imageToImage = {
-        image: imagePreview,
-        strength: params.strength,
-        noise: params.noise,
-        ...(editedImageData && { editedImage: editedImageData }),
-        ...(directorToolParams && { directorTools: { active: true, tool: directorToolParams.type, params: directorToolParams.params || { enabled: true } } })
+        image: sourceImage,
+        strength: sourceParams.strength,
+        noise: sourceParams.noise,
+        ...(sourceEditedImage && { editedImage: sourceEditedImage }),
+        ...(sourceDirector && { directorTools: { active: true, tool: sourceDirector.type, params: sourceDirector.params || { enabled: true } } })
       };
     }
     return sanitizeNovelAIReferenceParams(sanitizeNovelAIV5GenerationParams(allParams), isInpaintMode);
   }, [params, positivePrompt, negativePrompt, randomPromptEnabled, randomPromptConfig,
     getVibeTransferData, getCharacterData, imagePreview, editedImageData,
-    directorToolParams, isInpaintMode]);
+    directorToolParams, isInpaintMode, vibeImages, characterTabs]);
 
   useEffect(() => {
     if (getAllParametersRef) getAllParametersRef.current = getAllParameters;

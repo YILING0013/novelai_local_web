@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
-import { applyComicAIImage, buildComicAIParams, buildComicAISections, comicAISectionFingerprint, validateComicAIPlan } from './comicAI.mjs';
+import { applyComicAIImage, buildComicAIParams, buildComicAISections, comicAISectionFingerprint, positionComicAIControls, validateComicAIPlan } from './comicAI.mjs';
 import { createComicPage } from './comicDocument.mjs';
 import { buildComicLetteringElements } from './comicLettering.mjs';
 
@@ -49,7 +49,7 @@ test('新任务按有效订阅选择写作模型，保留已存草稿并忽略�
 });
 
 /** 执行真实工作流函数和画布回填函数，只替换网络、图片解码和磁盘存储。 */
-function studioScenario({ count = 1, failGeneration = null, input: inputOverrides = {}, hooks = {} } = {}) {
+function studioScenario({ count = 1, failGeneration = null, input: inputOverrides = {}, hooks = {}, llmSettings = null } = {}) {
   const first = { ...createComicPage(count === 2 ? 'spreadPortrait' : 'portrait'), id: 'page-one' };
   const second = { ...createComicPage(), id: 'page-two' };
   const plan = { version: 1, summary: '清晨旅行', storyDraft: '旅人在清晨出发，沿街走向车站。', visualStyle: '1.25::artist:example::, watercolor', planningModels: { story: 'xialong-v1', extract: 'glm-4-6', format: 'glm-4-6' }, characters: [], sections: Array.from({ length: count }, (_, id) => ({
@@ -89,12 +89,12 @@ function studioScenario({ count = 1, failGeneration = null, input: inputOverride
     onBusyChange: (value) => busyChanges.push(value),
   } };
   const context = {
-    page: first, input, isGenerating: false, generationBusy: false,
+    page: first, input, isGenerating: false, generationBusy: false, llmSettings,
     workflowRef, flight, displayedPageId, callbacks,
     terminal: new Set(['completed', 'failed', 'cancelled']),
     structuredClone, Date, Object, Set, Promise,
     createClientId: () => `task-${++sequence}`,
-    buildComicAIParams, buildComicAISections, comicAISectionFingerprint, validateComicAIPlan,
+    buildComicAIParams, buildComicAISections, comicAISectionFingerprint, positionComicAIControls, validateComicAIPlan,
     w: (zh) => zh, errorMessage: (cause) => cause.message,
     setWorkflow() {}, setBusy: (value) => { busy = value; }, setProgress: (value) => progress.push(value), setJob() {},
     setError: (value) => { if (value) errors.push(value); },
@@ -153,6 +153,34 @@ function studioScenario({ count = 1, failGeneration = null, input: inputOverride
   return scenario;
 }
 
+test('先编排不生图，确认预览后使用调整坐标且不重复请求文字模型', async () => {
+  const scenario = studioScenario();
+  await scenario.controls.run('plan');
+  assert.equal(scenario.requests.length, 0);
+  assert.equal(scenario.localJobs.length, 0);
+  assert.equal(scenario.planRequests.length, 1);
+  scenario.workflowRef.current.plan.sections[0].instances[0].center = { x: 0.25, y: 0.75 };
+  await scenario.controls.run('resume');
+  assert.equal(scenario.requests.length, 1);
+  assert.equal(scenario.planRequests.length, 1);
+  assert.deepEqual(scenario.requests[0].params.characterControl.characterPrompts[0].center, { x: 0.25, y: 0.75 });
+});
+
+test('区域擦除和自定义文本原样交给本地重建，重复应用只读取原图且不再付费生图', async () => {
+  const scenario = studioScenario();
+  await scenario.controls.run('full');
+  const original = scenario.workflowRef.current.sections[0].originalImage.dataUrl;
+  const assignments = { 'text-one': { action: 'erase' }, 'text-two': { action: 'replace', text: '新的对白', direction: 'vertical-rl' } };
+  scenario.workflowRef.current.sections[0].assignments = assignments;
+  await scenario.controls.run('rebuild', 0);
+  await scenario.controls.run('rebuild', 0);
+  assert.equal(scenario.requests.length, 1);
+  assert.equal(scenario.planRequests.length, 1);
+  assert.deepEqual(scenario.localJobs.filter((job) => job.action === 'comic-lettering').map((job) => job.image), [original, original, original]);
+  assert.deepEqual(scenario.localJobs.at(-1).assignments, assignments);
+  assert.deepEqual(scenario.errors, []);
+});
+
 test('一键流程通过同一请求编排故事、画风人物和分镜，保留三阶段信息并回填图像', async () => {
   const scenario = studioScenario({ input: { model: 'xialong-v1' } });
   await scenario.controls.run('full');
@@ -174,6 +202,15 @@ test('一键流程通过同一请求编排故事、画风人物和分镜，保�
   assert.ok(state.cleanedImage.dataUrl.includes('cleaned-0'));
   assert.deepEqual(scenario.errors, []);
   assert.deepEqual(scenario.busyChanges, [true, false]);
+});
+
+test('自定义接口编排时显示所选模型，项目和编排请求不携带连接配置', async () => {
+  const scenario = studioScenario({ llmSettings: { provider: 'claude', baseUrl: 'https://proxy.example.test', model: 'writer-model', storyModel: '' } });
+  await scenario.controls.run('plan');
+  assert.deepEqual(scenario.errors, []);
+  assert.ok(scenario.progress.includes('正在写故事、整理画风与人物并设计分镜（claude · writer-model）'));
+  assert.ok(!JSON.stringify(scenario.planRequests).includes('proxy.example.test'));
+  assert.ok(!JSON.stringify(scenario.getPage('page-one')).includes('proxy.example.test'));
 });
 
 test('仅贴原生prompt即可一键制作，保留权重和人物描述且不注入默认画风', async () => {

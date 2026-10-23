@@ -92,7 +92,7 @@ test('旧尺寸项目与新AI页面可同包导入，保留原图、计划、参
   const text = createComicElement('text', { x: 80, y: 80, width: 100, height: 50 }, { text: '你好' });
   const draft = applyComicAIImage(reference, 0, image, { taskId: 'workflow', textElements: [text] });
   draft.aiWorkflow = { version: 1, id: 'workflow', sourceInput, referenceSnapshot: reference, plan, sections: { '0': {
-    status: 'completed', originalImage: image, cleanedImage: image, assignments: { 'text-1': 'd1' },
+    status: 'completed', originalImage: image, cleanedImage: image, assignments: { 'text-1': 'd1', 'text-2': { action: 'erase' }, 'text-3': { action: 'replace', text: '自定义内容', direction: 'vertical-rl' }, 'text-4': { action: 'replace', text: '', direction: 'horizontal-tb' } },
     result: { sourceHash: 'a'.repeat(64), image: { id: 'gallery-image' }, mask: { id: 'gallery-mask' }, unmatchedDialogueIds: [], blocks: [{
       id: 'text-1', bounds: { x: 48, y: 48, width: 100, height: 50 }, direction: 'horizontal-tb', ocrText: '你号', text: '你好', dialogueId: 'd1',
       needsReview: false, applied: true, reason: null, color: '#111111', fontSize: 24, confidence: 0.9,
@@ -131,6 +131,8 @@ test('旧尺寸项目与新AI页面可同包导入，保留原图、计划、参
     (workflow) => { workflow.referenceSnapshot.aiWorkflow = { version: 1 }; },
     (workflow) => { workflow.sections['0'].originalImage.dataUrl = 'https://example.com/image.png'; },
     (workflow) => { workflow.sections['0'].result.blocks[0].bounds.width = -1; },
+    (workflow) => { workflow.sections['0'].assignments['text-2'] = { action: 'unknown' }; },
+    (workflow) => { workflow.sections['0'].assignments['text-3'].direction = 'unsupported'; },
   ]) {
     const zip = await JSZip.loadAsync(bytes);
     const manifest = JSON.parse(await zip.file('comic-project.json').async('string'));
