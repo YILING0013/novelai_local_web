@@ -8,6 +8,7 @@ import * as v5Params from './utils/novelAIV5Params.mjs';
 import * as referenceParams from './utils/novelAIReferenceParams.mjs';
 import * as promptTokenizer from './PromptEditor/novelAIImageTokenizer.mjs';
 import * as parameterMapping from './utils/parameterMapping.js';
+import * as versionWorkspace from './utils/versionWorkspace.mjs';
 
 const require = createRequire(import.meta.url);
 const { transformSync } = require('next/dist/build/swc');
@@ -83,6 +84,7 @@ function createPanel(overrides = {}, cached = {}) {
     '@mui/icons-material': new Proxy({}, { get: (_target, name) => name }),
     './utils/modelUtils': modelUtils,
     './utils/parameterMapping': parameterMapping,
+    './utils/versionWorkspace.mjs': versionWorkspace,
     './PromptEditor/novelAIImageTokenizer.mjs': promptTokenizer,
     './PromptEditor': { extractActiveContent: (value) => value, ExpandedPromptDialog: 'ExpandedPromptDialog' },
     '../../utils/ApiClient': { __esModule: true, default: { getRandomPromptConfig: async () => ({ enabled: false }) } },
@@ -126,6 +128,26 @@ function elements(tree, type) {
   return [tree?.type === type ? tree : null, ...children.flatMap((child) => elements(child, type))].filter(Boolean);
 }
 
+test('历史版本恢复后 V4 精确角色坐标与局部重绘遮罩进入真实请求', () => {
+  const saved = {
+    params: { model: 'nai-diffusion-4-5-full', width: 1024, height: 1024, aiDecidePosition: false, strength: 0.7 },
+    characterTabs: [{ name: 'Hero', prompt: 'blue hair', uc: '', position: 'A4', center: { x: 0.12, y: 0.73 } }],
+    imagePreview: 'data:image/png;base64,source',
+    restoredMask: { mask: 'data:image/png;base64,mask', inpaintStrength: 0.8, disabledOriginalImage: true, colorCorrect: false },
+  };
+  const panel = createPanel({ editorState: saved, params: saved.params, positivePrompt: 'rain', negativePrompt: '' });
+  const tree = panel.render();
+  assert.equal(JSON.stringify(panel.request().characterControl.characterPrompts[0].center), JSON.stringify({ x: 0.12, y: 0.73 }));
+  assert.equal(panel.request().imageToImage.mask, saved.restoredMask.mask);
+  assert.equal(panel.request().imageToImage.inpaintStrength, 0.8);
+  const clearMask = elements(tree, 'Alert').find((alert) => alert.props.children === 'gallery.versionWorkspace.maskRestored')?.props.action;
+  assert.ok(clearMask);
+  clearMask.props.onClick();
+  panel.render();
+  assert.equal(panel.request().imageToImage.mask, undefined);
+  assert.equal(panel.request().imageToImage.image, saved.imagePreview);
+});
+
 test('AI和手动来回切换时恢复同会话最新快照，切换画框时使用新框参数', () => {
   for (const sameSession of [true, false]) {
     const latest = { params: { seed: '42', width: 1216, height: 832 }, imagePreview: 'data:image/png;base64,latest',
@@ -168,7 +190,8 @@ test('重新载入分镜保留图生图、角色、参考图编辑态及实际�
     characterTabs: [{ name: 'Hero', prompt: 'blue hair', uc: 'hat', position: 'C3', colorId: 2 }],
     referenceImages: [{ id: 7, data: 'reference', displayUrl: 'data:image/png;base64,reference', disabled: true, strength: 0.4, fidelity: 0.8 }],
   };
-  const panel = createPanel({ editorState: saved, params: saved.params, positivePrompt: 'panel one', negativePrompt: 'low quality' });
+  const vibeImages = [{ id: 'vibe-1', image: 'data:image/png;base64,vibe', encoding: 'encoded', disabled: true, isTemporarilyDisabled: true }];
+  const panel = createPanel({ editorState: saved, params: saved.params, vibeImages, positivePrompt: 'panel one', negativePrompt: 'low quality' });
   panel.render();
   const snapshot = panel.snapshot();
   for (const key of ['imagePreview', 'editedImageData', 'directorToolParams', 'characterTabs', 'referenceImages']) {
@@ -178,6 +201,9 @@ test('重新载入分镜保留图生图、角色、参考图编辑态及实际�
   assert.equal(panel.request().seed, '4455');
   assert.equal(panel.request().imageToImage.strength, 0.4);
   assert.equal(panel.request().characterControl.characterPrompts[0].prompt, 'blue hair');
+  assert.equal(panel.request().version_editor.parameterState.referenceImages[0].data, 'reference');
+  assert.equal(panel.request().version_editor.parameterState.referenceImages[0].disabled, true);
+  assert.equal(JSON.stringify(panel.request().version_editor.vibeImages), JSON.stringify(vibeImages));
   const reopened = createPanel({ editorState: snapshot, params: snapshot.params, positivePrompt: 'panel one' });
   reopened.render();
   assert.equal(JSON.stringify(reopened.snapshot()), JSON.stringify(snapshot));

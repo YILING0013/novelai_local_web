@@ -17,7 +17,7 @@ export const buildNovelAIImageRequestParams = (params, isSmeaSupported) => ({
   height: params.height || 1024,
   promptGuidanceRescale: params.promptGuidanceRescale || 0.0,
   noise_schedule: params.noiseSchedule || 'native',
-  seed: params.seed || Math.floor(Math.random() * 4294967295),
+  seed: params.seed === '' || params.seed == null ? Math.floor(Math.random() * 4294967295) : params.seed,
   sampler: params.sampler || 'k_euler',
   // V4+ 模型不支持 SMEA / SMEA DYN，请求层继续兜底，避免旧缓存值透传。
   sm: isSmeaSupported ? params.smea || false : false,

@@ -16,6 +16,7 @@ import {
   isNovelAIV4OrAboveModel as isV4Model,
   isNovelAIVibeModel,
   normalizePaintingModelId,
+  normalizeNovelAICharacterCenter,
   normalizeNovelAISmeaParams,
   removeNovelAIUCPresetParams,
   sanitizeNovelAIV5GenerationParams,
@@ -66,6 +67,7 @@ import { useI18n } from '@/i18n/I18nProvider';
 import { forwardPaintingPanelError } from './Generation/errorRecords.mjs';
 import { getEnabledNovelAICharacterPromptTexts } from './PromptEditor/novelAIImageTokenizer.mjs';
 import { getPublicToolErrorMessageKey } from '@/utils/publicToolErrors.mjs';
+import { createVersionEditorSnapshot } from './utils/versionWorkspace.mjs';
 
 
 // 模型选项
@@ -187,6 +189,7 @@ const ParameterPanel = ({
   const smeaRef = useRef(false);
   const [editedImageData, setEditedImageData] = useState(initialEditorState?.editedImageData || null);
   const [directorToolParams, setDirectorToolParams] = useState(initialEditorState?.directorToolParams || null);
+  const [restoredMask, setRestoredMask] = useState(initialEditorState?.restoredMask || null);
 
   useEffect(() => {
     if (!editorStateRef) return;
@@ -195,12 +198,12 @@ const ParameterPanel = ({
       key: editorSessionKey,
       defaultParams,
       getSnapshot: () => ({
-        params, imagePreview, editedImageData, directorToolParams,
+        params, imagePreview, editedImageData, directorToolParams, restoredMask,
         characterTabs, referenceImages,
       }),
     };
   }, [editorStateRef, editorSessionKey, defaultParams, params, imagePreview, editedImageData,
-    directorToolParams, characterTabs, referenceImages]);
+    directorToolParams, restoredMask, characterTabs, referenceImages]);
 
   const handleReferenceImageChange = (refData) => {
     const supportedRefData = isNovelAIDirectorReferenceModel(params.model) ? refData : null;
@@ -430,6 +433,7 @@ const ParameterPanel = ({
   const resetEditorState = () => {
     setEditedImageData(null);
     setDirectorToolParams(null);
+    setRestoredMask(null);
   };
 
   useEffect(() => {
@@ -771,6 +775,7 @@ const ParameterPanel = ({
   const handleCloseEditor = (exportData) => {
     if (exportData) {
       if (exportData.editedImage) {
+        setRestoredMask(null);
         setImagePreview(exportData.editedImage);
         setEditedImageData(exportData.editedImage);
       }
@@ -821,6 +826,8 @@ const ParameterPanel = ({
 
             resolve({
               id: createClientId(),
+              name: file.name,
+              originalImage: reader.result,
               image: canvas.toDataURL('image/png'),
               informationExtracted: 0.7,
               referenceStrength: 0.5,
@@ -914,6 +921,8 @@ const ParameterPanel = ({
 
         newVibes.push({
           id: createClientId(),
+          name: file.name,
+          originalImage: base64,
           image: imageB64,
           thumbnail: cachedVibe.thumbnail || (imageB64 ? await createThumbnail(imageB64) : null),
           hash: cachedVibe.id || hash,
@@ -924,10 +933,13 @@ const ParameterPanel = ({
           isReadOnly: !cachedVibe.image,
           encodingInfo: { name: cachedVibe.name },
           encoding: encodingInfo ? encodingInfo.encoding : null,
+          encodings: cachedVibe.encodings,
+          importInfo: cachedVibe.importInfo,
         });
       } else {
         newVibes.push({
           id: createClientId(),
+          name: file.name,
           image: base64,
           thumbnail: thumbnail,
           hash: hash,
@@ -954,12 +966,12 @@ const ParameterPanel = ({
         const data = JSON.parse(text);
         if (data.identifier === 'novelai-vibe-transfer') {
           const vibe = await processVibeFile(data, currentModelType, params.model);
-          if (vibe) newVibes.push(vibe);
+          if (vibe) newVibes.push({ ...vibe, filename: file.name });
         } else if (data.identifier === 'novelai-vibe-transfer-bundle') {
           for (const vibeData of data.vibes) {
             if (getEnabledItemCount(vibeImages) + getEnabledItemCount(newVibes) >= MAX_ACTIVE_VIBES) break;
             const vibe = await processVibeFile(vibeData, currentModelType, params.model);
-            if (vibe) newVibes.push(vibe);
+            if (vibe) newVibes.push({ ...vibe, filename: file.name });
           }
         }
       } catch (e) {
@@ -1018,6 +1030,7 @@ const ParameterPanel = ({
 
     const result = {
       id: createClientId(),
+      name: data.name,
       image: imageB64,
       thumbnail: thumbnail || null,
       hash: hash,
@@ -1028,6 +1041,8 @@ const ParameterPanel = ({
       isReadOnly: !hasImage,
       encodingInfo: { name: data.name },
       encoding: isConverted ? encodingInfo.encoding : null,
+      encodings: data.encodings,
+      importInfo: data.importInfo,
     };
 
     if (!result.image && result.status === 'unconverted') {
@@ -1075,6 +1090,8 @@ const ParameterPanel = ({
         vibe.encoding = encodingData[firstKey].encoding;
         vibe.status = 'converted';
         vibe.encodingInfo = { name: cached.name };
+        vibe.encodings = cached.encodings;
+        vibe.importInfo = cached.importInfo;
       } else {
         vibe.encoding = null;
         vibe.status = 'unconverted';
@@ -1133,7 +1150,10 @@ const ParameterPanel = ({
       };
 
       await addVibeToCache(vibeJson, hash, model, vibe.informationExtracted);
-      setVibeImages(prev => prev.map((item, i) => i === index ? { ...item, status: 'converted', encoding: encoding, encodingInfo: { name } } : item));
+      setVibeImages(prev => prev.map((item, i) => i === index ? {
+        ...item, status: 'converted', encoding, encodingInfo: { name },
+        encodings: vibeJson.encodings, importInfo: vibeJson.importInfo,
+      } : item));
       setToast({ open: true, message: t('painting.workspace.notifications.vibeConverted'), severity: 'success' });
     } catch (error) {
       console.error("Vibe conversion failed:", error);
@@ -1384,17 +1404,14 @@ const ParameterPanel = ({
       );
     }
 
-    const positionMapping = {
-      row: { '1': 0.1, '2': 0.3, '3': 0.5, '4': 0.7, '5': 0.9 },
-      col: { 'A': 0.1, 'B': 0.3, 'C': 0.5, 'D': 0.7, 'E': 0.9 }
-    };
-    const getCenter = (pos) => ({ x: positionMapping.col[pos.charAt(0)], y: positionMapping.row[pos.charAt(1)] });
+    // 恢复版本时保留原始精确坐标；用户点选网格会同时更新 center 与 position。
+    const getCenter = (tab) => normalizeNovelAICharacterCenter(tab.center, tab.position);
     const activeCharacterTabs = sourceTabs.filter(tab => tab.isTemporarilyDisabled !== true).slice(0, MAX_ACTIVE_CHARACTERS);
 
     return {
-      characterPrompts: activeCharacterTabs.map(t => ({ prompt: t.prompt, uc: t.uc, center: getCenter(t.position) })),
-      v4_prompt_char_captions: activeCharacterTabs.map(t => ({ char_caption: t.prompt, centers: [getCenter(t.position)] })),
-      v4_negative_prompt_char_captions: activeCharacterTabs.map(t => ({ char_caption: t.uc, centers: [getCenter(t.position)] })),
+      characterPrompts: activeCharacterTabs.map(t => ({ prompt: t.prompt, uc: t.uc, center: getCenter(t) })),
+      v4_prompt_char_captions: activeCharacterTabs.map(t => ({ char_caption: t.prompt, centers: [getCenter(t)] })),
+      v4_negative_prompt_char_captions: activeCharacterTabs.map(t => ({ char_caption: t.uc, centers: [getCenter(t)] })),
       aiDecidePosition: activeCharacterTabs.length > 0 ? sourceParams.aiDecidePosition : false,
       use_coords: activeCharacterTabs.length > 0 && !sourceParams.aiDecidePosition,
       enabledCharacterCount: activeCharacterTabs.length,
@@ -1416,7 +1433,11 @@ const ParameterPanel = ({
       positivePrompt: extractActiveContent(prompts.positivePrompt, { processRandomPrompts: randomPromptEnabled, randomPromptConfig }),
       negativePrompt: extractActiveContent(prompts.negativePrompt, { processRandomPrompts: randomPromptEnabled, randomPromptConfig }),
       vibeTransfer: getVibeTransferData(sourceParams, snapshot ? snapshot.vibeImages : vibeImages),
-      characterControl: getCharacterData(sourceParams, state ? state.characterTabs || [] : characterTabs)
+      characterControl: getCharacterData(sourceParams, state ? state.characterTabs || [] : characterTabs),
+      version_editor: createVersionEditorSnapshot(state || {
+        params: sourceParams, characterTabs, referenceImages, imagePreview, editedImageData,
+        directorToolParams, restoredMask,
+      }, snapshot ? snapshot.vibeImages : vibeImages, prompts),
     };
 
     if (!isNovelAIDirectorReferenceModel(sourceParams.model)) {
@@ -1425,6 +1446,7 @@ const ParameterPanel = ({
 
     if (sourceImage) {
       allParams.imageToImage = {
+        ...(state ? state.restoredMask : restoredMask),
         image: sourceImage,
         strength: sourceParams.strength,
         noise: sourceParams.noise,
@@ -1435,7 +1457,7 @@ const ParameterPanel = ({
     return sanitizeNovelAIReferenceParams(sanitizeNovelAIV5GenerationParams(allParams), isInpaintMode);
   }, [params, positivePrompt, negativePrompt, randomPromptEnabled, randomPromptConfig,
     getVibeTransferData, getCharacterData, imagePreview, editedImageData,
-    directorToolParams, isInpaintMode, vibeImages, characterTabs]);
+    directorToolParams, restoredMask, isInpaintMode, vibeImages, characterTabs, referenceImages]);
 
   useEffect(() => {
     if (getAllParametersRef) getAllParametersRef.current = getAllParameters;
@@ -1652,6 +1674,10 @@ const ParameterPanel = ({
           </FormControl>
         </Box>
           <Box sx={{ pb: 2.5 }}>
+          {restoredMask && <Alert severity="info" sx={{ mb: 1 }}
+            action={<Button color="inherit" size="small" onClick={() => setRestoredMask(null)}>{t('gallery.versionWorkspace.clearMask')}</Button>}>
+            {t('gallery.versionWorkspace.maskRestored')}
+          </Alert>}
           {isNovelAIV5Model(params.model) && (
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
               {t('painting.workspace.parameters.modelV5Limitations')}

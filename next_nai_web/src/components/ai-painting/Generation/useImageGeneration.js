@@ -60,6 +60,10 @@ const useImageGeneration = () => {
         progress: 100,
         model: result.model || params.model || null,
       });
+      if (result.version && params.onVersionCreated) params.onVersionCreated(result.version);
+      if (result.versionError && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('novelai:version-save-failed'));
+      }
       return {
         id: `${Date.now()}-${params.index ?? 0}`,
         src: result.imageUrl || result.image,
@@ -68,6 +72,8 @@ const useImageGeneration = () => {
         cachedBlob: result.cachedBlob || null,
         saveError: result.saveError || null,
         savedFile: result.savedFile || null,
+        version: result.version || null,
+        versionError: result.versionError || null,
         objectUrlToRevoke: result.objectUrlToRevoke || null,
         seed: result.seed ?? params.seed ?? '',
         prompt: params.positivePrompt || '',
@@ -108,6 +114,7 @@ const useImageGeneration = () => {
     batchIdRef.current = batchId;
     batchController.initialize(batchSize);
     batchController.setParams(params);
+    let versionContext = params.version_context;
     setBatchStatus({ ...batchController.getStatus() });
 
     while (batchController.shouldContinue()) {
@@ -115,11 +122,21 @@ const useImageGeneration = () => {
       try {
         const imageResult = await startGeneration({
           ...batchController.getParams(),
+          version_context: versionContext,
+          onVersionCreated: params.onVersionCreated,
           batch_id: batchId,
           index: imageIndex,
           batch_size: batchSize,
         });
         if (!imageResult) throw createGenerationError(GENERATION_ERROR_CODES.GENERATION_FAILED);
+
+        // 无父版本的一批候选共用首张创建的作品；已有父版本时整批从同一节点分叉。
+        if (!versionContext && imageResult.version) {
+          versionContext = {
+            work_id: imageResult.version.work_id,
+            parent_version_id: imageResult.version.version_id,
+          };
+        }
 
         batchController.completeCurrentImage(true);
         setBatchStatus({ ...batchController.getStatus() });

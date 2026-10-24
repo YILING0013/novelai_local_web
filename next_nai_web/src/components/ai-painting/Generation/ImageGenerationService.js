@@ -55,6 +55,12 @@ function buildGenerationRequest(params) {
       ? params.characterControl.use_coords
       : Boolean(params.characterControl.aiDecidePosition);
   }
+  // 版本编辑态单独传给本地后端，不把禁用参考、原图和 Vibe 文件信息发给 NovelAI。
+  if (params.version_editor) {
+    requestBody.version_editor = params.version_editor;
+  } else if (Array.isArray(params.characterControl?.characterTabs)) {
+    requestBody.version_editor = { characterTabs: params.characterControl.characterTabs };
+  }
 
   if (params.vibeTransfer) {
     if (isV4Model(params.model)) {
@@ -100,6 +106,11 @@ function buildGenerationRequest(params) {
   if (params.batch_id) requestBody.batch_id = params.batch_id;
   if (Number.isInteger(params.index)) requestBody.index = params.index;
   if (Number.isInteger(params.batch_size)) requestBody.batch_size = params.batch_size;
+  // 本地版本关系由 Flask 截留，不能混入 NovelAI 的生成参数。
+  if (params.version_context) requestBody.version_context = {
+    work_id: params.version_context.work_id,
+    parent_version_id: params.version_context.parent_version_id,
+  };
   return requestBody;
 }
 
@@ -158,6 +169,8 @@ const generateImage = async (requestParams, onProgress = () => {}) => {
       cachedBlob,
       saveError: generatedImage.save_error || null,
       savedFile: generatedImage.saved_file || null,
+      version: generatedImage.version || null,
+      versionError: generatedImage.version_error || null,
       seed: generatedImage.seed ?? params.seed,
       completedAt: new Date().toISOString(),
       prompt: params.positivePrompt,

@@ -1,5 +1,42 @@
 const gallery = {
   "gallery": {
+    "versionWorkspace": {
+      "current": "{title} · Continue from v{number}",
+      "newHint": "The next generation starts a work with version history",
+      "save": "Save prompt version",
+      "history": "Work blueprint",
+      "newWork": "Start a new work",
+      "untitled": "Untitled work",
+      "title": "Work title",
+      "message": "Describe this change",
+      "cancel": "Cancel",
+      "saveHint": "Save prompts, characters and parameters without generating an image or spending Anlas. Existing versions stay unchanged.",
+      "loaded": "Version prompts, parameters and inputs restored. The next generation will branch from this version.",
+      "loading": "Restoring version…",
+      "saveFailed": "The image was generated, but its version could not be saved. Add the saved image to a work from the local gallery; do not generate it again.",
+      "maskRestored": "This version's inpainting mask has been restored and will be used for generation. Replacing or editing the source image clears it.",
+      "clearMask": "Clear mask"
+    },
+    "version": {
+      "title": "Work blueprints", "hint": "Compare, annotate and organize image branches. Reuse any node's parameters to continue.",
+      "chooseWork": "Choose a work", "allWorks": "All works", "newWork": "New work", "emptyWorks": "No works yet. Start with an image or save a prompt first.",
+      "workTitle": "Work title", "history": "Versions and branches", "noMessage": "No description", "root": "Initial version", "parentNumber": "From v{number}",
+      "rename": "Rename work", "continue": "Continue this version", "restore": "Restore as new version", "restoreHint": "Restoring adds a new version after the latest one and keeps the full history.",
+      "restoreMessage": "Restore v{number}", "promptOnly": "Prompt-only version · no image attached", "compareWith": "Compare with another version", "noCompare": "View selected version only",
+      "parameterChanges": "Parameter and character changes", "noParameterChanges": "Other parameters and characters are unchanged.", "commitFrom": "Save a new version from v{number}",
+      "attachImages": "Attach the {count} selected images", "useImageParameters": "Use image prompts and basic parameters (keep reference inputs)", "parametersJson": "Other parameters and characters (JSON)",
+      "message": "Describe this change", "commit": "Save new version", "saved": "Version saved. Existing history is preserved.", "invalidParameters": "Other parameters must be a valid JSON object.",
+      "addImages": "Add to work versions", "openOriginal": "Open the original image snapshot for v{number}", "viewOriginal": "View original", "mediaChanged": "Reference image or mask content changed.", "preservedParameters": "Advanced parameters and reference images are preserved. Continue in the painting workspace to adjust them."
+    },
+    "smart": {
+      "filters": "Smart filters", "orientation": "Orientation", "any": "Any", "portrait": "Portrait", "landscape": "Landscape", "square": "Square",
+      "tags": "Include tags", "tagsHint": "Comma separated; match all tags in positive, character or style prompts.", "excludeTags": "Exclude tags", "excludeHint": "Exclude images with these tags; this does not search negative prompts.",
+      "sort": "Sort by", "newest": "Newest first", "oldest": "Oldest first", "similarity": "Prompt similarity", "minSimilarity": "Minimum similarity (0–1)",
+      "apply": "Apply filters", "clear": "Clear filters", "saveCollection": "Save smart collection", "collections": "Smart collections", "noCollection": "No collection",
+      "collectionHint": "Collections store filters. New matching images appear automatically.", "collectionName": "Collection name", "saveAppliedHint": "Save the currently applied search, group and filters.",
+      "deleteCollection": "Delete collection", "deleteCollectionHint": "Delete the filters for “{name}”? Images will be kept.",
+      "findSimilar": "Find similar prompts", "similarHint": "Matches overlapping prompt tags, including characters and style. This is not visual recognition. Dismiss to leave similarity search."
+    },
     "sessionHistory": "This session's results",
     "editImage": "Open in image editor",
     "referencesTitle": "Reference gallery",

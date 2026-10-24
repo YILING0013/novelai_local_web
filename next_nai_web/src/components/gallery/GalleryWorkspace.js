@@ -4,13 +4,15 @@ import { createClientId } from '@/utils/browserCapabilities.mjs';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Box, Button, ButtonBase, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, InputAdornment, LinearProgress, Menu, MenuItem, Snackbar, Stack, TextField, Tooltip, Typography, useMediaQuery, useTheme } from '@mui/material';
-import { AddPhotoAlternateOutlined, CheckBoxOutlined, Close, CreateNewFolderOutlined, DeleteOutline, DeleteForeverOutlined, ArrowBack, DescriptionOutlined, DriveFileMoveOutlined, ImageOutlined, PaletteOutlined, Refresh, RestoreFromTrashOutlined, Search } from '@mui/icons-material';
+import { AddPhotoAlternateOutlined, CheckBoxOutlined, Close, CreateNewFolderOutlined, DeleteOutline, DeleteForeverOutlined, ArrowBack, DescriptionOutlined, DriveFileMoveOutlined, ImageOutlined, PaletteOutlined, Refresh, RestoreFromTrashOutlined, Search, FilterAltOutlined, History, BookmarkAddOutlined } from '@mui/icons-material';
 import apiClient from '@/utils/ApiClient';
 import { useI18n } from '@/i18n/I18nProvider';
 import GalleryDetailDialog from './GalleryDetailDialog';
 import GalleryMetadataDialog from './GalleryMetadataDialog';
+import GalleryVersionsDialog from './GalleryVersionsDialog';
 
 const PAGE_SIZE = 60;
+const EMPTY_FILTERS = { model: '', orientation: '', tags: '', negative_tags: '', sort: 'newest', similar_to: '', min_similarity: 0, collection_id: '' };
 
 /**
  * 参考图库与生成目录共用分页瀑布流，文件操作由本地后端完成。
@@ -49,12 +51,24 @@ export default function GalleryWorkspace({ source = 'references' }) {
   const [trashIds, setTrashIds] = useState(null);
   const [deleteIds, setDeleteIds] = useState(null);
   const [metadataTarget, setMetadataTarget] = useState(null);
+  const [versionTarget, setVersionTarget] = useState(null);
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [filterDraft, setFilterDraft] = useState(EMPTY_FILTERS);
+  const [collections, setCollections] = useState([]);
+  const [collectionName, setCollectionName] = useState('');
+  const [collectionDialog, setCollectionDialog] = useState(false);
+  const [deleteCollection, setDeleteCollection] = useState(null);
   const fileInputRef = useRef(null);
   const scrollRef = useRef(null);
   const moreRef = useRef(null);
   const requestVersionRef = useRef(0);
   const loadingMoreRef = useRef(false);
   const dragDepthRef = useRef(0);
+
+  useEffect(() => {
+    setFilters(EMPTY_FILTERS); setFilterDraft(EMPTY_FILTERS); setGroup(''); setQuery(''); setSearch(''); setTrash(false); setDetailId(null); setVersionTarget(null); setCollections([]);
+  }, [source]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setSearch(query.trim()), 250);
@@ -78,20 +92,22 @@ export default function GalleryWorkspace({ source = 'references' }) {
     setHasMore(false);
     setSelected(new Set());
     Promise.all([
-      apiClient.getGallery({ source, offset: 0, limit: PAGE_SIZE, group, q: search, trash }),
+      apiClient.getGallery({ source, offset: 0, limit: PAGE_SIZE, group, q: search, trash, ...filters }),
       apiClient.getGalleryGroups(source),
-    ]).then(([result, groupResult]) => {
+      apiClient.getGalleryCollections(source),
+    ]).then(([result, groupResult, collectionResult]) => {
       if (requestVersionRef.current !== version) return;
       setItems(result.items);
       setTotal(result.total);
       setHasMore(result.has_more);
       setGroups(groupResult.groups);
+      setCollections(collectionResult.collections);
       if (result.errors?.length) setError(t('gallery.scanErrors', { count: result.errors.length }));
     }).catch((requestError) => {
       if (requestVersionRef.current === version) setError(requestError.data?.error || requestError.message);
     }).finally(() => { if (requestVersionRef.current === version) setLoading(false); });
     return () => { requestVersionRef.current += 1; };
-  }, [source, group, search, trash, revision, t]);
+  }, [source, group, search, trash, revision, t, filters]);
 
   const loadMore = useCallback(async () => {
     if (loading || loadingMoreRef.current || !hasMore) return;
@@ -100,7 +116,7 @@ export default function GalleryWorkspace({ source = 'references' }) {
     setLoadingMore(true);
     setLoadMoreFailed(false);
     try {
-      const result = await apiClient.getGallery({ source, offset: items.length, limit: PAGE_SIZE, group, q: search, trash });
+      const result = await apiClient.getGallery({ source, offset: items.length, limit: PAGE_SIZE, group, q: search, trash, ...filters });
       if (version !== requestVersionRef.current) return;
       setItems((current) => [...current, ...result.items]);
       setTotal(result.total);
@@ -115,7 +131,7 @@ export default function GalleryWorkspace({ source = 'references' }) {
     finally {
       if (version === requestVersionRef.current) { setLoadingMore(false); loadingMoreRef.current = false; }
     }
-  }, [group, hasMore, items.length, loading, search, source, trash]);
+  }, [group, hasMore, items.length, loading, search, source, trash, filters]);
 
   useEffect(() => {
     if (!hasMore || loading || loadingMore || loadMoreFailed || !moreRef.current) return undefined;
@@ -218,6 +234,12 @@ export default function GalleryWorkspace({ source = 'references' }) {
     finally { setBusy(false); }
   };
 
+  const updateFilterDraft = (key, value) => {
+    setFilterDraft((current) => ({ ...current, [key]: value, collection_id: '' }));
+    // 编辑后使用当前控件值，不能再让已保存的收藏补回用户清空的字段。
+    if (filters.collection_id) setFilters({ ...filters, collection_id: '' });
+  };
+
   const detailIndex = items.findIndex((item) => item.id === detailId);
   const selectedIds = [...selected];
   const actionButtonSx = { minHeight: 34, px: 1.25, whiteSpace: 'nowrap', '& .MuiButton-startIcon': { mr: 0.5 }, '& .MuiButton-startIcon .MuiSvgIcon-root': { fontSize: 18 } };
@@ -237,24 +259,44 @@ export default function GalleryWorkspace({ source = 'references' }) {
       <Box><Typography variant="h5" sx={{ fontSize: { xs: 21, md: 24 } }}>{t(source === 'references' ? 'gallery.referencesTitle' : 'gallery.outputsTitle')}</Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{t(source === 'references' ? 'gallery.referencesHint' : 'gallery.outputsHint')}</Typography></Box>
       <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-        <TextField size="small" value={query} placeholder={t('gallery.search')} onChange={(event) => setQuery(event.target.value)}
+        <TextField size="small" value={query} placeholder={t('gallery.search')} onChange={(event) => { setQuery(event.target.value); if (filters.collection_id) setFilters({ ...filters, collection_id: '' }); }}
           inputProps={{ 'aria-label': t('gallery.search') }} sx={{ flex: '1 1 230px', maxWidth: { sm: 400 }, minWidth: 0, '& .MuiInputBase-root': { height: 36 } }}
           InputProps={{ startAdornment: <InputAdornment position="start"><Search sx={{ fontSize: 19 }} /></InputAdornment> }} />
-        <TextField select size="small" value={group} onChange={(event) => setGroup(event.target.value)}
+        <TextField select size="small" value={group} onChange={(event) => { setGroup(event.target.value); if (filters.collection_id) setFilters({ ...filters, collection_id: '' }); }}
           SelectProps={{ displayEmpty: true, inputProps: { 'aria-label': t('gallery.group') } }}
           sx={{ flex: { xs: '1 1 145px', sm: '0 1 190px' }, minWidth: 130, '& .MuiInputBase-root': { height: 36 } }}>
           <MenuItem value="">{t('gallery.allGroups')}</MenuItem><MenuItem value="__ungrouped">{t('gallery.ungrouped')}</MenuItem>
           {groups.map((item) => <MenuItem key={item.id} value={item.id}>{item.name} ({item.count})</MenuItem>)}
         </TextField>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.5, ml: { md: 'auto' } }}>
+          <Button size="small" sx={actionButtonSx} startIcon={<History />} disabled={busy} onClick={() => setVersionTarget({ imageIds: [] })}>{t('gallery.version.title')}</Button>
+          <Button size="small" sx={actionButtonSx} startIcon={<FilterAltOutlined />} variant={showFilters ? 'outlined' : 'text'} onClick={() => setShowFilters(!showFilters)}>{t('gallery.smart.filters')}</Button>
           {source === 'references' && !trash && <Button size="small" variant="contained" sx={actionButtonSx} startIcon={<AddPhotoAlternateOutlined />} disabled={busy} onClick={() => fileInputRef.current.click()}>{t('gallery.import')}</Button>}
           <Tooltip title={t('gallery.newGroup')}><IconButton size="small" aria-label={t('gallery.newGroup')} disabled={busy || trash} onClick={() => { setError(''); setNewGroupOpen(true); }}><CreateNewFolderOutlined fontSize="small" /></IconButton></Tooltip>
           <Button size="small" sx={actionButtonSx} variant={selecting ? 'outlined' : 'text'} startIcon={selecting ? <Close /> : <CheckBoxOutlined />} onClick={() => { setSelecting(!selecting); setSelected(new Set()); }}>{t(selecting ? 'gallery.doneSelecting' : 'gallery.select')}</Button>
           <Tooltip title={t('gallery.refresh')}><IconButton size="small" aria-label={t('gallery.refresh')} disabled={loading || busy} onClick={() => { setError(''); setRevision((value) => value + 1); }}><Refresh fontSize="small" /></IconButton></Tooltip>
-          <Tooltip title={t(trash ? 'gallery.returnToGallery' : 'gallery.recycleBin')}><IconButton size="small" aria-label={t(trash ? 'gallery.returnToGallery' : 'gallery.recycleBin')} color={trash ? 'primary' : 'default'} onClick={() => { setTrash(!trash); setError(''); }} >{trash ? <ArrowBack fontSize="small" /> : <DeleteOutline fontSize="small" />}</IconButton></Tooltip>
+          <Tooltip title={t(trash ? 'gallery.returnToGallery' : 'gallery.recycleBin')}><IconButton size="small" aria-label={t(trash ? 'gallery.returnToGallery' : 'gallery.recycleBin')} color={trash ? 'primary' : 'default'} onClick={() => { setTrash(!trash); setError(''); if (filters.collection_id) setFilters({ ...filters, collection_id: '' }); }} >{trash ? <ArrowBack fontSize="small" /> : <DeleteOutline fontSize="small" />}</IconButton></Tooltip>
         </Box>
       </Box>
-      {trash && <Alert severity="info" action={<Button startIcon={<ArrowBack />} onClick={() => setTrash(false)}>{t('gallery.returnToGallery')}</Button>}>{t('gallery.trashHint')}</Alert>}
+      {showFilters && <Box sx={{ p: 1.5, border: 1, borderColor: 'divider', borderRadius: 2, bgcolor: 'background.paper' }}><Stack spacing={1.5}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(4, minmax(0, 1fr))' }, gap: 1.5 }}>
+          <TextField size="small" label={t('gallery.model')} value={filterDraft.model} onChange={(event) => updateFilterDraft('model', event.target.value)} />
+          <TextField select size="small" label={t('gallery.smart.orientation')} value={filterDraft.orientation} onChange={(event) => updateFilterDraft('orientation', event.target.value)}><MenuItem value="">{t('gallery.smart.any')}</MenuItem>{['portrait', 'landscape', 'square'].map((value) => <MenuItem key={value} value={value}>{t(`gallery.smart.${value}`)}</MenuItem>)}</TextField>
+          <TextField size="small" label={t('gallery.smart.tags')} helperText={t('gallery.smart.tagsHint')} value={filterDraft.tags} onChange={(event) => updateFilterDraft('tags', event.target.value)} />
+          <TextField size="small" label={t('gallery.smart.excludeTags')} helperText={t('gallery.smart.excludeHint')} value={filterDraft.negative_tags} onChange={(event) => updateFilterDraft('negative_tags', event.target.value)} />
+          <TextField select size="small" label={t('gallery.smart.sort')} value={filterDraft.sort} onChange={(event) => updateFilterDraft('sort', event.target.value)}>{['newest', 'oldest', 'similarity'].map((value) => <MenuItem key={value} value={value} disabled={value === 'similarity' && !filterDraft.similar_to}>{t(`gallery.smart.${value}`)}</MenuItem>)}</TextField>
+          {filterDraft.similar_to && <TextField type="number" size="small" label={t('gallery.smart.minSimilarity')} value={filterDraft.min_similarity} inputProps={{ min: 0, max: 1, step: 0.05 }} onChange={(event) => updateFilterDraft('min_similarity', event.target.value)} />}
+        </Box>
+        <Stack direction="row" gap={1} flexWrap="wrap"><Button variant="contained" size="small" onClick={() => setFilters({ ...filterDraft, model: filterDraft.model.trim(), min_similarity: Math.min(1, Math.max(0, Number(filterDraft.min_similarity) || 0)), collection_id: '' })}>{t('gallery.smart.apply')}</Button><Button size="small" onClick={() => { setFilters(EMPTY_FILTERS); setFilterDraft(EMPTY_FILTERS); setQuery(''); setGroup(''); }}>{t('gallery.smart.clear')}</Button><Button size="small" startIcon={<BookmarkAddOutlined />} onClick={() => { setCollectionName(''); setCollectionDialog(true); }}>{t('gallery.smart.saveCollection')}</Button></Stack>
+        <Stack direction="row" spacing={1} alignItems="center"><TextField select fullWidth size="small" label={t('gallery.smart.collections')} value={filters.collection_id} onChange={(event) => {
+          const collection = collections.find((item) => item.id === event.target.value);
+          const next = collection ? { ...Object.fromEntries(Object.keys(EMPTY_FILTERS).map((key) => [key, collection.filters[key] ?? EMPTY_FILTERS[key]])), collection_id: collection.id } : EMPTY_FILTERS;
+          setFilters(next); setFilterDraft(next); setQuery(collection?.filters.q || ''); setGroup(collection?.filters.group || ''); setTrash(Boolean(collection?.filters.trash));
+        }}><MenuItem value="">{t('gallery.smart.noCollection')}</MenuItem>{collections.map((item) => <MenuItem key={item.id} value={item.id}>{item.name}</MenuItem>)}</TextField>{filters.collection_id && <IconButton aria-label={t('gallery.smart.deleteCollection')} onClick={() => setDeleteCollection(collections.find((item) => item.id === filters.collection_id))}><DeleteOutline /></IconButton>}</Stack>
+        <Typography variant="caption" color="text.secondary">{t('gallery.smart.collectionHint')}</Typography>
+      </Stack></Box>}
+      {filters.similar_to && <Alert severity="info" onClose={() => { const next = { ...filters, similar_to: '', min_similarity: 0, sort: 'newest', collection_id: '' }; setFilters(next); setFilterDraft(next); }}>{t('gallery.smart.similarHint')}</Alert>}
+      {trash && <Alert severity="info" action={<Button startIcon={<ArrowBack />} onClick={() => { setTrash(false); if (filters.collection_id) setFilters({ ...filters, collection_id: '' }); }}>{t('gallery.returnToGallery')}</Button>}>{t('gallery.trashHint')}</Alert>}
       {selecting && <Stack direction="row" flexWrap="wrap" alignItems="center" gap={0.75} sx={{ px: 1, py: 0.5, bgcolor: 'action.hover', borderRadius: 1 }}>
         <Checkbox size="small" checked={items.length > 0 && selected.size === items.length} indeterminate={selected.size > 0 && selected.size < items.length}
           inputProps={{ 'aria-label': t('gallery.selectLoaded') }} onChange={(_, checked) => setSelected(new Set(checked ? items.map((item) => item.id) : []))} />
@@ -265,6 +307,7 @@ export default function GalleryWorkspace({ source = 'references' }) {
         </> : <>
           <Button size="small" sx={actionButtonSx} startIcon={<DriveFileMoveOutlined />} disabled={!selected.size || busy} onClick={(event) => setGroupMenu(event.currentTarget)}>{t('gallery.moveGroup')}</Button>
           <Button size="small" sx={actionButtonSx} startIcon={<DescriptionOutlined />} disabled={!selected.size || busy} onClick={() => { setError(''); setMetadataTarget({ ids: selectedIds, parameters: {}, templates: items.filter((item) => selected.has(item.id)) }); }}>{t('gallery.metadata')}</Button>
+          <Button size="small" sx={actionButtonSx} startIcon={<History />} disabled={!selected.size || busy} onClick={() => setVersionTarget({ imageIds: selectedIds })}>{t('gallery.version.addImages')}</Button>
           <Button size="small" sx={actionButtonSx} color="error" startIcon={<DeleteOutline />} disabled={!selected.size || busy} onClick={() => { setError(''); setTrashIds(selectedIds); }}>{t('gallery.trash')}</Button>
         </>}
       </Stack>}
@@ -286,7 +329,7 @@ export default function GalleryWorkspace({ source = 'references' }) {
                 {item.thumbnail_url ? <Box component="img" src={item.thumbnail_url} alt={title} loading="lazy" decoding="async"
                   sx={{ display: 'block', width: '100%', height: 'auto', aspectRatio: item.width && item.height ? `${item.width} / ${item.height}` : undefined, objectFit: 'cover', bgcolor: 'action.hover' }} /> : <Box sx={{ height: 150, display: 'grid', placeItems: 'center', bgcolor: 'action.hover' }}><ImageOutlined color="disabled" /></Box>}
                 <Box sx={{ px: 1, py: 0.75 }}><Typography variant="body2" noWrap sx={{ fontSize: 12, fontWeight: 500 }}>{title}</Typography>
-                  <Stack direction="row" alignItems="center" justifyContent="space-between" gap={0.5}><Typography variant="caption" color="text.secondary">{item.width && item.height ? `${item.width} × ${item.height}` : ''}</Typography>{item.style_prompt && <PaletteOutlined sx={{ fontSize: 14, color: 'primary.main' }} />}</Stack></Box>
+                  <Stack direction="row" alignItems="center" justifyContent="space-between" gap={0.5}><Typography variant="caption" color="text.secondary">{item.width && item.height ? `${item.width} × ${item.height}` : ''}{item.similarity !== undefined ? ` · ${Math.round(item.similarity * 100)}%` : ''}</Typography>{item.style_prompt && <PaletteOutlined sx={{ fontSize: 14, color: 'primary.main' }} />}</Stack></Box>
               </ButtonBase>
               {selecting && <Checkbox size="small" checked={selected.has(item.id)} onChange={() => toggleSelected(item.id)} inputProps={{ 'aria-label': t('gallery.selectImage', { title }) }} sx={{ position: 'absolute', top: 4, left: 4, p: 0.25, bgcolor: 'background.paper', borderRadius: 0.75, '&:hover': { bgcolor: 'background.paper' } }} />}
             </Box>;
@@ -308,6 +351,8 @@ export default function GalleryWorkspace({ source = 'references' }) {
       <DialogContent>{error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}<Typography variant="body2">{t('gallery.trashConfirmHint')}</Typography></DialogContent>
       <DialogActions><Button disabled={busy} onClick={() => setTrashIds(null)}>{t('gallery.cancel')}</Button><Button variant="contained" color="error" disabled={busy} onClick={async () => { const result = await batch('trash', trashIds); if (result) setTrashIds(null); }}>{t('gallery.trash')}</Button></DialogActions></Dialog>
     {detailId && <GalleryDetailDialog key={detailId} entryId={detailId} groups={groups} operationError={error} operationBusy={busy} onClose={() => setDetailId(null)} onChanged={() => setRevision((value) => value + 1)}
+      onVersions={(entry) => setVersionTarget({ imageIds: [entry.id], imageEntry: entry })}
+      onSimilar={(entry) => { setDetailId(null); setQuery(''); setGroup(''); const next = { ...EMPTY_FILTERS, similar_to: entry.id, sort: 'similarity' }; setFilters(next); setFilterDraft(next); setShowFilters(true); }}
       onDelete={(entry) => { setError(''); setDeleteIds([entry.id]); }}
       onApply={apply} onTrash={(entry) => { setError(''); setTrashIds([entry.id]); }} onRestore={(entry) => batch('restore', [entry.id])}
       onMetadata={(entry) => { setError(''); setMetadataTarget({ ids: [entry.id], parameters: { ...entry.parameters, positivePrompt: entry.prompt || '', negativePrompt: entry.negative_prompt || '' }, document: entry.metadata_document, sharedPaths: entry.metadata_shared_paths }); }}
@@ -326,5 +371,20 @@ export default function GalleryWorkspace({ source = 'references' }) {
     {metadataTarget && <GalleryMetadataDialog count={metadataTarget.ids.length} initialParameters={metadataTarget.parameters} initialDocument={metadataTarget.document} metadataSharedPaths={metadataTarget.sharedPaths} templateEntries={metadataTarget.templates} busy={busy} error={error} onClose={() => setMetadataTarget(null)}
       onSubmit={async (options) => { const result = await batch('export', metadataTarget.ids, options); if (result && !result.errors.length) setMetadataTarget(null); else if (result) setMetadataTarget({ ...metadataTarget, ids: result.errors.map((item) => item.id) }); }} />}
     <Snackbar open={Boolean(notice)} autoHideDuration={3500} onClose={() => setNotice('')} message={notice} />
+    {versionTarget && <GalleryVersionsDialog open {...versionTarget} onClose={() => setVersionTarget(null)} onContinue={(version, work) => {
+      try {
+        const context = { work_id: work.id, parent_version_id: version.id, work_title: work.title, number: version.number };
+        window.localStorage.setItem('novelai:pending-version', JSON.stringify(context));
+        window.dispatchEvent(new CustomEvent('novelai:continue-version', { detail: context }));
+        setVersionTarget(null); setDetailId(null);
+        window.dispatchEvent(new CustomEvent('novelai:open-page', { detail: 'ai-painting' }));
+      } catch { setError(t('gallery.applyFailed')); }
+    }} />}
+    <Dialog open={collectionDialog} onClose={() => !busy && setCollectionDialog(false)} fullWidth maxWidth="xs"><DialogTitle>{t('gallery.smart.saveCollection')}</DialogTitle><DialogContent sx={{ pt: '8px !important' }}>{error && <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>}<TextField fullWidth size="small" label={t('gallery.smart.collectionName')} value={collectionName} inputProps={{ maxLength: 80 }} onChange={(event) => setCollectionName(event.target.value)} /><Typography variant="caption" sx={{ display: 'block', mt: 1 }}>{t('gallery.smart.saveAppliedHint')}</Typography></DialogContent><DialogActions><Button disabled={busy} onClick={() => setCollectionDialog(false)}>{t('gallery.cancel')}</Button><Button disabled={busy || !collectionName.trim()} onClick={async () => {
+      setBusy(true); setError(''); try { const { collection_id: ignored, ...savedFilters } = filters; await apiClient.createGalleryCollection({ source, name: collectionName.trim(), filters: { ...savedFilters, q: search, group, trash } }); setCollectionDialog(false); setRevision((value) => value + 1); setNotice(t('gallery.saved')); } catch (requestError) { setError(requestError.data?.error || requestError.message); } finally { setBusy(false); }
+    }}>{t('gallery.create')}</Button></DialogActions></Dialog>
+    <Dialog open={Boolean(deleteCollection)} onClose={() => !busy && setDeleteCollection(null)} fullWidth maxWidth="xs"><DialogTitle>{t('gallery.smart.deleteCollection')}</DialogTitle><DialogContent>{error && <Alert severity="error">{error}</Alert>}<Typography>{t('gallery.smart.deleteCollectionHint', { name: deleteCollection?.name })}</Typography></DialogContent><DialogActions><Button disabled={busy} onClick={() => setDeleteCollection(null)}>{t('gallery.cancel')}</Button><Button color="error" disabled={busy} onClick={async () => {
+      setBusy(true); setError(''); try { await apiClient.deleteGalleryCollection(deleteCollection.id); setDeleteCollection(null); setFilters({ ...filters, collection_id: '' }); setFilterDraft({ ...filterDraft, collection_id: '' }); setRevision((value) => value + 1); } catch (requestError) { setError(requestError.data?.error || requestError.message); } finally { setBusy(false); }
+    }}>{t('gallery.smart.deleteCollection')}</Button></DialogActions></Dialog>
   </Box>;
 }

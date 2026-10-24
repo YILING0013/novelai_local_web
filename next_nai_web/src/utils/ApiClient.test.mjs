@@ -65,3 +65,22 @@ test('目录浏览复用本地会话请求并正确编码Windows路径', async (
   assert.equal(url.searchParams.get('path'), 'E:\\My Art\\导出');
   assert.equal(request.options.credentials, 'include');
 });
+
+test('作品版本与动态收藏 API 使用明确路径、JSON 与会话 CSRF', async (t) => {
+  const requests = [];
+  t.mock.method(globalThis, 'fetch', async (url, options) => { requests.push({ url, options }); return new Response('{}', { headers: { 'Content-Type': 'application/json' } }); });
+  const client = new ApiClient();
+  client.setCsrfToken('local-test-csrf');
+  await client.getWorks();
+  await client.getWork('work/id');
+  await client.getImageVersions('image/id');
+  await client.createWork({ title: 'Draft', parameters: { positivePrompt: 'red' } });
+  await client.createWorkVersion('work/id', { parent_id: 'v2', restore_version_id: 'v1', operation: 'restore' });
+  await client.getGalleryCollections('references');
+  await client.createGalleryCollection({ source: 'references', name: 'Blue', filters: { tags: 'blue', orientation: 'portrait' } });
+  await client.deleteGalleryCollection('collection/id');
+  await client.getWorkVersion('work/id', 'version/id');
+  assert.deepEqual(requests.map(({ url }) => url), ['/api/local/works', '/api/local/works/work%2Fid', '/api/local/gallery/image%2Fid/versions', '/api/local/works', '/api/local/works/work%2Fid/versions', '/api/local/gallery/collections?source=references', '/api/local/gallery/collections', '/api/local/gallery/collections/collection%2Fid', '/api/local/works/work%2Fid/versions/version%2Fid']);
+  assert.deepEqual(JSON.parse(requests[4].options.body), { parent_id: 'v2', restore_version_id: 'v1', operation: 'restore' });
+  for (const request of requests.filter(({ options }) => options.method !== 'GET')) assert.equal(request.options.headers.get('X-CSRF-Token'), 'local-test-csrf');
+});

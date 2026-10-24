@@ -273,6 +273,39 @@ class ApiClient {
     return this.request('/local/gallery/batch', { method: 'POST', body });
   }
 
+  /** 读取全部作品，包括没有图片的提示词作品。 */
+  async getWorks() { return this.request('/local/works'); }
+
+  /** 创建作品及首个不可变版本。 */
+  async createWork(body) { return this.request('/local/works', { method: 'POST', body }); }
+
+  /** 读取作品的完整父子版本记录。 */
+  async getWork(id) { return this.request(`/local/works/${encodeURIComponent(id)}`); }
+
+  /** 按作品与版本 ID 读取完整快照，避免经浏览器本地存储传递参考图片。 */
+  async getWorkVersion(workId, versionId) { return this.request(`/local/works/${encodeURIComponent(workId)}/versions/${encodeURIComponent(versionId)}`); }
+
+  /** 从指定父版本提交图片或提示词快照。 */
+  async createWorkVersion(id, body) { return this.request(`/local/works/${encodeURIComponent(id)}/versions`, { method: 'POST', body }); }
+
+  /** 修改作品标题，历史快照保持不变。 */
+  async updateWork(id, body) { return this.request(`/local/works/${encodeURIComponent(id)}`, { method: 'PATCH', body }); }
+
+  /** 保存蓝图布局、连线思路、路径折叠和分组，不改变生成快照。 */
+  async updateWorkBlueprint(id, body) { return this.request(`/local/works/${encodeURIComponent(id)}/blueprint`, { method: 'PATCH', body }); }
+
+  /** 查找图片参与的作品与版本。 */
+  async getImageVersions(id) { return this.request(`/local/gallery/${encodeURIComponent(id)}/versions`); }
+
+  /** 读取指定图库保存的动态筛选收藏。 */
+  async getGalleryCollections(source) { return this.request(`/local/gallery/collections?${new URLSearchParams({ source })}`); }
+
+  /** 保存动态收藏的名称与筛选条件。 */
+  async createGalleryCollection(body) { return this.request('/local/gallery/collections', { method: 'POST', body }); }
+
+  /** 仅删除动态收藏规则，不删除图片。 */
+  async deleteGalleryCollection(id) { return this.request(`/local/gallery/collections/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
+
   async saveTexts(title, positivePrompt, negativePrompt, imageUrl, characterTabs, groupId = null) {
     return this.request('/local/notes', {
       method: 'POST',

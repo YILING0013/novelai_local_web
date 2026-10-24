@@ -208,6 +208,8 @@ const ImageReferenceControl = ({ images, setImages, onReferenceImageChange, disa
           ...prev,
           {
             id: Date.now() + Math.random(),
+            name: file.name,
+            originalImage: event.target.result,
             data: base64,
             displayUrl: dataUrl,
             type: "character",

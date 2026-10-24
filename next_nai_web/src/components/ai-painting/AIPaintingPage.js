@@ -52,6 +52,9 @@ import ItemDisplay from './ItemDisplay';
 import ImageEnhanceDialog from './ImageEnhanceDialog';
 import ItemPreview from './ItemPreview';
 import PromptPanel from './PromptPanel';
+import WorkVersionBar from './WorkVersionBar';
+import { restoreVersionWorkspace } from './utils/versionWorkspace.mjs';
+import { buildGenerationRequest } from './Generation/ImageGenerationService';
 import { normalizeNoteCharacters } from './NoteBook/noteCharacters.mjs';
 import ParameterPanel from './ParameterPanel';
 import InpaintWorkspacePanel from './InpaintWorkspace/InpaintWorkspacePanel';
@@ -384,6 +387,13 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
   const [parameterEditorState, setParameterEditorState] = useState(null);
   const [parameterEditorKey, setParameterEditorKey] = useState(0);
   const [leftPanelMode, setLeftPanelMode] = useState('generation');
+  const [versionContext, setVersionContext] = useState(null);
+  const [versionLoading, setVersionLoading] = useState(false);
+  const versionSelectionRef = useRef(0);
+  const changeVersionContext = useCallback((context) => {
+    versionSelectionRef.current += 1;
+    setVersionContext(context);
+  }, []);
   useEffect(() => () => {
     // 退出登录或关闭工作区时，只阻止尚未发送的后续请求。
     const flight = comicFlightRef.current;
@@ -826,6 +836,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
 
   // 获取按钮状态的函数
   const getGenerateButtonState = () => {
+    if (versionLoading) return {
+      text: t('gallery.versionWorkspace.loading'), shortText: t('gallery.versionWorkspace.loading'),
+      action: () => {}, color: 'primary', icon: <BrushIcon />, disabled: true, cost: null,
+    };
     if (comicGenerationBusy && comicFlightRef.current?.count > 1) {
       return {
         text: t('painting.workspace.actions.cancelBatch', {
@@ -1365,8 +1379,75 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
     });
   }, [appendGeneratedItem]);
 
+  const continueWorkVersion = useCallback((parameters, context) => {
+    const restored = restoreVersionWorkspace(parameters, parameterEditorRef.current.defaultParams);
+    // 从漫画跳回普通创作前保留当前画框草稿，版本参数只进入普通绘画会话。
+    if (comicTargetRef.current) {
+      comicWorkspaceRef.current.saveTask(comicTargetRef.current, {
+        parameterState: parameterEditorRef.current.getSnapshot(), promptsByModel, vibeImages,
+      }, { record: false });
+      comicTargetRef.current = null;
+      setComicSelectedTarget(null);
+    }
+    setLeftPanelMode('generation');
+    setGenerationParams(restored.parameterState.params);
+    setPromptsByModel((previous) => ({
+      ...previous,
+      [restored.parameterState.params.model]: {
+        positivePrompt: restored.positivePrompt, negativePrompt: restored.negativePrompt,
+      },
+    }));
+    setVibeImages(restored.vibeImages);
+    setExternalImageData(null);
+    setCharacterTabsFromNote(null);
+    setCharacterTabsForPromptTokens(restored.parameterState.characterTabs);
+    setParameterEditorState(restored.parameterState);
+    setParameterEditorKey((key) => key + 1);
+    setExpandedPanels((previous) => ({ ...previous,
+      img2img: Boolean(restored.parameterState.imagePreview),
+      vibe: restored.vibeImages.length > 0, reference: restored.parameterState.referenceImages.length > 0,
+      character: restored.parameterState.characterTabs.length > 0,
+    }));
+    changeVersionContext(context);
+  }, [changeVersionContext, promptsByModel, vibeImages]);
+  const continueWorkVersionRef = useRef(continueWorkVersion);
+  continueWorkVersionRef.current = continueWorkVersion;
+
+  useEffect(() => {
+    let active = true;
+    const loadVersion = async (event) => {
+      const context = event.detail;
+      window.localStorage.removeItem('novelai:pending-version');
+      const selection = ++versionSelectionRef.current;
+      setVersionLoading(true);
+      try {
+        // Web Storage 只交接 ID；图片、遮罩和 Vibe 从本地后端读取，不受 5 MiB 配额限制。
+        const result = await apiClient.getWorkVersion(context.work_id, context.parent_version_id);
+        if (!active || selection !== versionSelectionRef.current) return;
+        continueWorkVersionRef.current(result.version.parameters, {
+          ...context, work_title: result.work.title, number: result.version.number,
+        });
+        showNotification(t('gallery.versionWorkspace.loaded'), 'success');
+      } catch (error) {
+        if (active && selection === versionSelectionRef.current) showNotification(error.data?.error || error.message, 'error', false);
+      } finally { if (active) setVersionLoading(false); }
+    };
+    window.addEventListener('novelai:continue-version', loadVersion);
+    const pending = window.localStorage.getItem('novelai:pending-version');
+    if (pending) {
+      try { void loadVersion({ detail: JSON.parse(pending) }); }
+      catch { window.localStorage.removeItem('novelai:pending-version'); }
+    }
+    return () => { active = false; window.removeEventListener('novelai:continue-version', loadVersion); };
+  }, [showNotification, t]);
+
   // 处理应用图像参数
   const handleApplyImageParameters = useCallback((parsedParams) => {
+    if (parsedParams.version_context) {
+      continueWorkVersion(parsedParams, parsedParams.version_context);
+      showNotification(t('gallery.versionWorkspace.loaded'), 'success');
+      return true;
+    }
     const applied = applyMetadataToCurrentParams(parsedParams, {
       successMessage: t('painting.workspace.notifications.imageParametersLoaded'),
       warningMessage: t('painting.workspace.errors.partialParameterApply'),
@@ -1374,7 +1455,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
     // 个人图库的空角色列表也代表用户的明确选择，不能残留上一张图的角色。
     if (Object.hasOwn(parsedParams, 'characterTabs')) setCharacterTabsFromNote(parsedParams.characterTabs);
     return applied;
-  }, [applyMetadataToCurrentParams, t]);
+  }, [applyMetadataToCurrentParams, continueWorkVersion, showNotification, t]);
 
   useEffect(() => {
     const applyInferencePrompt = (event) => {
@@ -1416,8 +1497,13 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
 
   useEffect(() => {
     const onSaveFailure = () => showNotification(t('librarySettings.saveFailed'), 'warning', false);
+    const onVersionFailure = () => showNotification(t('gallery.versionWorkspace.saveFailed'), 'warning', false);
     window.addEventListener('novelai:image-save-failed', onSaveFailure);
-    return () => window.removeEventListener('novelai:image-save-failed', onSaveFailure);
+    window.addEventListener('novelai:version-save-failed', onVersionFailure);
+    return () => {
+      window.removeEventListener('novelai:image-save-failed', onSaveFailure);
+      window.removeEventListener('novelai:version-save-failed', onVersionFailure);
+    };
   }, [showNotification, t]);
 
   // 源图和参数在打开弹窗时固定，切换历史图或修改侧栏不会悄悄改变本次增强。
@@ -1443,6 +1529,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
         });
         source = {
           width, height, image, src: currentItem.src,
+          version: currentItem.version,
           params: getAllParametersRef.current
             ? getAllParametersRef.current()
             : { ...generationParams, positivePrompt, negativePrompt },
@@ -1481,6 +1568,16 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
         smea: false,
         dyn: false,
         autoSmea: false,
+      };
+      if (source.version) params.version_context = {
+        work_id: source.version.work_id, parent_version_id: source.version.version_id,
+      };
+      const versionSelection = versionSelectionRef.current;
+      params.onVersionCreated = (version) => {
+        if (versionSelection === versionSelectionRef.current) setVersionContext({
+          work_id: version.work_id, parent_version_id: version.version_id,
+          work_title: version.work_title, number: version.number,
+        });
       };
       for (const key of NOVELAI_DIRECTOR_REFERENCE_PARAM_KEYS) delete params[key];
       setEnhanceSource(null);
@@ -1612,6 +1709,16 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
         };
       }
       requestedModel = params.model || requestedModel;
+      if (!comicTarget) {
+        params.version_context = versionContext;
+        const versionSelection = versionSelectionRef.current;
+        params.onVersionCreated = (version) => {
+          if (versionSelection === versionSelectionRef.current) setVersionContext({
+            work_id: version.work_id, parent_version_id: version.version_id,
+            work_title: version.work_title, number: version.number,
+          });
+        };
+      }
 
       // 添加获取最新参数的回调函数
       params.getLatestParams = () => {
@@ -1690,6 +1797,9 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
             if (!previewItem) {
               throw createWorkspaceError('INPAINT_PREVIEW_GENERATION_FAILED');
             }
+            if (!previewParams.version_context && previewItem.version) previewParams.version_context = {
+              work_id: previewItem.version.work_id, parent_version_id: previewItem.version.version_id,
+            };
 
             let applied = false;
             try {
@@ -2544,6 +2654,24 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
               overflow: 'hidden',
             }}
           >
+            {!isCanvasWorkspace && <WorkVersionBar
+              context={versionContext}
+              onChange={changeVersionContext}
+              disabled={versionLoading || isGenerating || batchStatus.active || imageToolBusy || inpaintPreviewBatch.active}
+              getParameters={() => {
+                const parameters = getAllParametersRef.current();
+                const request = buildGenerationRequest({ ...parameters, positivePrompt, negativePrompt });
+                // 手动提交保留未展开的随机提示语法和空种子，不执行生成或采样。
+                request.seed = parameters.seed;
+                request.characterTabs = parameterEditorRef.current.getSnapshot().characterTabs;
+                request.editor_state = request.version_editor;
+                delete request.version_editor;
+                return request;
+              }}
+              onContinue={(version, work) => continueWorkVersion(version.parameters, {
+                work_id: work.id, parent_version_id: version.id, work_title: work.title, number: version.number,
+              })}
+            />}
             {imageProcessingVisited && (
               <Box sx={{ display: leftPanelMode === 'imageProcessing' ? 'flex' : 'none', flex: 1, minHeight: 0, minWidth: 0 }}>
                 <ImageProcessingWorkspace

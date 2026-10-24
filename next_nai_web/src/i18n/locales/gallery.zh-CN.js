@@ -1,5 +1,42 @@
 const gallery = {
   "gallery": {
+    "versionWorkspace": {
+      "current": "{title} · 从 v{number} 继续",
+      "newHint": "下一次生成将建立新作品并记录版本",
+      "save": "保存提示词版本",
+      "history": "作品蓝图",
+      "newWork": "另起作品",
+      "untitled": "未命名作品",
+      "title": "作品名称",
+      "message": "本次修改说明",
+      "cancel": "取消",
+      "saveHint": "保存当前提示词、角色与参数，不生成图片，也不消耗 Anlas。原版本保持不变。",
+      "loaded": "已恢复版本的提示词、参数和输入，下一次生成将从此版本分支。",
+      "loading": "正在恢复版本…",
+      "saveFailed": "图片已生成，但版本记录保存失败。请在本地图库中将该图片加入作品；不要重复生成。",
+      "maskRestored": "已恢复此版本的局部重绘遮罩，生成会沿用该遮罩。更换源图或在图像编辑器修改后将清除它。",
+      "clearMask": "清除遮罩"
+    },
+    "version": {
+      "title": "作品蓝图", "hint": "在图片蓝图中比较、批注和整理创作分支；从任意节点复用参数继续。",
+      "chooseWork": "选择作品", "allWorks": "全部作品", "newWork": "新建作品", "emptyWorks": "还没有作品。可从图片创建，也可先保存提示词。",
+      "workTitle": "作品名称", "history": "版本与分支", "noMessage": "未填写说明", "root": "初始版本", "parentNumber": "来自 v{number}",
+      "rename": "修改作品名称", "continue": "继续此版本", "restore": "恢复为新版本", "restoreHint": "恢复会在最新版本之后新增一条记录，保留原有历史。",
+      "restoreMessage": "恢复到 v{number}", "promptOnly": "纯提示词版本 · 尚未绑定图片", "compareWith": "选择对比的历史版本", "noCompare": "只查看当前版本",
+      "parameterChanges": "参数与角色变化", "noParameterChanges": "其他参数与角色没有变化。", "commitFrom": "从 v{number} 保存新版本",
+      "attachImages": "附上选中的 {count} 张图片", "useImageParameters": "使用图片提示词与基础参数（保留参考输入）", "parametersJson": "其他参数与角色（JSON）",
+      "message": "本次改动说明", "commit": "保存新版本", "saved": "版本已保存，原有历史保持不变。", "invalidParameters": "其他参数必须是合法的 JSON 对象。",
+      "addImages": "加入作品版本", "openOriginal": "打开 v{number} 的原始图片快照", "viewOriginal": "查看原图", "mediaChanged": "参考图或遮罩内容已变化。", "preservedParameters": "其他高级参数与参考图随版本保留；可在绘画页应用后继续调整。"
+    },
+    "smart": {
+      "filters": "智能筛选", "orientation": "画面方向", "any": "不限", "portrait": "竖图", "landscape": "横图", "square": "方图",
+      "tags": "包含标签", "tagsHint": "逗号分隔，全部命中正向、角色或画风标签。", "excludeTags": "排除标签", "excludeHint": "排除包含这些标签的图片；不是搜索负向提示词。",
+      "sort": "排序", "newest": "最新在前", "oldest": "最早在前", "similarity": "提示词相似度", "minSimilarity": "最低相似度（0–1）",
+      "apply": "应用筛选", "clear": "清除筛选", "saveCollection": "保存动态收藏", "collections": "动态收藏", "noCollection": "不使用收藏",
+      "collectionHint": "收藏保存筛选条件；之后新增的匹配图片会自动出现。", "collectionName": "收藏名称", "saveAppliedHint": "保存当前已应用的搜索、分组与筛选条件。",
+      "deleteCollection": "删除收藏", "deleteCollectionHint": "删除“{name}”的筛选规则？图片不会删除。",
+      "findSimilar": "找相似提示词", "similarHint": "按提示词标签重合度查找，包含角色和画风；不进行视觉识图。关闭此提示可退出相似筛选。"
+    },
     "sessionHistory": "本次生成记录",
     "editImage": "发送到图像处理",
     "referencesTitle": "参考图库",

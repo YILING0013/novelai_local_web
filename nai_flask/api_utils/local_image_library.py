@@ -20,6 +20,8 @@ from PIL import Image, ImageOps, PngImagePlugin
 from .custom_errors import ExposableError
 from .image_metadata import (read_metadata_document, metadata_parameters,
                              metadata_bindings, edit_metadata_document, write_metadata_png)
+from .image_versions import ImageVersionStore, initialize_version_schema
+from .gallery_search import initialize_gallery_schema
 
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
@@ -97,7 +99,12 @@ def normalize_image_parameters(values):
                    "uc": character.get("uc", character.get("negativePrompt", character.get("negative_prompt", ""))),
                    "position": character.get("position", "C3"), "colorId": index % 6}
             if isinstance(center, dict):
-                tab["center"] = center
+                x, y = center.get("x"), center.get("y")
+                if isinstance(x, (int, float)) and isinstance(y, (int, float)) and math.isfinite(x) and math.isfinite(y):
+                    tab["center"] = {"x": x, "y": y}
+                    # 旧模型从网格位置生成请求；同时保留精确中心，避免恢复时退回默认 C3。
+                    if x != 0 or y != 0:
+                        tab["position"] = "ABCDE"[min(4, max(0, math.floor(x * 5)))] + str(min(4, max(0, math.floor(y * 5))) + 1)
             result["characterTabs"].append(tab)
     if "use_coords" not in result and isinstance(positive_container, dict) and "use_coords" in positive_container:
         result["use_coords"] = positive_container["use_coords"]
@@ -131,16 +138,18 @@ def normalize_image_parameters(values):
     # Source 只含版本哈希时不能可靠区分 Full/Curated，保留原始字段供查看，不猜模型。
     model_name = result.get("model") or source.get("Source")
     if isinstance(model_name, str):
-        canonical = re.search(r"nai-diffusion-(?:furry-)?(?:[345](?:-5)?)-(?:full|curated(?:-preview)?)(?:-inpainting)?|nai-diffusion-(?:furry-)?3(?:-inpainting)?", model_name, re.IGNORECASE)
+        canonical = re.search(r"nai-diffusion-(?:furry-)?(?:[345](?:-5)?)-(?:full(?:-medium)?|curated(?:-preview)?)(?:-inpainting)?|nai-diffusion-(?:furry-)?3(?:-inpainting)?", model_name, re.IGNORECASE)
         if canonical:
             result["model"] = canonical.group(0).lower().removesuffix("-inpainting")
         else:
-            label = re.search(r"(?:NovelAI|NAI)\s+Diffusion\s+(?:Anime\s+)?V?(4\.5|4|5)\s+(Full|Curated)(?:\s+Preview)?", model_name, re.IGNORECASE)
+            label = re.search(r"(?:NovelAI|NAI)\s+Diffusion\s+(?:Anime\s+)?V?(4\.5|4|5)\s+(Full|Curated)(?:\s+Preview)?(?:\s+(Medium))?", model_name, re.IGNORECASE)
             if label:
                 version, variant = label.group(1).replace(".", "-"), label.group(2).lower()
                 result["model"] = f"nai-diffusion-{version}-{variant}"
                 if version == "4" and variant == "curated":
                     result["model"] += "-preview"
+                if version == "5" and variant == "full" and label.group(3):
+                    result["model"] += "-medium"
     return result
 
 
@@ -201,6 +210,7 @@ class LocalImageLibrary:
         self.lock = threading.RLock()
         self.configure_output_dir(image_dir)
         self.path = self.data_dir / "image-library.db"
+        self.versions = ImageVersionStore(self)
         with self._connect():
             pass
 
@@ -226,6 +236,8 @@ class LocalImageLibrary:
         columns = {row[1] for row in db.execute("PRAGMA table_info(library_images)")}
         if "metadata_document_json" not in columns:
             db.execute("ALTER TABLE library_images ADD COLUMN metadata_document_json TEXT NOT NULL DEFAULT '{}'")
+        initialize_version_schema(db)
+        initialize_gallery_schema(db)
 
     @contextmanager
     def _connect(self):

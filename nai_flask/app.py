@@ -52,6 +52,8 @@ from api_utils.local_store import LocalJsonStore, LocalStoreError
 from api_utils.notebook import NotebookValidationError, validate_groups, validate_note_groups
 from api_utils.reference_store import ReferenceStore
 from api_utils.local_image_library import LocalImageLibrary
+from api_utils.gallery_search import search_images, list_collections, create_collection, delete_collection
+from api_utils.image_versions import validate_version_editor
 from api_utils.local_inference import LocalInference
 from api_utils.comic_planner import ComicPlanError, plan_comic
 from api_utils.comic_llm import (
@@ -746,7 +748,8 @@ def _image_result(
 
 
 
-def _save_generated_images(images: list[dict], parameters: dict) -> None:
+def _save_generated_images(images: list[dict], parameters: dict, *, version_parameters=None, version_context=None,
+                           version_editor=None) -> None:
     """将成功结果保存到本机；写盘失败时仍返回图片，避免重复消耗生成额度。"""
     for image in images:
         try:
@@ -775,6 +778,37 @@ def _save_generated_images(images: list[dict], parameters: dict) -> None:
         except (OSError, ValueError, LocalStoreError, ExposableError, sqlite3.Error):
             current_app.logger.warning("event=generated_image_save_failed correlation_id=%s", _request_correlation_id())
             image["save_error"] = "LOCAL_IMAGE_SAVE_FAILED"
+            if version_parameters is not None:
+                image["version_error"] = "LOCAL_VERSION_SAVE_FAILED"
+            continue
+        if version_parameters is not None:
+            try:
+                versions = current_app.extensions["image_library"].versions
+                # 实际成图参数覆盖随机种子与尺寸；图生图、遮罩和参考输入来自工作台请求。
+                snapshot = {**version_parameters, **saved["parameters"], "seed": image["seed"]}
+                if version_editor is not None:
+                    # 官方请求只含启用输入；本机版本另存名字、禁用条目、原图与 Vibe 编码。
+                    snapshot["editor_state"] = version_editor
+                    character_tabs = version_editor["parameterState"].get("characterTabs")
+                    if character_tabs is not None:
+                        snapshot["characterTabs"] = character_tabs
+                if version_parameters.get("req_type") in {"emotion", "colorize"}:
+                    # Director 的 prompt 是工具指令，不能与工作台正向提示词互相覆盖。
+                    snapshot["positivePrompt"] = version_parameters.get("positivePrompt", "")
+                body = {"image_ids": [saved["id"]], "parameters": snapshot,
+                        "operation": "generate", "message": "生成图片"}
+                if version_context:
+                    body["parent_id"] = version_context["parent_version_id"]
+                    committed = versions.create_version(version_context["work_id"], body)
+                else:
+                    body["title"] = (str(snapshot.get("positivePrompt") or snapshot.get("prompt") or "未命名作品").strip() or "未命名作品")[:80]
+                    committed = versions.create_work(body)
+                image["version"] = {"work_id": committed["work"]["id"], "work_title": committed["work"]["title"],
+                                    "version_id": committed["version"]["id"], "number": committed["version"]["number"]}
+            except (OSError, ValueError, LocalStoreError, ExposableError, sqlite3.Error):
+                # 上游已经成功收费，历史保存失败只能提示补存，不能把整次生成变为失败。
+                current_app.logger.warning("event=generated_version_save_failed correlation_id=%s", _request_correlation_id())
+                image["version_error"] = "LOCAL_VERSION_SAVE_FAILED"
 
 def _correlation_id() -> str:
     """生成官方图像接口要求的六位字母数字关联 ID。"""
@@ -1686,6 +1720,10 @@ def create_app(
 
         _ensure_no_account_recovery()
         source_payload = copy.deepcopy(_request_json())
+        version_context = app.extensions["image_library"].versions.validate_context(source_payload.pop("version_context", None))
+        version_editor = source_payload.pop("version_editor", None)
+        if version_editor is not None:
+            version_editor = validate_version_editor(version_editor)
         batch_id, index, batch_size = _parse_batch_metadata(source_payload)
         if source_payload.get("image_tool") == "enhance":
             # 增强只处理当前图片，工作区上一次任务的遮罩与参考图不参与本次请求。
@@ -1746,7 +1784,9 @@ def create_app(
         saved_parameters.update(prompt=source_payload.get("positivePrompt", source_payload.get("prompt", "")), model=model_name)
         if internal_payload.get("image_tool"):
             saved_parameters["image_tool"] = internal_payload["image_tool"]
-        _save_generated_images(images, saved_parameters)
+        _save_generated_images(images, saved_parameters, version_parameters=source_payload,
+                               version_context=version_context,
+                               version_editor=version_editor)
         account_snapshot = _refresh_account_snapshot(
             g.local_session,
             preserve_success_on_unauthorized=True,
@@ -2143,6 +2183,64 @@ def create_app(
         _log_local_json("read", "notes", notebook["notes"])
         return jsonify(notebook)
 
+    @app.get("/api/local/works")
+    @session_required()
+    def works_list() -> Response:
+        """读取本机作品摘要，图片始终通过受保护快照地址展示。"""
+        return jsonify({"works": app.extensions["image_library"].versions.list_works()})
+
+    @app.post("/api/local/works")
+    @session_required(csrf=True)
+    def works_create() -> Response:
+        """创建作品及首版，图片和纯提示词都可以独立提交。"""
+        return jsonify(app.extensions["image_library"].versions.create_work(_request_json()))
+
+    @app.get("/api/local/works/<work_id>")
+    @session_required()
+    def work_detail(work_id: str) -> Response:
+        """读取作品的不可变参数、图片与分支父节点。"""
+        return jsonify(app.extensions["image_library"].versions.get_work(work_id))
+
+    @app.patch("/api/local/works/<work_id>")
+    @session_required(csrf=True)
+    def work_rename(work_id: str) -> Response:
+        """重命名作品，不改写已有版本。"""
+        return jsonify({"work": app.extensions["image_library"].versions.rename_work(work_id, _request_json().get("title"))})
+
+    @app.patch("/api/local/works/<work_id>/blueprint")
+    @session_required(csrf=True)
+    def work_blueprint_update(work_id: str) -> Response:
+        """保存作品画布布局与备注，版本参数和图片快照保持不变。"""
+        return jsonify({"blueprint": app.extensions["image_library"].versions.save_blueprint(work_id, _request_json())})
+
+    @app.post("/api/local/works/<work_id>/versions")
+    @session_required(csrf=True)
+    def version_create(work_id: str) -> Response:
+        """从选定父节点提交参数或恢复历史，始终追加一个新版本。"""
+        return jsonify(app.extensions["image_library"].versions.create_version(work_id, _request_json()))
+
+    @app.get("/api/local/works/<work_id>/versions/<version_id>")
+    @session_required()
+    def version_detail(work_id: str, version_id: str) -> Response:
+        """读取单个版本的完整参数，工作台直接通过会话接口恢复图像输入。"""
+        return jsonify(app.extensions["image_library"].versions.get_version(work_id, version_id))
+
+    @app.get("/api/local/gallery/<image_id>/versions")
+    @session_required()
+    def image_versions(image_id: str) -> Response:
+        """读取图片在各个作品中的使用历史，原图移除后记录仍保留。"""
+        return jsonify(app.extensions["image_library"].versions.image_versions(image_id))
+
+    @app.get("/api/local/versions/assets/<asset_id>")
+    @app.get("/api/local/versions/assets/<asset_id>/thumbnail")
+    @session_required()
+    def version_asset(asset_id: str) -> Response:
+        """按内容 ID 读取历史原图或缩略图，不开放任意系统路径。"""
+        path = app.extensions["image_library"].versions.asset_path(asset_id, thumbnail=request.path.endswith("/thumbnail"))
+        response = send_file(path, conditional=True)
+        response.headers["Cache-Control"] = "private, no-cache"
+        return response
+
     @app.get("/api/local/gallery")
     @session_required()
     def gallery_list() -> Response:
@@ -2160,12 +2258,36 @@ def create_app(
         library = app.extensions["image_library"]
         # 首屏和刷新发现磁盘新增图片，继续翻页只查索引，避免反复遍历大图库。
         scan = library.scan(source) if offset == 0 else {}
-        result = library.list_images(source=source, page=offset // limit + 1, page_size=limit,
-                                     group_id=request.args.get("group") or None,
-                                     query=request.args.get("q", ""), trashed=request.args.get("trash") == "true")
+        result = search_images(library, source=source, offset=offset, limit=limit,
+                               group_id=request.args.get("group") or None, query=request.args.get("q", ""),
+                               trashed=request.args.get("trash") == "true", model=request.args.get("model", ""),
+                               orientation=request.args.get("orientation", ""), tags=request.args.get("tags", ""),
+                               negative_tags=request.args.get("negative_tags", ""), sort=request.args.get("sort", "newest"),
+                               similar_to=request.args.get("similar_to", ""), min_similarity=request.args.get("min_similarity", 0),
+                               collection_id=request.args.get("collection_id", request.args.get("collection", "")))
         result["has_more"] = offset + len(result["items"]) < result["total"]
         result["errors"] = scan.get("errors", [])
         return jsonify(result)
+
+    @app.get("/api/local/gallery/collections")
+    @session_required()
+    def gallery_collections() -> Response:
+        """读取当前来源的智能收藏，收藏保存筛选条件而不复制图片。"""
+        return jsonify({"collections": list_collections(app.extensions["image_library"], request.args.get("source"))})
+
+    @app.post("/api/local/gallery/collections")
+    @session_required(csrf=True)
+    def gallery_collection_create() -> Response:
+        """保存当前筛选条件，后续图片按同一条件自动加入结果。"""
+        body = _request_json()
+        return jsonify({"collection": create_collection(app.extensions["image_library"], body.get("source", "references"),
+                                                        body.get("name", ""), body.get("filters", {}))})
+
+    @app.delete("/api/local/gallery/collections/<collection_id>")
+    @session_required(csrf=True)
+    def gallery_collection_delete(collection_id: str) -> Response:
+        """删除智能收藏定义，图库文件和普通分组不受影响。"""
+        return jsonify({"deleted": delete_collection(app.extensions["image_library"], collection_id)})
 
     @app.get("/api/local/directories")
     @session_required()

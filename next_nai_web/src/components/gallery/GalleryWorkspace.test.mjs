@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 import React from 'react';
+import * as versionDiff from './versionDiff.mjs';
 
 const require = createRequire(import.meta.url);
 const { transformSync } = require('next/dist/build/swc');
@@ -22,6 +23,7 @@ function renderComponent(filename, props, apiOverrides = {}) {
   const api = {
     getGallery: async () => ({ items: [fixture], total: 1, has_more: false }),
     getGalleryGroups: async () => ({ groups: [] }),
+    getGalleryCollections: async () => ({ collections: [] }),
     getGalleryEntry: async () => fixture,
     getLocalDirectories: async () => ({ path: exportDirectory, parent: 'E:\\', directories: [], roots: [{ name: 'E:', path: 'E:\\' }], suggested_export_directory: exportDirectory }),
     ...apiOverrides,
@@ -58,6 +60,10 @@ function renderComponent(filename, props, apiOverrides = {}) {
     '@/i18n/I18nProvider': { useI18n: () => ({ t: translation }) },
     './GalleryDetailDialog': { __esModule: true, default: 'GalleryDetailDialog' },
     './GalleryMetadataDialog': { __esModule: true, default: 'GalleryMetadataDialog' },
+    './GalleryVersionsDialog': { __esModule: true, default: 'GalleryVersionsDialog' },
+    './VersionBlueprintCanvas': { __esModule: true, default: 'VersionBlueprintCanvas' },
+    './VersionSnapshotDetails': { __esModule: true, default: 'VersionSnapshotDetails' },
+    './versionDiff.mjs': versionDiff,
   };
   const load = (source) => {
     const { code } = transformSync(readFileSync(new URL(source, import.meta.url), 'utf8'), {
@@ -297,4 +303,107 @@ test('图库发送图像处理只传本地图片 ID，保留现有绘画参数',
   assert.equal(gallery.storage.has('novelai:pending-reference-parameters'), false);
   assert.deepEqual(gallery.events.map((event) => event.type), ['novelai:image-processing', 'novelai:open-page']);
   assert.equal(gallery.events.at(-1).detail, 'ai-painting');
+});
+
+test('作品历史入口保留纯提示词作品，继续版本携带父版本而普通应用不携带', async () => {
+  const gallery = renderComponent('GalleryWorkspace.js', { source: 'outputs' });
+  gallery.render(); await gallery.flush();
+  button(gallery.render(), 'gallery.version.title').props.onClick();
+  const dialog = findNode(gallery.render(), (node) => node.type === 'GalleryVersionsDialog');
+  assert.deepEqual(Array.from(dialog.props.imageIds), []);
+  dialog.props.onContinue({ id: 'version-2', number: 2, parameters: { positivePrompt: 'blue', negativePrompt: 'lowres', seed: 42, image: 'large-image' } }, { id: 'work-1', title: 'Story' });
+  assert.deepEqual(JSON.parse(gallery.storage.get('novelai:pending-version')), { work_id: 'work-1', parent_version_id: 'version-2', work_title: 'Story', number: 2 });
+  assert.equal(gallery.storage.has('novelai:pending-reference-parameters'), false);
+  assert.deepEqual(gallery.events.map((event) => event.type), ['novelai:continue-version', 'novelai:open-page']);
+});
+
+test('智能收藏显示已存条件，用户之后输入的搜索不会被收藏内旧 q 覆盖', async () => {
+  const requests = [];
+  const gallery = renderComponent('GalleryWorkspace.js', { source: 'references' }, {
+    getGallery: async (options) => { requests.push(options); return { items: [fixture], total: 1, has_more: false }; },
+    getGalleryCollections: async () => ({ collections: [{ id: 'c1', name: 'Blue', filters: { q: 'old', tags: 'blue eyes', group: '', trash: false } }] }),
+  });
+  gallery.render(); await gallery.flush();
+  button(gallery.render(), 'gallery.smart.filters').props.onClick();
+  findNode(gallery.render(), (node) => node.type === 'TextField' && node.props.label === 'gallery.smart.collections').props.onChange({ target: { value: 'c1' } });
+  gallery.render(); await gallery.flush(); gallery.render(); await gallery.flush();
+  const query = findNode(gallery.render(), (node) => node.type === 'TextField' && node.props.placeholder === 'gallery.search');
+  query.props.onChange({ target: { value: 'new' } });
+  gallery.render(); await gallery.flush(); gallery.render(); await gallery.flush();
+  assert.equal(requests.at(-1).q, 'new');
+  assert.equal(requests.at(-1).tags, 'blue eyes');
+  assert.equal(requests.at(-1).collection_id, '');
+  findNode(gallery.render(), (node) => node.type === 'TextField' && node.props.placeholder === 'gallery.search').props.onChange({ target: { value: '' } });
+  gallery.render(); await gallery.flush(); gallery.render(); await gallery.flush();
+  assert.equal(requests.at(-1).q, '');
+  assert.equal(requests.at(-1).collection_id, '');
+});
+
+test('版本对话框从任意父版提交并恢复为新版本，参考图不进入可视参数表单', async () => {
+  const requests = [];
+  const versions = [
+    { id: 'v1', parent_id: null, number: 1, created_at: '2026-10-20T00:00:00Z', parameters: { positivePrompt: 'red', seed: 1 }, images: [], message: 'first' },
+    { id: 'v2', parent_id: 'v1', number: 2, created_at: '2026-10-21T00:00:00Z', parameters: { positivePrompt: 'blue', seed: 2, image: 'data:image/png;base64,private' }, images: [], message: 'second' },
+  ];
+  const work = { id: 'w1', title: 'Story' };
+  const dialog = renderComponent('GalleryVersionsDialog.js', { open: true, initialWorkId: 'w1' }, {
+    getWorks: async () => ({ works: [work] }),
+    getWork: async () => ({ work, versions }),
+    createWorkVersion: async (id, body) => { requests.push({ id, body }); return { work, version: { ...versions[1], id: 'v3', number: 3 } }; },
+  });
+  dialog.render(); await dialog.flush(); dialog.render(); await dialog.flush();
+  let tree = dialog.render();
+  const fields = findNode(tree, (node) => node.type === 'GalleryMetadataFields');
+  assert.deepEqual(JSON.parse(JSON.stringify(fields.props.value)), { seed: 2 });
+  const canvas = findNode(tree, (node) => node.type === 'VersionBlueprintCanvas');
+  canvas.props.onSelect('v1');
+  tree = dialog.render();
+  findNode(tree, (node) => node.type === 'TextField' && node.props.label === 'gallery.positivePrompt').props.onChange({ target: { value: 'green' } });
+  await button(dialog.render(), 'gallery.version.commit').props.onClick();
+  assert.equal(requests[0].body.parent_id, 'v1');
+  assert.equal(requests[0].body.parameters.positivePrompt, 'green');
+  assert.deepEqual(Array.from(requests[0].body.image_ids), []);
+  await button(dialog.render(), 'gallery.version.restore').props.onClick();
+  assert.deepEqual(JSON.parse(JSON.stringify(requests[1].body)), { parent_id: 'v2', restore_version_id: 'v1', operation: 'restore', message: 'gallery.version.restoreMessage' });
+});
+
+test('蓝图节点选择自动比较父节点，布局备注分组通过独立接口保存', async () => {
+  const persisted = [];
+  const versions = [
+    { id: 'v1', number: 1, parent_id: null, images: [], parameters: { positivePrompt: 'root' } },
+    { id: 'v2', number: 2, parent_id: 'v1', images: [], parameters: { positivePrompt: 'changed' } },
+  ];
+  const blueprint = { positions: {}, edge_notes: {}, hidden_node_ids: [], groups: [] };
+  const dialog = renderComponent('GalleryVersionsDialog.js', { open: true, initialWorkId: 'w' }, {
+    getWorks: async () => ({ works: [{ id: 'w', title: 'Sketch' }] }),
+    getWork: async () => ({ work: { id: 'w', title: 'Sketch' }, versions, blueprint }),
+    updateWorkBlueprint: async (id, body) => { persisted.push({ id, body }); return { blueprint: body }; },
+  });
+  dialog.render(); await dialog.flush(); dialog.render(); await dialog.flush();
+  let tree = dialog.render();
+  const details = findNode(tree, (node) => node.type === 'VersionSnapshotDetails');
+  assert.equal(details.props.selected.id, 'v2');
+  assert.equal(details.props.compared.id, 'v1');
+  const next = { ...blueprint, edge_notes: { v2: '试试蓝色灯光' }, positions: { v2: { x: 420, y: 80 } } };
+  await findNode(tree, (node) => node.type === 'VersionBlueprintCanvas').props.onBlueprintChange(next);
+  assert.equal(persisted[0].id, 'w');
+  assert.deepEqual(persisted[0].body, next);
+  tree = dialog.render();
+  assert.deepEqual(findNode(tree, (node) => node.type === 'VersionBlueprintCanvas').props.blueprint, next);
+});
+
+test('新作品可只保存提示词且不依赖图库图片', async () => {
+  const requests = [];
+  const dialog = renderComponent('GalleryVersionsDialog.js', { open: true }, {
+    getWorks: async () => ({ works: [] }),
+    createWork: async (body) => { requests.push(body); return { work: { id: 'new', title: body.title }, version: { id: 'v1' } }; },
+  });
+  dialog.render(); await dialog.flush();
+  button(dialog.render(), 'gallery.version.newWork').props.onClick();
+  findNode(dialog.render(), (node) => node.type === 'TextField' && node.props.label === 'gallery.version.workTitle').props.onChange({ target: { value: 'Draft' } });
+  findNode(dialog.render(), (node) => node.type === 'TextField' && node.props.label === 'gallery.positivePrompt').props.onChange({ target: { value: 'sunset' } });
+  await button(dialog.render(), 'gallery.version.commit').props.onClick();
+  assert.equal(requests[0].title, 'Draft');
+  assert.equal(requests[0].parameters.positivePrompt, 'sunset');
+  assert.deepEqual(Array.from(requests[0].image_ids), []);
 });
