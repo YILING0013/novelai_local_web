@@ -312,7 +312,7 @@ test('作品历史入口保留纯提示词作品，继续版本携带父版本�
   const dialog = findNode(gallery.render(), (node) => node.type === 'GalleryVersionsDialog');
   assert.deepEqual(Array.from(dialog.props.imageIds), []);
   dialog.props.onContinue({ id: 'version-2', number: 2, parameters: { positivePrompt: 'blue', negativePrompt: 'lowres', seed: 42, image: 'large-image' } }, { id: 'work-1', title: 'Story' });
-  assert.deepEqual(JSON.parse(gallery.storage.get('novelai:pending-version')), { work_id: 'work-1', parent_version_id: 'version-2', work_title: 'Story', number: 2 });
+  assert.deepEqual(JSON.parse(gallery.storage.get('novelai:pending-version')), { work_id: 'work-1', parent_version_id: 'version-2', apply_only: false });
   assert.equal(gallery.storage.has('novelai:pending-reference-parameters'), false);
   assert.deepEqual(gallery.events.map((event) => event.type), ['novelai:continue-version', 'novelai:open-page']);
 });
@@ -371,7 +371,7 @@ test('蓝图节点选择自动比较父节点，布局备注分组通过独立�
   const persisted = [];
   const versions = [
     { id: 'v1', number: 1, parent_id: null, images: [], parameters: { positivePrompt: 'root' } },
-    { id: 'v2', number: 2, parent_id: 'v1', images: [], parameters: { positivePrompt: 'changed' } },
+    { id: 'v2', number: 2, parent_id: 'v1', images: [{ id: 'img' }], parameters: { positivePrompt: 'changed' } },
   ];
   const blueprint = { positions: {}, edge_notes: {}, hidden_node_ids: [], groups: [] };
   const dialog = renderComponent('GalleryVersionsDialog.js', { open: true, initialWorkId: 'w' }, {
@@ -392,18 +392,68 @@ test('蓝图节点选择自动比较父节点，布局备注分组通过独立�
   assert.deepEqual(findNode(tree, (node) => node.type === 'VersionBlueprintCanvas').props.blueprint, next);
 });
 
-test('新作品可只保存提示词且不依赖图库图片', async () => {
+test('新作品不创建提示词节点，等待第一张图片', async () => {
   const requests = [];
   const dialog = renderComponent('GalleryVersionsDialog.js', { open: true }, {
     getWorks: async () => ({ works: [] }),
-    createWork: async (body) => { requests.push(body); return { work: { id: 'new', title: body.title }, version: { id: 'v1' } }; },
+    createWork: async (body) => { requests.push(body); return { work: { id: 'new', title: body.title }, version: null }; },
   });
   dialog.render(); await dialog.flush();
   button(dialog.render(), 'gallery.version.newWork').props.onClick();
   findNode(dialog.render(), (node) => node.type === 'TextField' && node.props.label === 'gallery.version.workTitle').props.onChange({ target: { value: 'Draft' } });
-  findNode(dialog.render(), (node) => node.type === 'TextField' && node.props.label === 'gallery.positivePrompt').props.onChange({ target: { value: 'sunset' } });
-  await button(dialog.render(), 'gallery.version.commit').props.onClick();
+  assert.ok(!findNode(dialog.render(), (node) => node.type === 'TextField' && node.props.label === 'gallery.positivePrompt'));
+  await button(dialog.render(), 'gallery.version.newWork').props.onClick();
   assert.equal(requests[0].title, 'Draft');
-  assert.equal(requests[0].parameters.positivePrompt, 'sunset');
+  assert.equal(requests[0].parameters, undefined);
   assert.deepEqual(Array.from(requests[0].image_ids), []);
+});
+
+
+test('双节点比较选中组合，单节点比较父级，纯文本不比较且应用参数不切换作品', async () => {
+  const versions = [
+    { id: 'v1', number: 1, parent_id: null, images: [{ id: 'i1' }], parameters: {} },
+    { id: 'v2', number: 2, parent_id: 'v1', images: [{ id: 'i2' }], parameters: {} },
+    { id: 'v3', number: 3, parent_id: 'v1', images: [{ id: 'i3' }], parameters: {} },
+    { id: 'v4', number: 4, parent_id: 'v2', images: [], parameters: {} },
+  ];
+  const applied = [], continued = [];
+  const dialog = renderComponent('GalleryVersionsDialog.js', {
+    open: true, initialWorkId: 'w', activeContext: { work_id: 'w', parent_version_id: 'v2' },
+    onApply: (version) => applied.push(version.id), onContinue: (version) => continued.push(version.id),
+  }, {
+    getWorks: async () => ({ works: [{ id: 'w', title: 'Sketch' }] }),
+    getWork: async () => ({ work: { id: 'w', title: 'Sketch' }, versions }),
+  });
+  dialog.render(); await dialog.flush(); dialog.render(); await dialog.flush();
+  const details = () => findNode(dialog.render(), (node) => node.type === 'VersionSnapshotDetails').props;
+  const canvas = () => findNode(dialog.render(), (node) => node.type === 'VersionBlueprintCanvas').props;
+  assert.equal(details().compared, undefined);
+  canvas().onSelect('v2', ['v2']);
+  assert.equal(details().compared.id, 'v1');
+  canvas().onSelect('v3', ['v2', 'v3']);
+  assert.equal(details().selected.id, 'v3');
+  assert.equal(details().compared.id, 'v2');
+  details().onApply();
+  assert.deepEqual(applied, ['v3']); assert.deepEqual(continued, []);
+  assert.equal(canvas().activeVersionId, 'v2');
+  canvas().onSelect('v4', ['v4']);
+  assert.equal(details().compared, undefined);
+  canvas().onSelect('v3', ['v3']);
+  assert.equal(details().compared.id, 'v1');
+});
+
+test('作品批量删除先确认范围，删除当前作品后退出作品状态', async () => {
+  const requests = [], contexts = [];
+  const works = [{ id: 'w1', title: 'One', version_count: 2 }, { id: 'w2', title: 'Two', version_count: 0 }];
+  const dialog = renderComponent('GalleryVersionsDialog.js', { open: true, activeContext: { work_id: 'w1' }, onContextChange: (value) => contexts.push(value) }, {
+    getWorks: async () => ({ works }),
+    deleteWorks: async (ids) => { requests.push(Array.from(ids)); return { deleted_ids: ids, cleanup_failed: 0 }; },
+  });
+  dialog.render(); await dialog.flush();
+  for (const title of ['One', 'Two']) findNode(dialog.render(), (node) => node.type === 'Checkbox' && node.props.inputProps?.['aria-label'] === '选择作品 ' + title).props.onChange(null, true);
+  button(dialog.render(), '删除作品').props.onClick();
+  assert.deepEqual(requests, []);
+  await button(dialog.render(), '永久删除').props.onClick();
+  assert.deepEqual(requests, [['w1', 'w2']]); assert.deepEqual(contexts, [null]);
+  assert.ok(!findNode(dialog.render(), (node) => node.type === 'Checkbox' && node.props.inputProps?.['aria-label'] === '选择作品 One'));
 });

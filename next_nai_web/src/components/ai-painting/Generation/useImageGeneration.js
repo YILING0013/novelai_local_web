@@ -60,7 +60,7 @@ const useImageGeneration = () => {
         progress: 100,
         model: result.model || params.model || null,
       });
-      if (result.version && params.onVersionCreated) params.onVersionCreated(result.version);
+      if (params.version_context && result.version && params.onVersionCreated) params.onVersionCreated(result.version);
       if (result.versionError && typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('novelai:version-save-failed'));
       }
@@ -130,12 +130,9 @@ const useImageGeneration = () => {
         });
         if (!imageResult) throw createGenerationError(GENERATION_ERROR_CODES.GENERATION_FAILED);
 
-        // 无父版本的一批候选共用首张创建的作品；已有父版本时整批从同一节点分叉。
-        if (!versionContext && imageResult.version) {
-          versionContext = {
-            work_id: imageResult.version.work_id,
-            parent_version_id: imageResult.version.version_id,
-          };
+        // 空作品批量生成时，后续图片以第一张成功保存的 V1 为共同父节点。
+        if (versionContext && !versionContext.parent_version_id && imageResult.version) {
+          versionContext = { ...versionContext, parent_version_id: imageResult.version.version_id };
         }
 
         batchController.completeCurrentImage(true);

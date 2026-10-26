@@ -2,10 +2,15 @@ const gallery = {
   "gallery": {
     "versionWorkspace": {
       "current": "{title} · 从 v{number} 继续",
-      "newHint": "下一次生成将建立新作品并记录版本",
+      "newHint": "普通生成 · 未启用作品历史",
       "save": "保存提示词版本",
       "history": "作品蓝图",
-      "newWork": "另起作品",
+      "newWork": "新建作品",
+      "openWork": "打开作品",
+      "exitWork": "退出作品",
+      "createHint": "第一张生成的图片将成为 V1。",
+      "waiting": "{title} · 等待首张图片",
+      "applied": "已应用节点参数",
       "untitled": "未命名作品",
       "title": "作品名称",
       "message": "本次修改说明",
@@ -19,13 +24,13 @@ const gallery = {
     },
     "version": {
       "title": "作品蓝图", "hint": "在图片蓝图中比较、批注和整理创作分支；从任意节点复用参数继续。",
-      "chooseWork": "选择作品", "allWorks": "全部作品", "newWork": "新建作品", "emptyWorks": "还没有作品。可从图片创建，也可先保存提示词。",
+      "chooseWork": "选择作品", "allWorks": "全部作品", "newWork": "新建作品", "emptyWorks": "还没有作品。新建空作品，或从已有图片开始。",
       "workTitle": "作品名称", "history": "版本与分支", "noMessage": "未填写说明", "root": "初始版本", "parentNumber": "来自 v{number}",
       "rename": "修改作品名称", "continue": "继续此版本", "restore": "恢复为新版本", "restoreHint": "恢复会在最新版本之后新增一条记录，保留原有历史。",
       "restoreMessage": "恢复到 v{number}", "promptOnly": "纯提示词版本 · 尚未绑定图片", "compareWith": "选择对比的历史版本", "noCompare": "只查看当前版本",
       "parameterChanges": "参数与角色变化", "noParameterChanges": "其他参数与角色没有变化。", "commitFrom": "从 v{number} 保存新版本",
       "attachImages": "附上选中的 {count} 张图片", "useImageParameters": "使用图片提示词与基础参数（保留参考输入）", "parametersJson": "其他参数与角色（JSON）",
-      "message": "本次改动说明", "commit": "保存新版本", "saved": "版本已保存，原有历史保持不变。", "invalidParameters": "其他参数必须是合法的 JSON 对象。",
+      "message": "本次改动说明", "commit": "保存新版本", "created": "作品已创建，等待首张图片。", "saved": "版本已保存，原有历史保持不变。", "invalidParameters": "其他参数必须是合法的 JSON 对象。",
       "addImages": "加入作品版本", "openOriginal": "打开 v{number} 的原始图片快照", "viewOriginal": "查看原图", "mediaChanged": "参考图或遮罩内容已变化。", "preservedParameters": "其他高级参数与参考图随版本保留；可在绘画页应用后继续调整。"
     },
     "smart": {

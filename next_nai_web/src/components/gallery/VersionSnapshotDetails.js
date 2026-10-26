@@ -40,12 +40,12 @@ function PromptDifference({ title, before, after, compare, split, zh }) {
  * @param {object} props 当前节点与可选的父节点或任意对照节点。
  * @returns {React.ReactElement} 节点详情及修改关系。
  */
-export default function VersionSnapshotDetails({ selected, compared }) {
+export default function VersionSnapshotDetails({ selected, compared, onApply, disabled = false }) {
   const { locale, t } = useI18n();
   const zh = locale !== 'en-US';
-  const [mode, setMode] = useState('diff');
+  const [mode, setMode] = useState(selected.images.length ? 'diff' : 'full');
   const [split, setSplit] = useState(false);
-  const compare = Boolean(compared) && mode === 'diff';
+  const compare = selected.images.length > 0 && Boolean(compared) && mode === 'diff';
   const before = compared?.parameters || {};
   const after = selected.parameters || {};
   const oldCharacters = before.characterTabs || before.editor_state?.parameterState?.characterTabs || [];
@@ -71,16 +71,17 @@ export default function VersionSnapshotDetails({ selected, compared }) {
 
   return <Stack spacing={1.8}>
     <Stack direction="row" gap={0.75} alignItems="center" flexWrap="wrap">
-      <Button size="small" variant={mode === 'diff' ? 'contained' : 'outlined'} onClick={() => setMode('diff')}>{zh ? '修改对比' : 'Changes'}</Button>
+      {selected.images.length > 0 && <Button size="small" variant={mode === 'diff' ? 'contained' : 'outlined'} onClick={() => setMode('diff')}>{zh ? '修改对比' : 'Changes'}</Button>}
       <Button size="small" variant={mode === 'full' ? 'contained' : 'outlined'} onClick={() => setMode('full')}>{zh ? '完整参数' : 'Full snapshot'}</Button>
       {compare && <Button size="small" sx={{ ml: 'auto' }} onClick={() => setSplit(!split)}>{split ? (zh ? '行内对比' : 'Inline diff') : (zh ? '左右对比' : 'Split diff')}</Button>}
+      {mode === 'full' && <Button size="small" sx={{ ml: 'auto' }} disabled={disabled} onClick={onApply}>{zh ? '应用所有参数' : 'Apply all parameters'}</Button>}
     </Stack>
     {compare ? <Stack direction="row" gap={1.2} flexWrap="wrap" alignItems="center">
       <Typography variant="caption">v{compared.number} → v{selected.number}</Typography>
       <Box component="span" sx={{ ...colors.removed, fontSize: 12, px: 0.5 }}>{zh ? '− 删除' : '− Removed'}</Box>
       <Box component="span" sx={{ ...colors.added, fontSize: 12, px: 0.5 }}>{zh ? '+ 新增' : '+ Added'}</Box>
       <Box component="span" sx={{ ...colors.changed, fontSize: 12, px: 0.5 }}>{zh ? '~ 权重 / 参数修改' : '~ Weight / parameter change'}</Box>
-    </Stack> : <Typography variant="caption" color="text.secondary">{zh ? '此节点保存的完整状态，可复用到绘画工作台。' : 'Saved state of this node, ready to reuse in the painting workspace.'}</Typography>}
+    </Stack> : null}
     {['positivePrompt', 'negativePrompt'].map((field) => <PromptDifference key={field} title={t('gallery.' + field)} before={before[field]} after={after[field]} compare={compare} split={split} zh={zh} />)}
     {Array.from({ length: compare ? Math.max(oldCharacters.length, newCharacters.length) : newCharacters.length }, (_, index) => {
       const old = oldCharacters[index] || {}, current = newCharacters[index] || {};

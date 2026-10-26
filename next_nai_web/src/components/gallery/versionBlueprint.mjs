@@ -2,6 +2,20 @@ export const BLUEPRINT_NODE_WIDTH = 216;
 export const BLUEPRINT_NODE_HEIGHT = 202;
 
 /**
+ * 根据首张图片比例确定节点大小，图片区域保持原比例且不裁剪。
+ * @param {object} version 节点及图片元数据。
+ * @returns {object} 节点宽高和图片区域高度。
+ */
+export function versionNodeSize(version) {
+  const image = version.images?.[0];
+  if (!image) return { width: BLUEPRINT_NODE_WIDTH, height: 142, imageHeight: 64 };
+  const ratio = (image.width || 1) / (image.height || 1);
+  const imageWidth = ratio >= 1 ? 260 : Math.max(136, 260 * ratio);
+  const imageHeight = imageWidth / ratio;
+  return { width: imageWidth + 4, height: imageHeight + 78, imageHeight };
+}
+
+/**
  * 将作品版本按父子关系从左到右排布，分支分开占行。
  * @param {Array<object>} versions 同一作品的完整版本。
  * @returns {Object<string, {x: number, y: number}>} 每个版本的默认画布位置。
@@ -15,13 +29,23 @@ export function layoutVersionBlueprint(versions) {
     if (!children.has(parent)) children.set(parent, []);
     children.get(parent).push(version);
   }
+  const sizes = new Map(ordered.map((version) => [version.id, versionNodeSize(version)]));
+  const depths = new Map();
+  const widths = [];
+  for (const version of ordered) {
+    const depth = (depths.get(version.parent_id) ?? -1) + 1;
+    depths.set(version.id, depth);
+    widths[depth] = Math.max(widths[depth] || 0, sizes.get(version.id).width);
+  }
+  const columns = widths.map((_, depth) => widths.slice(0, depth).reduce((sum, width) => sum + width + 112, 0));
+  const rowHeight = Math.max(142, ...[...sizes.values()].map((size) => size.height)) + 50;
   const positions = {};
   let row = 0;
   const place = (version, depth) => {
     const branch = children.get(version.id) || [];
     const rows = branch.map((child) => place(child, depth + 1));
-    const y = rows.length ? (rows[0] + rows.at(-1)) / 2 : row++ * 252;
-    positions[version.id] = { x: depth * 328, y };
+    const y = rows.length ? (rows[0] + rows.at(-1)) / 2 : row++ * rowHeight + rowHeight / 2;
+    positions[version.id] = { x: columns[depth], y: y - sizes.get(version.id).height / 2 };
     return y;
   };
   for (const root of children.get(null) || []) place(root, 0);
@@ -50,7 +74,7 @@ export function buildVersionBlueprint(versions, blueprint) {
     const group = grouped.get(version.id);
     const key = group ? `group:${group.id}` : version.id;
     representatives.set(version.id, key);
-    if (!group) nodes.push({ key, type: 'version', version, memberIds: [version.id], ...positions[version.id], width: BLUEPRINT_NODE_WIDTH, height: BLUEPRINT_NODE_HEIGHT, hiddenAncestorIds: [] });
+    if (!group) nodes.push({ key, type: 'version', version, memberIds: [version.id], ...positions[version.id], ...versionNodeSize(version), hiddenAncestorIds: [] });
   }
   for (const group of blueprint.groups) {
     const memberIds = group.node_ids.filter((id) => byId.has(id));
@@ -60,8 +84,8 @@ export function buildVersionBlueprint(versions, blueprint) {
     const top = Math.min(...visibleMembers.map((id) => positions[id].y));
     if (group.collapsed) nodes.push({ key: `group:${group.id}`, type: 'group', group, memberIds, x: left, y: top, width: BLUEPRINT_NODE_WIDTH, height: BLUEPRINT_NODE_HEIGHT, hiddenAncestorIds: [] });
     else groups.push({ group, memberIds, x: left - 18, y: top - 48,
-      width: Math.max(...visibleMembers.map((id) => positions[id].x)) - left + BLUEPRINT_NODE_WIDTH + 36,
-      height: Math.max(...visibleMembers.map((id) => positions[id].y)) - top + BLUEPRINT_NODE_HEIGHT + 66 });
+      width: Math.max(...visibleMembers.map((id) => positions[id].x + versionNodeSize(byId.get(id)).width)) - left + 36,
+      height: Math.max(...visibleMembers.map((id) => positions[id].y + versionNodeSize(byId.get(id)).height)) - top + 66 });
   }
   const visibleByKey = new Map(nodes.map((node) => [node.key, node]));
   const edges = [];

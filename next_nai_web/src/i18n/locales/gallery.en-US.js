@@ -2,10 +2,15 @@ const gallery = {
   "gallery": {
     "versionWorkspace": {
       "current": "{title} · Continue from v{number}",
-      "newHint": "The next generation starts a work with version history",
+      "newHint": "Standard generation · Work history is off",
       "save": "Save prompt version",
       "history": "Work blueprint",
-      "newWork": "Start a new work",
+      "newWork": "New work",
+      "openWork": "Open work",
+      "exitWork": "Leave work",
+      "createHint": "Your first generated image will become V1.",
+      "waiting": "{title} · Waiting for the first image",
+      "applied": "Node parameters applied",
       "untitled": "Untitled work",
       "title": "Work title",
       "message": "Describe this change",
@@ -19,13 +24,13 @@ const gallery = {
     },
     "version": {
       "title": "Work blueprints", "hint": "Compare, annotate and organize image branches. Reuse any node's parameters to continue.",
-      "chooseWork": "Choose a work", "allWorks": "All works", "newWork": "New work", "emptyWorks": "No works yet. Start with an image or save a prompt first.",
+      "chooseWork": "Choose a work", "allWorks": "All works", "newWork": "New work", "emptyWorks": "No works yet. Create an empty work or start with an existing image.",
       "workTitle": "Work title", "history": "Versions and branches", "noMessage": "No description", "root": "Initial version", "parentNumber": "From v{number}",
       "rename": "Rename work", "continue": "Continue this version", "restore": "Restore as new version", "restoreHint": "Restoring adds a new version after the latest one and keeps the full history.",
       "restoreMessage": "Restore v{number}", "promptOnly": "Prompt-only version · no image attached", "compareWith": "Compare with another version", "noCompare": "View selected version only",
       "parameterChanges": "Parameter and character changes", "noParameterChanges": "Other parameters and characters are unchanged.", "commitFrom": "Save a new version from v{number}",
       "attachImages": "Attach the {count} selected images", "useImageParameters": "Use image prompts and basic parameters (keep reference inputs)", "parametersJson": "Other parameters and characters (JSON)",
-      "message": "Describe this change", "commit": "Save new version", "saved": "Version saved. Existing history is preserved.", "invalidParameters": "Other parameters must be a valid JSON object.",
+      "message": "Describe this change", "commit": "Save new version", "created": "Work created. Waiting for the first image.", "saved": "Version saved. Existing history is preserved.", "invalidParameters": "Other parameters must be a valid JSON object.",
       "addImages": "Add to work versions", "openOriginal": "Open the original image snapshot for v{number}", "viewOriginal": "View original", "mediaChanged": "Reference image or mask content changed.", "preservedParameters": "Advanced parameters and reference images are preserved. Continue in the painting workspace to adjust them."
     },
     "smart": {

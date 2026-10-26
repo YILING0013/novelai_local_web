@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
-import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogContent, DialogTitle, FormControlLabel, IconButton, MenuItem, Stack, TextField, Typography } from '@mui/material';
-import { Add, ArrowBack, Close, ExpandMore, History, Restore, SaveOutlined, EditOutlined } from '@mui/icons-material';
+import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, MenuItem, Stack, TextField, Typography } from '@mui/material';
+import { Add, ArrowBack, Close, ExpandMore, History, Restore, SaveOutlined, EditOutlined, DeleteOutline } from '@mui/icons-material';
 import apiClient from '@/utils/ApiClient';
 import { useI18n } from '@/i18n/I18nProvider';
 import GalleryMetadataFields from './GalleryMetadataFields';
@@ -17,7 +17,7 @@ const emptyBlueprint = { positions: {}, edge_notes: {}, hidden_node_ids: [], gro
  * @param {object} props 入口图片、初始作品，以及关闭和复用节点的回调。
  * @returns {React.ReactElement} 包含蓝图、节点详情和版本提交的全屏工作区。
  */
-export default function GalleryVersionsDialog({ open, onClose, imageIds = [], initialWorkId = null, onContinue, imageEntry = null }) {
+export default function GalleryVersionsDialog({ open, onClose, imageIds = [], initialWorkId = null, onContinue, onApply, onStartWork, activeContext = null, onContextChange, imageEntry = null }) {
   const { t, locale } = useI18n();
   const zh = locale !== 'en-US';
   const [works, setWorks] = useState([]);
@@ -43,6 +43,10 @@ export default function GalleryVersionsDialog({ open, onClose, imageIds = [], in
   const [attachImages, setAttachImages] = useState(imageIds.length > 0);
   const [candidate, setCandidate] = useState(imageEntry);
   const [revision, setRevision] = useState(0);
+  const [workSearch, setWorkSearch] = useState('');
+  const [selectedWorks, setSelectedWorks] = useState([]);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [messageDraft, setMessageDraft] = useState(null);
   const candidateId = imageIds[0] || '';
   const locked = busy || blueprintSaving;
 
@@ -54,7 +58,7 @@ export default function GalleryVersionsDialog({ open, onClose, imageIds = [], in
     if (!open) return undefined;
     let active = true;
     setLoading(true); setError(''); setNotice(''); setCreating(false); setBlueprintFailed(false);
-    setAttachImages(Boolean(candidateId));
+    setAttachImages(Boolean(candidateId)); setSelectedWorks([]); setWorkSearch('');
     Promise.all([apiClient.getWorks(), candidateId ? apiClient.getImageVersions(candidateId) : Promise.resolve({ works: [] }),
       candidateId ? apiClient.getGalleryEntry(candidateId) : Promise.resolve(null),
     ]).then(([all, linked, entry]) => {
@@ -80,7 +84,7 @@ export default function GalleryVersionsDialog({ open, onClose, imageIds = [], in
       const latest = ordered.at(-1);
       setWork(result.work); setTitle(result.work.title); setVersions(ordered);
       setBlueprint(result.blueprint || emptyBlueprint); setSavedBlueprint(result.blueprint || emptyBlueprint); setBlueprintFailed(false);
-      setSelectedId(latest?.id || ''); setCompareId(latest?.parent_id || ''); setMessage('');
+      setSelectedId(latest?.id || ''); setCompareId(latest?.images.length ? latest.parent_id || '' : ''); setMessage('');
       setAttachImages(false); setDetailOpen(true); setRenaming(false);
       chooseDraft(latest?.parameters || {});
     }).catch((requestError) => { if (active) setError(requestError.data?.error || requestError.message); })
@@ -89,7 +93,17 @@ export default function GalleryVersionsDialog({ open, onClose, imageIds = [], in
   }, [open, workId, revision]);
 
   const selected = versions.find((version) => version.id === selectedId);
-  const compared = versions.find((version) => version.id === compareId);
+  const compared = selected?.images.length ? versions.find((version) => version.id === compareId) : undefined;
+  const visibleWorks = works.filter((item) => item.title.toLocaleLowerCase().includes(workSearch.toLocaleLowerCase()));
+  const selectNodes = (id, ids = id ? [id] : []) => {
+    const pair = ids.length === 2 ? versions.filter((item) => ids.includes(item.id)) : [];
+    const clicked = versions.find((item) => item.id === id);
+    const version = clicked && !clicked.images.length ? clicked : pair.length === 2 ? pair[1] : clicked;
+    setSelectedId(version?.id || '');
+    setCompareId(version?.images.length ? (pair.length === 2 ? pair[0].id : version.parent_id || '') : '');
+    setMessage(''); setDetailOpen(true);
+    if (version) chooseDraft(version.parameters);
+  };
   const saveBlueprint = async (next) => {
     setBlueprint(next); setBlueprintSaving(true); setBlueprintFailed(false); setError('');
     try { await apiClient.updateWorkBlueprint(workId, next); setSavedBlueprint(next); }
@@ -105,12 +119,12 @@ export default function GalleryVersionsDialog({ open, onClose, imageIds = [], in
         result = await apiClient.createWorkVersion(workId, { parent_id: versions.at(-1).id, restore_version_id: selected.id, operation: 'restore', message: message.trim() || t('gallery.version.restoreMessage', { number: selected.number }) });
       } else {
         const images = attachImages ? imageIds : [];
-        result = creating ? await apiClient.createWork({ title: title.trim(), parameters: draft, image_ids: images, message: message.trim() })
+        result = creating ? await apiClient.createWork({ title: title.trim(), image_ids: images, ...(images.length ? { parameters: draft } : {}) })
           : await apiClient.createWorkVersion(workId, { parent_id: selectedId, parameters: draft, image_ids: images, message: message.trim(), operation: 'manual' });
       }
       setCreating(false); setWorkId(result.work.id); setRevision((value) => value + 1); setAttachImages(false);
       setWorks((current) => [result.work, ...current.filter((item) => item.id !== result.work.id)]);
-      setNotice(t('gallery.version.saved'));
+      setNotice(t(creating && !result.version ? 'gallery.version.created' : 'gallery.version.saved'));
     } catch (requestError) { setError(requestError.data?.error || requestError.message); }
     finally { setBusy(false); }
   };
@@ -118,58 +132,97 @@ export default function GalleryVersionsDialog({ open, onClose, imageIds = [], in
   const commitEditor = <Stack spacing={1.5}>
     {creating && <TextField size="small" label={t('gallery.version.workTitle')} value={title} inputProps={{ maxLength: 200 }} onChange={(event) => setTitle(event.target.value)} />}
     {imageIds.length > 0 && <Box><FormControlLabel control={<Checkbox checked={attachImages} onChange={(_, checked) => setAttachImages(checked)} />} label={t('gallery.version.attachImages', { count: imageIds.length })} />{candidate && <Button size="small" disabled={locked} onClick={() => chooseDraft({ ...draft, ...candidate.parameters, positivePrompt: candidate.prompt || '', negativePrompt: candidate.negative_prompt || '' })}>{t('gallery.version.useImageParameters')}</Button>}</Box>}
-    {['positivePrompt', 'negativePrompt'].map((field) => <TextField key={field} label={t('gallery.' + field)} size="small" multiline minRows={3} maxRows={10} value={draft[field]} onChange={(event) => setDraft({ ...draft, [field]: event.target.value })} />)}
-    <Accordion disableGutters elevation={0} sx={{ border: 1, borderColor: 'divider', '&:before': { display: 'none' } }}><AccordionSummary expandIcon={<ExpandMore />}>{t('gallery.generationParameters')}</AccordionSummary><AccordionDetails><GalleryMetadataFields value={Object.fromEntries(editableParameters.filter((key) => Object.hasOwn(draft, key)).map((key) => [key, draft[key]]))} onChange={(next) => setDraft({ ...draft, ...next })} allowStructure={false} disabled={locked} /><Typography variant="caption" color="text.secondary">{t('gallery.version.preservedParameters')}</Typography></AccordionDetails></Accordion>
-    <TextField size="small" label={t('gallery.version.message')} value={message} inputProps={{ maxLength: 1000 }} onChange={(event) => setMessage(event.target.value)} />
-    <Stack direction="row" justifyContent="flex-end" gap={1}>{creating && <Button startIcon={<ArrowBack />} disabled={locked} onClick={() => { setCreating(false); if (selected) chooseDraft(selected.parameters); setTitle(work?.title || ''); }}>{t('gallery.cancel')}</Button>}<Button startIcon={<SaveOutlined />} variant="contained" disabled={locked || blueprintFailed || (creating && !title.trim())} onClick={() => save()}>{t(busy ? 'gallery.saving' : 'gallery.version.commit')}</Button></Stack>
+    {!creating && <>{['positivePrompt', 'negativePrompt'].map((field) => <TextField key={field} label={t('gallery.' + field)} size="small" multiline minRows={3} maxRows={10} value={draft[field]} onChange={(event) => setDraft({ ...draft, [field]: event.target.value })} />)}
+    <Accordion disableGutters elevation={0} sx={{ border: 1, borderColor: 'divider', '&:before': { display: 'none' } }}><AccordionSummary expandIcon={<ExpandMore />}>{t('gallery.generationParameters')}</AccordionSummary><AccordionDetails><GalleryMetadataFields value={Object.fromEntries(editableParameters.filter((key) => Object.hasOwn(draft, key)).map((key) => [key, draft[key]]))} onChange={(next) => setDraft({ ...draft, ...next })} allowStructure={false} disabled={locked} /></AccordionDetails></Accordion>
+    <TextField size="small" label={t('gallery.version.message')} value={message} inputProps={{ maxLength: 2000 }} onChange={(event) => setMessage(event.target.value)} /></>}
+    <Stack direction="row" justifyContent="flex-end" gap={1}>{creating && <Button startIcon={<ArrowBack />} disabled={locked} onClick={() => { setCreating(false); if (selected) chooseDraft(selected.parameters); setTitle(work?.title || ''); }}>{t('gallery.cancel')}</Button>}<Button startIcon={<SaveOutlined />} variant="contained" disabled={locked || blueprintFailed || (creating && !title.trim())} onClick={() => save()}>{t(busy ? 'gallery.saving' : creating ? 'gallery.version.newWork' : 'gallery.version.commit')}</Button></Stack>
   </Stack>;
 
   return <Dialog open={open} onClose={() => !locked && !blueprintFailed && onClose()} fullScreen aria-labelledby="gallery-versions-title">
-    <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1, borderBottom: 1, borderColor: 'divider' }}>
-      <History color="primary" /><Box sx={{ flex: 1, minWidth: 0 }}><Typography id="gallery-versions-title" component="h2" variant="subtitle1" noWrap sx={{ fontWeight: 650 }}>{work && !creating ? work.title : (zh ? '作品蓝图' : 'Work blueprints')}</Typography><Typography variant="caption" color="text.secondary">{zh ? '图片节点 · 分支探索 · 修改对比' : 'Image nodes · Branches · Visual diffs'}</Typography></Box>
-      {work && <Chip size="small" color={blueprintFailed ? 'error' : 'default'} label={blueprintSaving ? (zh ? '保存蓝图中…' : 'Saving…') : blueprintFailed ? (zh ? '蓝图未保存' : 'Unsaved') : (zh ? '蓝图已保存' : 'Saved')} />}
+    <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 0.75, py: 1, borderBottom: 1, borderColor: 'divider' }}>
+      {workId || creating ? <Button size="small" startIcon={<ArrowBack />} disabled={locked || blueprintFailed} onClick={() => { setWorkId(null); setWork(null); setVersions([]); setCreating(false); setRenaming(false); }}>{zh ? '作品列表' : 'Works'}</Button> : <History color="primary" />}
+      <Typography id="gallery-versions-title" component="h2" variant="subtitle1" noWrap sx={{ fontWeight: 650, minWidth: 0 }}>{work && !creating ? work.title : (zh ? '作品蓝图' : 'Work blueprints')}</Typography>
+      {work && !creating && <IconButton size="small" aria-label={t('gallery.version.rename')} onClick={() => setRenaming(!renaming)} disabled={locked}><EditOutlined fontSize="small" /></IconButton>}
+      <Box sx={{ flex: 1 }} />
+      {work && <Chip size="small" color={blueprintFailed ? 'error' : 'default'} label={blueprintSaving ? (zh ? '保存中…' : 'Saving…') : blueprintFailed ? (zh ? '未保存' : 'Unsaved') : (zh ? '已保存' : 'Saved')} />}
       <IconButton aria-label={t('gallery.close')} disabled={locked || blueprintFailed} onClick={onClose}><Close /></IconButton>
     </DialogTitle>
     <DialogContent sx={{ p: { xs: 1, md: 1.5 }, pt: '12px !important', display: 'flex', flexDirection: 'column', gap: 1.25, overflowY: { xs: 'auto', md: 'hidden' } }}>
       {error && <Alert severity="error" action={blueprintFailed ? <Stack direction="row"><Button color="inherit" onClick={() => saveBlueprint(blueprint)}>{zh ? '重试保存蓝图' : 'Retry save'}</Button><Button color="inherit" onClick={() => { setBlueprint(savedBlueprint); setBlueprintFailed(false); setError(''); }}>{zh ? '撤销未保存的布局' : 'Discard unsaved layout'}</Button></Stack> : undefined} onClose={blueprintFailed ? undefined : () => setError('')}>{error}</Alert>}
       {notice && <Alert severity="success" onClose={() => setNotice('')}>{notice}</Alert>}
-      <Stack direction="row" gap={1} flexWrap="wrap" alignItems="center">
-        <TextField select size="small" label={t('gallery.version.chooseWork')} value={workId || ''} disabled={locked || blueprintFailed} onChange={(event) => { setCreating(false); setWorkId(event.target.value || null); setWork(null); setVersions([]); }} sx={{ minWidth: 160, flex: 1, maxWidth: 380 }}>
-          <MenuItem value="">{t('gallery.version.allWorks')}</MenuItem>{works.map((item) => <MenuItem key={item.id} value={item.id}>{item.title}</MenuItem>)}
-        </TextField>
-        <Button startIcon={<Add />} disabled={locked || blueprintFailed} onClick={() => { setCreating(true); setTitle(candidate?.title || ''); setMessage(''); setAttachImages(Boolean(candidateId)); chooseDraft(candidate ? { ...candidate.parameters, positivePrompt: candidate.prompt || '', negativePrompt: candidate.negative_prompt || '' } : {}); }}>{t('gallery.version.newWork')}</Button>
-        {work && !creating && <><IconButton aria-label={t('gallery.version.rename')} onClick={() => setRenaming(!renaming)} disabled={locked}><EditOutlined fontSize="small" /></IconButton>
-          <Typography variant="caption" color="text.secondary" sx={{ flex: 1, display: { xs: 'none', md: 'block' } }}>{zh ? '选中节点即对比父节点；修改并生成或保存后形成新分支。' : 'Select a node to compare with its parent. Generate or save edits to create a new branch.'}</Typography>
-          <Button size="small" onClick={() => setDetailOpen(!detailOpen)}>{detailOpen ? (zh ? '收起详情' : 'Hide details') : (zh ? '节点详情' : 'Node details')}</Button></>}
-      </Stack>
-      {renaming && <Stack direction="row" gap={1}><TextField size="small" label={t('gallery.version.workTitle')} value={title} inputProps={{ maxLength: 200 }} onChange={(event) => setTitle(event.target.value)} /><Button disabled={locked || !title.trim()} onClick={async () => { setBusy(true); setError(''); try { await apiClient.updateWork(workId, { title: title.trim() }); setWork({ ...work, title: title.trim() }); setWorks(works.map((item) => item.id === workId ? { ...item, title: title.trim() } : item)); setRenaming(false); } catch (requestError) { setError(requestError.data?.error || requestError.message); } finally { setBusy(false); } }}>{t('gallery.saveDetails')}</Button></Stack>}
+      {renaming && <Stack direction="row" gap={1}><TextField size="small" label={t('gallery.version.workTitle')} value={title} inputProps={{ maxLength: 200 }} onChange={(event) => setTitle(event.target.value)} /><Button disabled={locked || !title.trim()} onClick={async () => {
+        setBusy(true); setError('');
+        try {
+          const result = await apiClient.updateWork(workId, { title: title.trim() });
+          setWork(result.work); setWorks(works.map((item) => item.id === workId ? result.work : item)); setRenaming(false);
+          if (activeContext?.work_id === workId) onContextChange({ ...activeContext, work_title: result.work.title });
+        } catch (requestError) { setError(requestError.data?.error || requestError.message); } finally { setBusy(false); }
+      }}>{t('gallery.saveDetails')}</Button></Stack>}
       {loading ? <Box sx={{ py: 5, textAlign: 'center' }}><CircularProgress size={28} /></Box> : <>
-        {!workId && !creating && <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' }, gap: 1, overflowY: 'auto' }}>
-          {!works.length && <Typography color="text.secondary">{t('gallery.version.emptyWorks')}</Typography>}
-          {works.map((item) => <Button key={item.id} variant="outlined" onClick={() => setWorkId(item.id)} sx={{ minHeight: 110, gap: 1.5, textAlign: 'left', justifyContent: 'flex-start', overflowWrap: 'anywhere' }}>{item.thumbnail_url && <Box component="img" src={item.thumbnail_url} alt="" sx={{ width: 75, height: 80, objectFit: 'cover', borderRadius: 1 }} />}<Box><Typography>{item.title}</Typography><Typography variant="caption" color="text.secondary">{item.version_count} {zh ? '个节点' : 'nodes'}</Typography></Box></Button>)}
-        </Box>}
+        {!workId && !creating && <>
+          <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
+            <TextField size="small" label={zh ? '搜索作品' : 'Search works'} value={workSearch} onChange={(event) => setWorkSearch(event.target.value)} sx={{ flex: 1, minWidth: 150, maxWidth: 360 }} />
+            <Button startIcon={<Add />} onClick={() => { setCreating(true); setTitle(candidate?.title || ''); setMessage(''); setAttachImages(Boolean(candidateId)); chooseDraft(candidate ? { ...candidate.parameters, positivePrompt: candidate.prompt || '', negativePrompt: candidate.negative_prompt || '' } : {}); }}>{t('gallery.version.newWork')}</Button>
+            <FormControlLabel sx={{ m: 0 }} control={<Checkbox size="small" disabled={!visibleWorks.length || locked} checked={visibleWorks.length > 0 && visibleWorks.every((item) => selectedWorks.includes(item.id))} indeterminate={visibleWorks.some((item) => selectedWorks.includes(item.id)) && !visibleWorks.every((item) => selectedWorks.includes(item.id))} onChange={(_, checked) => setSelectedWorks(checked ? [...new Set([...selectedWorks, ...visibleWorks.map((item) => item.id)])] : selectedWorks.filter((id) => !visibleWorks.some((item) => item.id === id)))} />} label={zh ? '全选' : 'Select all'} />
+            {selectedWorks.length > 0 && <><Chip size="small" label={zh ? `已选 ${selectedWorks.length}` : `${selectedWorks.length} selected`} /><Button size="small" onClick={() => setSelectedWorks([])}>{zh ? '取消选择' : 'Clear selection'}</Button><Button color="error" startIcon={<DeleteOutline />} disabled={locked || selectedWorks.length > 100} onClick={() => setDeleteOpen(true)}>{zh ? '删除作品' : 'Delete works'}</Button></>}
+            {selectedWorks.length > 100 && <Typography variant="caption" color="error">{zh ? '每次最多删除 100 个作品' : 'Select at most 100 works per deletion'}</Typography>}
+          </Stack>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))' }, gap: 1.25, overflowY: 'auto', alignContent: 'start' }}>
+            {!visibleWorks.length && <Typography color="text.secondary">{t('gallery.version.emptyWorks')}</Typography>}
+            {visibleWorks.map((item) => <Box key={item.id} sx={{ display: 'flex', alignItems: 'center', border: 1, borderColor: selectedWorks.includes(item.id) ? 'primary.main' : 'divider', borderRadius: 2, bgcolor: selectedWorks.includes(item.id) ? 'action.selected' : 'background.paper' }}>
+              <Checkbox checked={selectedWorks.includes(item.id)} inputProps={{ 'aria-label': (zh ? '选择作品 ' : 'Select work ') + item.title }} onChange={(_, checked) => setSelectedWorks(checked ? [...selectedWorks, item.id] : selectedWorks.filter((id) => id !== item.id))} />
+              <Button onClick={() => setWorkId(item.id)} sx={{ flex: 1, minWidth: 0, minHeight: 110, gap: 1.5, textAlign: 'left', justifyContent: 'flex-start', textTransform: 'none' }}>{item.thumbnail_url && <Box component="img" src={item.thumbnail_url} alt="" sx={{ width: 75, height: 80, objectFit: 'contain', borderRadius: 1 }} />}<Box sx={{ minWidth: 0 }}><Typography sx={{ overflowWrap: 'anywhere' }}>{item.title}</Typography><Typography variant="caption" color="text.secondary">{item.version_count} {zh ? '个节点' : 'nodes'}</Typography>{activeContext?.work_id === item.id && <Chip size="small" color="success" label={zh ? '创作中' : 'Active'} sx={{ ml: 1 }} />}</Box></Button>
+            </Box>)}
+          </Box>
+        </>}
         {creating && <Box sx={{ width: '100%', maxWidth: 680, alignSelf: 'center', overflowY: 'auto', p: 1 }}><Typography variant="h6" sx={{ mb: 2 }}>{t('gallery.version.newWork')}</Typography>{commitEditor}</Box>}
         {work && !creating && <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: detailOpen && selected ? 'minmax(0, 1fr) 430px' : 'minmax(0, 1fr)' }, gap: 1.5, flex: { md: 1 }, minHeight: { md: 0 } }}>
-          <Box sx={{ minWidth: 0, minHeight: { md: 0 }, height: { xs: 480, md: '100%' } }}><VersionBlueprintCanvas key={work.id} versions={versions} blueprint={blueprint} onBlueprintChange={saveBlueprint} selectedId={selectedId} onSelect={(id) => { setDetailOpen(true); if (id === selectedId) return; const version = versions.find((item) => item.id === id); setSelectedId(id); setCompareId(version.parent_id || ''); setMessage(''); chooseDraft(version.parameters); }} disabled={locked || blueprintFailed} /></Box>
+          <Stack spacing={0.5} sx={{ minWidth: 0, minHeight: { md: 0 }, height: { xs: 500, md: '100%' } }}>
+            {!versions.length && <Button variant="contained" onClick={() => onStartWork(work)}>{zh ? '进入作品生成首张图片' : 'Start the first image'}</Button>}
+            <VersionBlueprintCanvas key={work.id} versions={versions} blueprint={blueprint} onBlueprintChange={saveBlueprint} selectedId={selectedId}
+              activeVersionId={activeContext?.work_id === work.id ? activeContext.parent_version_id : null} onSelect={selectNodes}
+              onContinue={(version) => onContinue(version, work)} onApply={(version) => onApply(version, work)} onEditMessage={(version) => setMessageDraft({ id: version.id, text: version.message })} disabled={locked || blueprintFailed} />
+            {selected && <Button size="small" sx={{ alignSelf: 'flex-end' }} onClick={() => setDetailOpen(!detailOpen)}>{detailOpen ? (zh ? '收起详情' : 'Hide details') : (zh ? '节点详情' : 'Node details')}</Button>}
+          </Stack>
           {selected && detailOpen && <Stack spacing={1.5} sx={{ minWidth: 0, overflowY: { md: 'auto' }, pr: { md: 0.5 }, pb: 2 }}>
             <Box sx={{ p: 1.25, border: 1, borderColor: 'divider', borderRadius: 1.5 }}>
-              <Stack direction="row" alignItems="center" gap={1}><Chip size="small" label={'v' + selected.number} /><Typography variant="body2" sx={{ flex: 1, overflowWrap: 'anywhere' }}>{selected.message || t('gallery.version.noMessage')}</Typography></Stack>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', my: 0.75 }}>{new Date(selected.created_at).toLocaleString(locale)}{selected.parent_id ? ' · ' + (zh ? '从 v' : 'From v') + versions.find((item) => item.id === selected.parent_id)?.number : ' · ' + t('gallery.version.root')}</Typography>
-              <Button fullWidth variant="contained" disabled={locked || blueprintFailed} onClick={() => onContinue(selected, work)}>{zh ? '复用此节点的全部参数' : 'Reuse all node parameters'}</Button>
+              <Stack direction="row" alignItems="center" gap={1}><Chip size="small" label={'v' + selected.number} /><Typography variant="body2" sx={{ flex: 1, overflowWrap: 'anywhere' }}>{selected.message || t('gallery.version.noMessage')}</Typography><IconButton size="small" aria-label={zh ? '编辑改动说明' : 'Edit change description'} disabled={locked} onClick={() => setMessageDraft({ id: selected.id, text: selected.message })}><EditOutlined fontSize="small" /></IconButton></Stack>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', my: 0.75 }}>{new Date(selected.created_at).toLocaleString(locale)}{selected.parent_id ? ' · ' + (zh ? '从 v' : 'From v') + versions.find((item) => item.id === selected.parent_id)?.number : ''}</Typography>
+              <Button fullWidth variant="contained" disabled={locked || blueprintFailed} onClick={() => onContinue(selected, work)}>{zh ? '从此节点继续' : 'Continue from this node'}</Button>
               <Box sx={{ display: 'grid', gridTemplateColumns: compared ? 'repeat(2, minmax(0, 1fr))' : '1fr', gap: 0.75, mt: 1.25 }}>
-                {(compared ? [compared, selected] : [selected]).map((version) => <Box key={version.id} sx={{ minWidth: 0 }}><Typography variant="caption">v{version.number}</Typography>{version.images.length ? <Box sx={{ display: 'flex', overflowX: 'auto', gap: 0.5 }}>{version.images.map((image) => <Box key={image.id} component="a" href={image.url} target="_blank" rel="noopener noreferrer" aria-label={t('gallery.version.openOriginal', { number: version.number })} sx={{ display: 'block', flexShrink: 0, width: '100%' }}><Box component="img" src={image.thumbnail_url || image.url} alt={image.title || image.filename || t('gallery.untitled')} sx={{ height: 170, width: '100%', objectFit: 'contain', bgcolor: 'action.hover', borderRadius: 1 }} /></Box>)}</Box> : <Box sx={{ height: 90, display: 'grid', placeItems: 'center', bgcolor: 'action.hover', borderRadius: 1 }}><Typography variant="caption">{t('gallery.version.promptOnly')}</Typography></Box>}</Box>)}
+                {(compared ? [compared, selected] : [selected]).map((version) => <Box key={version.id} sx={{ minWidth: 0 }}><Typography variant="caption">v{version.number}</Typography>{version.images.length ? <Box sx={{ display: 'flex', overflowX: 'auto', gap: 0.5 }}>{version.images.map((image) => <Box key={image.id} component="a" href={image.url} target="_blank" rel="noopener noreferrer" aria-label={t('gallery.version.openOriginal', { number: version.number })} sx={{ display: 'block', flexShrink: 0, width: '100%' }}><Box component="img" src={image.thumbnail_url || image.url} alt={image.title || image.filename || t('gallery.untitled')} sx={{ height: 170, width: '100%', objectFit: 'contain', bgcolor: 'action.hover', borderRadius: 1 }} /></Box>)}</Box> : <Typography variant="caption" color="text.secondary">{t('gallery.version.promptOnly')}</Typography>}</Box>)}
               </Box>
             </Box>
-            <TextField select fullWidth size="small" label={t('gallery.version.compareWith')} value={compareId} onChange={(event) => setCompareId(event.target.value)}><MenuItem value="">{t('gallery.version.noCompare')}</MenuItem>{versions.filter((item) => item.id !== selectedId).map((item) => <MenuItem key={item.id} value={item.id}>{'v' + item.number + (item.id === selected.parent_id ? (zh ? ' · 父节点' : ' · Parent') : '') + ' · ' + (item.message || t('gallery.version.noMessage'))}</MenuItem>)}</TextField>
-            <VersionSnapshotDetails key={selected.id + ':' + compareId} selected={selected} compared={compared} />
+            {selected.images.length > 0 && <TextField select fullWidth size="small" label={t('gallery.version.compareWith')} value={compareId} onChange={(event) => setCompareId(event.target.value)}><MenuItem value="">{t('gallery.version.noCompare')}</MenuItem>{versions.filter((item) => item.id !== selectedId).map((item) => <MenuItem key={item.id} value={item.id}>{'v' + item.number + (item.id === selected.parent_id ? (zh ? ' · 父节点' : ' · Parent') : '') + ' · ' + (item.message || t('gallery.version.noMessage'))}</MenuItem>)}</TextField>}
+            <VersionSnapshotDetails key={selected.id + ':' + compareId} selected={selected} compared={compared} onApply={() => onApply(selected, work)} disabled={locked || blueprintFailed} />
             <Accordion disableGutters elevation={0} sx={{ border: 1, borderColor: 'divider', '&:before': { display: 'none' } }}>
               <AccordionSummary expandIcon={<ExpandMore />}>{t('gallery.version.commitFrom', { number: selected.number })}</AccordionSummary>
               <AccordionDetails>{commitEditor}</AccordionDetails>
             </Accordion>
-            <Box><Button size="small" startIcon={<Restore />} disabled={locked || blueprintFailed} onClick={() => save(true)}>{t('gallery.version.restore')}</Button><Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{t('gallery.version.restoreHint')}</Typography></Box>
+            <Button size="small" startIcon={<Restore />} disabled={locked || blueprintFailed} onClick={() => save(true)}>{t('gallery.version.restore')}</Button>
           </Stack>}
         </Box>}
       </>}
     </DialogContent>
+    <Dialog open={Boolean(messageDraft)} onClose={() => !locked && setMessageDraft(null)} maxWidth="sm" fullWidth><DialogTitle>{zh ? '编辑改动说明' : 'Edit change description'}</DialogTitle><DialogContent sx={{ pt: '8px !important' }}>
+      {error && <Alert severity="error">{error}</Alert>}<TextField autoFocus fullWidth multiline minRows={3} label={t('gallery.version.message')} value={messageDraft?.text || ''} inputProps={{ maxLength: 2000 }} onChange={(event) => setMessageDraft({ ...messageDraft, text: event.target.value })} />
+    </DialogContent><DialogActions><Button disabled={locked} onClick={() => setMessageDraft(null)}>{t('gallery.cancel')}</Button><Button disabled={locked} onClick={async () => {
+      setBusy(true); setError('');
+      try { const result = await apiClient.updateWorkVersion(workId, messageDraft.id, { message: messageDraft.text }); setVersions(versions.map((item) => item.id === result.version.id ? result.version : item)); setMessageDraft(null); }
+      catch (requestError) { setError(requestError.data?.error || requestError.message); } finally { setBusy(false); }
+    }}>{t('gallery.saveDetails')}</Button></DialogActions></Dialog>
+    <Dialog open={deleteOpen} onClose={() => !locked && setDeleteOpen(false)} maxWidth="sm" fullWidth><DialogTitle>{zh ? `删除 ${selectedWorks.length} 个作品？` : `Delete ${selectedWorks.length} works?`}</DialogTitle><DialogContent>
+      {error && <Alert severity="error">{error}</Alert>}
+      <Typography>{zh ? '将永久删除这些作品的节点、分支与蓝图。图库原图保留，此操作无法撤销。' : 'Permanently delete these works, nodes, branches and blueprints. Gallery originals are kept. This cannot be undone.'}</Typography>
+      <Box component="ul" sx={{ pl: 3, maxHeight: 200, overflow: 'auto' }}>{works.filter((item) => selectedWorks.includes(item.id)).map((item) => <li key={item.id}>{item.title}</li>)}</Box>
+    </DialogContent><DialogActions><Button disabled={locked} onClick={() => setDeleteOpen(false)}>{t('gallery.cancel')}</Button><Button color="error" variant="contained" disabled={locked} onClick={async () => {
+      setBusy(true); setError('');
+      try {
+        const result = await apiClient.deleteWorks(selectedWorks);
+        setWorks(works.filter((item) => !result.deleted_ids.includes(item.id))); setSelectedWorks([]); setDeleteOpen(false);
+        if (result.deleted_ids.includes(activeContext?.work_id)) onContextChange(null);
+        if (result.cleanup_failed) setError(zh ? '作品已删除，但部分历史快照文件未能清理。' : 'Works deleted, but some snapshot files could not be removed.');
+      } catch (requestError) { setError(requestError.data?.error || requestError.message); } finally { setBusy(false); }
+    }}>{zh ? '永久删除' : 'Delete permanently'}</Button></DialogActions></Dialog>
   </Dialog>;
 }

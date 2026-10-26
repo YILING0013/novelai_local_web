@@ -778,10 +778,11 @@ def _save_generated_images(images: list[dict], parameters: dict, *, version_para
         except (OSError, ValueError, LocalStoreError, ExposableError, sqlite3.Error):
             current_app.logger.warning("event=generated_image_save_failed correlation_id=%s", _request_correlation_id())
             image["save_error"] = "LOCAL_IMAGE_SAVE_FAILED"
-            if version_parameters is not None:
+            if version_context:
                 image["version_error"] = "LOCAL_VERSION_SAVE_FAILED"
             continue
-        if version_parameters is not None:
+        # 只有用户明确创建或继续作品，才把本次生成写入该作品的历史。
+        if version_context:
             try:
                 versions = current_app.extensions["image_library"].versions
                 # 实际成图参数覆盖随机种子与尺寸；图生图、遮罩和参考输入来自工作台请求。
@@ -797,12 +798,8 @@ def _save_generated_images(images: list[dict], parameters: dict, *, version_para
                     snapshot["positivePrompt"] = version_parameters.get("positivePrompt", "")
                 body = {"image_ids": [saved["id"]], "parameters": snapshot,
                         "operation": "generate", "message": "生成图片"}
-                if version_context:
-                    body["parent_id"] = version_context["parent_version_id"]
-                    committed = versions.create_version(version_context["work_id"], body)
-                else:
-                    body["title"] = (str(snapshot.get("positivePrompt") or snapshot.get("prompt") or "未命名作品").strip() or "未命名作品")[:80]
-                    committed = versions.create_work(body)
+                body["parent_id"] = version_context["parent_version_id"]
+                committed = versions.create_version(version_context["work_id"], body)
                 image["version"] = {"work_id": committed["work"]["id"], "work_title": committed["work"]["title"],
                                     "version_id": committed["version"]["id"], "number": committed["version"]["number"]}
             except (OSError, ValueError, LocalStoreError, ExposableError, sqlite3.Error):
@@ -1722,7 +1719,9 @@ def create_app(
         source_payload = copy.deepcopy(_request_json())
         version_context = app.extensions["image_library"].versions.validate_context(source_payload.pop("version_context", None))
         version_editor = source_payload.pop("version_editor", None)
-        if version_editor is not None:
+        if not version_context:
+            version_editor = None
+        elif version_editor is not None:
             version_editor = validate_version_editor(version_editor)
         batch_id, index, batch_size = _parse_batch_metadata(source_payload)
         if source_payload.get("image_tool") == "enhance":
@@ -2192,8 +2191,14 @@ def create_app(
     @app.post("/api/local/works")
     @session_required(csrf=True)
     def works_create() -> Response:
-        """创建作品及首版，图片和纯提示词都可以独立提交。"""
+        """创建空作品，只有附带图库图片时才同时创建首版。"""
         return jsonify(app.extensions["image_library"].versions.create_work(_request_json()))
+
+    @app.post("/api/local/works/batch-delete")
+    @session_required(csrf=True)
+    def works_delete() -> Response:
+        """批量删除作品历史，保留图库原图。"""
+        return jsonify(app.extensions["image_library"].versions.delete_works(_request_json().get("ids")))
 
     @app.get("/api/local/works/<work_id>")
     @session_required()
@@ -2224,6 +2229,12 @@ def create_app(
     def version_detail(work_id: str, version_id: str) -> Response:
         """读取单个版本的完整参数，工作台直接通过会话接口恢复图像输入。"""
         return jsonify(app.extensions["image_library"].versions.get_version(work_id, version_id))
+
+    @app.patch("/api/local/works/<work_id>/versions/<version_id>")
+    @session_required(csrf=True)
+    def version_message_update(work_id: str, version_id: str) -> Response:
+        """编辑节点改动说明，其他历史内容保持不变。"""
+        return jsonify({"version": app.extensions["image_library"].versions.update_message(work_id, version_id, _request_json())})
 
     @app.get("/api/local/gallery/<image_id>/versions")
     @session_required()

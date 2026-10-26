@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography, useTheme } from '@mui/material';
+import { Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography, useTheme } from '@mui/material';
 import { Add, CenterFocusStrong, Close, EditOutlined, LayersOutlined, PanToolOutlined, Refresh, Remove, SelectAll, TextSnippetOutlined, UnfoldLess, UnfoldMore, VisibilityOffOutlined } from '@mui/icons-material';
 import { alpha } from '@mui/material/styles';
 import { useI18n } from '@/i18n/I18nProvider';
@@ -17,8 +17,8 @@ const words = {
     group: '选中成组', groupHint: '将选中的版本放进命名组，只整理画布，不合并版本数据。', groupTitle: '组名称', newGroup: '版本组', editGroup: '重命名组', ungroup: '解散组',
     collapseGroup: '折叠组', expandGroup: '展开组', hide: '隐藏所选', collapsePath: '折叠路径', pathHint: '保留根节点与所选的中间或末端节点，折叠它们之间的祖先版本。',
     expandAll: '展开全部', hidden: '个隐藏', selected: '个已选', versions: '个版本', promptOnly: '纯提示词版本', noMessage: '未填写改动说明',
-    hint: '拖动节点调整位置，拖动空白平移，滚轮或双指缩放。Shift 点选或拖动框选；手机可切到多选模式。点连线写备注。',
-    mobileHint: '拖动节点或空白，双指缩放。多选模式可点选或框选；点连线写备注。',
+    hint: 'Shift 多选 · 滚轮缩放 · 右键操作',
+    mobileHint: '双指缩放 · 多选模式可框选',
     empty: '此作品还没有版本。', allHidden: '节点已隐藏，版本历史仍然保留。', restore: '恢复全部节点',
     edge: '连线备注', edgeHint: '记录这一步为什么调整提示词、参数或图像。备注只属于这条版本连线。', note: '备注', save: '保存', cancel: '取消',
     expandPath: '展开折叠的版本', hiddenPath: '个已折叠', selectVersion: '选择版本', keyboard: '方向键移动视口；聚焦节点后按 Enter 选择。',
@@ -28,8 +28,8 @@ const words = {
     group: 'Group selected', groupHint: 'Put selected versions in a named group. This only organizes the canvas; version data is not merged.', groupTitle: 'Group name', newGroup: 'Version group', editGroup: 'Rename group', ungroup: 'Ungroup',
     collapseGroup: 'Collapse group', expandGroup: 'Expand group', hide: 'Hide selected', collapsePath: 'Collapse path', pathHint: 'Keep roots and selected intermediate or final versions, and fold the ancestors between them.',
     expandAll: 'Expand all', hidden: 'hidden', selected: 'selected', versions: 'versions', promptOnly: 'Prompt-only version', noMessage: 'No change description',
-    hint: 'Drag nodes to arrange, drag empty space to pan, and scroll or pinch to zoom. Shift-click or drag to select; use selection mode on mobile. Click an edge to add a note.',
-    mobileHint: 'Drag nodes or empty space; pinch to zoom. Selection mode supports taps and boxes. Tap an edge to add notes.',
+    hint: 'Shift to select · Scroll to zoom · Right-click for actions',
+    mobileHint: 'Pinch to zoom · Selection mode supports box selection',
     empty: 'This work has no versions yet.', allHidden: 'Nodes are hidden. The full version history is preserved.', restore: 'Restore all nodes',
     edge: 'Edge note', edgeHint: 'Record why prompts, parameters or images changed at this step. The note belongs to this version connection.', note: 'Note', save: 'Save', cancel: 'Cancel',
     expandPath: 'Expand folded versions', hiddenPath: 'folded', selectVersion: 'Select version', keyboard: 'Arrow keys pan the canvas. Focus a node and press Enter to select it.',
@@ -41,7 +41,7 @@ const words = {
  * @param {object} props 版本、完整蓝图状态、保存回调、当前版本及选择回调。
  * @returns {React.ReactElement} 支持缩放、多选、分组和路径折叠的桌面与移动端画布。
  */
-export default function VersionBlueprintCanvas({ versions, blueprint, onBlueprintChange, selectedId, onSelect, disabled = false }) {
+export default function VersionBlueprintCanvas({ versions, blueprint, onBlueprintChange, selectedId, activeVersionId, onSelect, onContinue, onApply, onEditMessage, disabled = false }) {
   const { locale } = useI18n();
   const w = words[locale] || words['en-US'];
   const theme = useTheme();
@@ -56,6 +56,7 @@ export default function VersionBlueprintCanvas({ versions, blueprint, onBlueprin
   const [groupDraft, setGroupDraft] = useState(null);
   const [edgeDraft, setEdgeDraft] = useState(null);
   const [activeGesture, setActiveGesture] = useState('');
+  const [contextMenu, setContextMenu] = useState(null);
   const surfaceRef = useRef(null);
   const viewportRef = useRef(viewport);
   const selectionRef = useRef(selection);
@@ -156,7 +157,7 @@ export default function VersionBlueprintCanvas({ versions, blueprint, onBlueprin
       changeSelection(next);
       const selectId = node?.version?.id || members.at(-1);
       const notify = !multiple || !alreadySelected;
-      gestureRef.current = multiple || disabled ? { type: 'tap', selectId, notify } : { type: 'drag', start: point, ids: next, positions: graph.positions, moved: false, selectId, notify };
+      gestureRef.current = multiple || disabled ? { type: 'tap', selectId, notify } : { type: 'drag', start: point, ids: next, members, positions: graph.positions, moved: false, selectId, notify };
       setActiveGesture(multiple || disabled ? '' : 'drag');
       return;
     }
@@ -214,19 +215,30 @@ export default function VersionBlueprintCanvas({ versions, blueprint, onBlueprin
     if (!cancelled && gesture?.type === 'drag' && gesture.moved && !disabled) {
       // 只在拖动结束时持久化，移动过程留在本地预览。
       onBlueprintChange({ ...saved, positions: { ...saved.positions, ...dragPositionsRef.current } });
-    } else if (!cancelled && (gesture?.type === 'tap' || (gesture?.type === 'drag' && !gesture.moved)) && gesture.notify) {
-      // 拖动不会顺带切换右侧详情；只有一次真实点选才通知父组件。
-      onSelect(gesture.selectId);
+    } else if (!cancelled && (gesture?.type === 'tap' || (gesture?.type === 'drag' && !gesture.moved)) ) {
+      // 拖动多选节点保持整组；单击已选节点则回到单节点及其父级对比。
+      if (gesture.type === 'drag') changeSelection(gesture.members);
+      onSelect(selectionRef.current.at(-1) || null, selectionRef.current);
     } else if (!cancelled && gesture?.type === 'select') {
       const rect = gesture.rect;
       const hits = rect ? graph.nodes.filter((node) => node.x + node.width >= rect.x && node.x <= rect.x + rect.width && node.y + node.height >= rect.y && node.y <= rect.y + rect.height).flatMap((node) => node.memberIds) : [];
       const next = [...new Set([...gesture.previous, ...hits])];
       changeSelection(next);
-      if (next.length === 1) onSelect(next[0]);
-    } else if (!cancelled && gesture?.type === 'pan' && !gesture.moved) changeSelection([]);
+      onSelect(next.at(-1) || null, next);
+    } else if (!cancelled && gesture?.type === 'pan' && !gesture.moved) { changeSelection([]); onSelect(null, []); }
     gestureRef.current = null; dragPositionsRef.current = {};
     setDragPositions({}); setSelectionRect(null); setActiveGesture('');
   };
+
+  const groupSelected = () => setGroupDraft({ id: null, title: `${w.newGroup} ${saved.groups.length + 1}`, nodeIds: selection });
+
+  const hideSelected = () => { onBlueprintChange({ ...saved, hidden_node_ids: [...new Set([...saved.hidden_node_ids, ...selection])] }); changeSelection([]); onSelect(null, []); };
+
+  const collapseSelected = () => onBlueprintChange({ ...saved, hidden_node_ids: [...new Set([...saved.hidden_node_ids, ...getVersionPathCollapseIds(versions, selection)])] });
+
+  const expandAll = () => { fittedWorkRef.current = null; onBlueprintChange({ ...saved, hidden_node_ids: [], groups: saved.groups.map((group) => ({ ...group, collapsed: false })) }); };
+
+  const arrange = () => { fittedWorkRef.current = null; onBlueprintChange({ ...saved, positions: {} }); };
 
   const groupActions = (group) => <Stack direction="row" spacing={0.25} data-blueprint-control="true">
     <Tooltip title={w.editGroup}><IconButton size="small" aria-label={w.editGroup} disabled={disabled} onClick={() => setGroupDraft({ id: group.id, title: group.title, nodeIds: group.node_ids })}><EditOutlined sx={{ fontSize: 15 }} /></IconButton></Tooltip>
@@ -244,22 +256,30 @@ export default function VersionBlueprintCanvas({ versions, blueprint, onBlueprin
       <Typography variant="caption" sx={{ minWidth: 36, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{Math.round(viewport.scale * 100)}%</Typography>
       <Tooltip title={w.zoomIn}><IconButton size="small" aria-label={w.zoomIn} onClick={() => zoom(1.25)}><Add fontSize="small" /></IconButton></Tooltip>
       <Tooltip title={w.fit}><Button size="small" startIcon={<CenterFocusStrong />} sx={toolbarButtonSx} aria-label={w.fit} onClick={fit}><Box component="span" sx={toolbarLabelSx}>{w.fit}</Box></Button></Tooltip>
-      <Tooltip title={w.arrange}><span><Button size="small" startIcon={<Refresh />} sx={toolbarButtonSx} aria-label={w.arrange} disabled={disabled || !versions.length} onClick={() => { fittedWorkRef.current = null; onBlueprintChange({ ...saved, positions: {} }); }}><Box component="span" sx={toolbarLabelSx}>{w.arrange}</Box></Button></span></Tooltip>
+      <Tooltip title={w.arrange}><span><Button size="small" startIcon={<Refresh />} sx={toolbarButtonSx} aria-label={w.arrange} disabled={disabled || !versions.length} onClick={arrange}><Box component="span" sx={toolbarLabelSx}>{w.arrange}</Box></Button></span></Tooltip>
       <Box sx={{ flex: 1 }} />
       {selection.length > 0 && <Chip size="small" variant="outlined" label={`${selection.length} ${w.selected}`} />}
-      <Tooltip title={w.groupHint}><span><Button size="small" startIcon={<LayersOutlined />} sx={toolbarButtonSx} aria-label={w.group} disabled={disabled || selection.length < 2} onClick={() => setGroupDraft({ id: null, title: `${w.newGroup} ${saved.groups.length + 1}`, nodeIds: selection })}><Box component="span" sx={toolbarLabelSx}>{w.group}</Box></Button></span></Tooltip>
-      <Tooltip title={w.pathHint}><span><Button size="small" startIcon={<UnfoldLess />} sx={toolbarButtonSx} aria-label={w.collapsePath} disabled={disabled || !selection.length} onClick={() => onBlueprintChange({ ...saved, hidden_node_ids: [...new Set([...saved.hidden_node_ids, ...getVersionPathCollapseIds(versions, selection)])] })}><Box component="span" sx={toolbarLabelSx}>{w.collapsePath}</Box></Button></span></Tooltip>
-      <Tooltip title={w.hide}><span><Button size="small" startIcon={<VisibilityOffOutlined />} sx={toolbarButtonSx} aria-label={w.hide} disabled={disabled || !selection.length} onClick={() => { onBlueprintChange({ ...saved, hidden_node_ids: [...new Set([...saved.hidden_node_ids, ...selection])] }); changeSelection([]); }}><Box component="span" sx={toolbarLabelSx}>{w.hide}</Box></Button></span></Tooltip>
-      <Tooltip title={w.expandAll}><span><Button size="small" startIcon={<UnfoldMore />} sx={toolbarButtonSx} aria-label={w.expandAll} disabled={disabled || (!hiddenCount && !collapsedCount)} onClick={() => { fittedWorkRef.current = null; onBlueprintChange({ ...saved, hidden_node_ids: [], groups: saved.groups.map((group) => ({ ...group, collapsed: false })) }); }}><Box component="span" sx={toolbarLabelSx}>{w.expandAll}{hiddenCount ? ` (${hiddenCount})` : ''}</Box></Button></span></Tooltip>
+      <Tooltip title={w.groupHint}><span><Button size="small" startIcon={<LayersOutlined />} sx={toolbarButtonSx} aria-label={w.group} disabled={disabled || selection.length < 2} onClick={groupSelected}><Box component="span" sx={toolbarLabelSx}>{w.group}</Box></Button></span></Tooltip>
+      <Tooltip title={w.pathHint}><span><Button size="small" startIcon={<UnfoldLess />} sx={toolbarButtonSx} aria-label={w.collapsePath} disabled={disabled || !selection.length} onClick={collapseSelected}><Box component="span" sx={toolbarLabelSx}>{w.collapsePath}</Box></Button></span></Tooltip>
+      <Tooltip title={w.hide}><span><Button size="small" startIcon={<VisibilityOffOutlined />} sx={toolbarButtonSx} aria-label={w.hide} disabled={disabled || !selection.length} onClick={hideSelected}><Box component="span" sx={toolbarLabelSx}>{w.hide}</Box></Button></span></Tooltip>
+      <Tooltip title={w.expandAll}><span><Button size="small" startIcon={<UnfoldMore />} sx={toolbarButtonSx} aria-label={w.expandAll} disabled={disabled || (!hiddenCount && !collapsedCount)} onClick={expandAll}><Box component="span" sx={toolbarLabelSx}>{w.expandAll}{hiddenCount ? ` (${hiddenCount})` : ''}</Box></Button></span></Tooltip>
     </Stack>
     <Box ref={surfaceRef} role="region" tabIndex={0} aria-label={w.canvas} aria-describedby={`${markerId}-help`}
       onPointerDown={beginPointer} onPointerMove={movePointer} onPointerUp={(event) => endPointer(event)} onPointerCancel={(event) => endPointer(event, true)}
-      onContextMenu={(event) => event.preventDefault()}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        const element = event.target.closest('[data-blueprint-node]');
+        const node = element ? nodesByKey.get(element.dataset.blueprintNode) : null;
+        if (node && !node.memberIds.every((id) => selectionRef.current.includes(id))) {
+          changeSelection(node.memberIds); onSelect(node.memberIds.at(-1), node.memberIds);
+        }
+        setContextMenu({ x: event.clientX, y: event.clientY, version: node?.version });
+      }}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return;
         const directions = { ArrowLeft: [64, 0], ArrowRight: [-64, 0], ArrowUp: [0, 64], ArrowDown: [0, -64] };
         if (directions[event.key]) { event.preventDefault(); const [x, y] = directions[event.key]; changeViewport({ ...viewportRef.current, x: viewportRef.current.x + x, y: viewportRef.current.y + y }); }
-        if (event.key === 'Escape') { changeSelection([]); setMode('pan'); }
+        if (event.key === 'Escape') { changeSelection([]); onSelect(null, []); setMode('pan'); }
       }}
       sx={{ position: 'relative', overflow: 'hidden', flex: 1, minHeight: 300, border: 1, borderColor: 'divider', borderRadius: 2, touchAction: 'none', userSelect: 'none', bgcolor: 'background.default',
         backgroundImage: `radial-gradient(${alpha(theme.palette.text.secondary, 0.18)} 1px, transparent 1px)`, backgroundSize: `${24 * viewport.scale}px ${24 * viewport.scale}px`, backgroundPosition: `${viewport.x}px ${viewport.y}px`,
@@ -298,19 +318,19 @@ export default function VersionBlueprintCanvas({ versions, blueprint, onBlueprin
         })}
         {graph.nodes.map((node) => {
           const selected = node.memberIds.some((id) => selection.includes(id));
-          const active = node.memberIds.includes(selectedId);
+          const active = node.memberIds.includes(activeVersionId);
           const images = node.type === 'version' ? node.version.images || [] : node.memberIds.flatMap((id) => versionsById.get(id).images || []).slice(0, 3);
           const title = node.type === 'version' ? `v${node.version.number}` : node.group.title;
           return <Box key={node.key} sx={{ position: 'absolute', left: node.x, top: node.y, width: node.width, height: node.height, zIndex: selected || active ? 3 : 1 }}>
-            <Box role="button" tabIndex={0} data-blueprint-node={node.key} aria-label={`${w.selectVersion} ${title}`} aria-pressed={selected}
-              onKeyDown={(event) => { if (event.target === event.currentTarget && ['Enter', ' '].includes(event.key)) { event.preventDefault(); const multi = event.shiftKey || mode === 'select'; const already = node.memberIds.every((id) => selectionRef.current.includes(id)); changeSelection(multi ? already ? selectionRef.current.filter((id) => !node.memberIds.includes(id)) : [...new Set([...selectionRef.current, ...node.memberIds])] : node.memberIds); if (!multi || !already) onSelect(node.version?.id || node.memberIds.at(-1)); } }}
-              sx={{ width: '100%', height: '100%', overflow: 'hidden', border: selected || active ? '2px solid' : '1px solid', borderColor: selected || active ? 'primary.main' : 'divider', borderRadius: 2, bgcolor: 'background.paper', boxShadow: selected ? `0 0 0 3px ${alpha(theme.palette.primary.main, 0.13)}` : 1, cursor: disabled ? 'pointer' : activeGesture === 'drag' ? 'grabbing' : mode === 'select' ? 'pointer' : 'grab', '&:focus-visible': { outline: '3px solid', outlineColor: 'primary.main', outlineOffset: 3 } }}>
+            <Box role="button" tabIndex={0} data-blueprint-node={node.key} data-active-version={active || undefined} aria-label={`${w.selectVersion} ${title}`} aria-pressed={selected}
+              onKeyDown={(event) => { if (event.target === event.currentTarget && ['Enter', ' '].includes(event.key)) { event.preventDefault(); const multi = event.shiftKey || mode === 'select'; const already = node.memberIds.every((id) => selectionRef.current.includes(id)); changeSelection(multi ? already ? selectionRef.current.filter((id) => !node.memberIds.includes(id)) : [...new Set([...selectionRef.current, ...node.memberIds])] : node.memberIds); onSelect(selectionRef.current.at(-1) || null, selectionRef.current); } }}
+              sx={{ width: '100%', height: '100%', overflow: 'hidden', border: selected || active ? '2px solid' : '1px solid', borderColor: active ? 'success.main' : selected ? 'primary.main' : 'divider', borderRadius: 2, bgcolor: 'background.paper', boxShadow: selected ? `0 0 0 3px ${alpha(theme.palette.primary.main, 0.13)}` : 1, cursor: disabled ? 'pointer' : activeGesture === 'drag' ? 'grabbing' : mode === 'select' ? 'pointer' : 'grab', '&:focus-visible': { outline: '3px solid', outlineColor: 'primary.main', outlineOffset: 3 } }}>
               <Stack direction="row" spacing={0.5} alignItems="center" sx={{ height: 34, px: 1, borderBottom: 1, borderColor: 'divider' }}>
                 {node.type === 'group' && <LayersOutlined sx={{ fontSize: 15, color: 'primary.main' }} />}<Typography variant="caption" noWrap sx={{ fontWeight: 700, flex: 1 }}>{title}</Typography>
-                {node.type === 'group' ? groupActions(node.group) : <Typography variant="caption" color="text.secondary">{images.length ? `${images.length} IMG` : 'TXT'}</Typography>}
+                {active && <Typography variant="caption" color="success.main" sx={{ fontWeight: 700 }}>{locale === 'zh-CN' ? '当前' : 'Active'}</Typography>}{node.type === 'group' ? groupActions(node.group) : <Typography variant="caption" color="text.secondary">{images.length ? `${images.length} IMG` : 'TXT'}</Typography>}
               </Stack>
-              {images.length ? <Box sx={{ display: 'grid', gridTemplateColumns: `repeat(${node.type === 'group' ? images.length : 1}, minmax(0, 1fr))`, height: 126, gap: 0.5, bgcolor: 'action.hover' }}>{(node.type === 'group' ? images : images.slice(0, 1)).map((image, index) => <Box key={`${image.id}-${index}`} component="img" src={image.thumbnail_url || image.url} alt="" draggable={false} onDragStart={(event) => event.preventDefault()} sx={{ width: '100%', height: 126, objectFit: 'cover', pointerEvents: 'none' }} />)}</Box>
-                : <Stack spacing={0.5} alignItems="center" justifyContent="center" sx={{ height: 126, bgcolor: 'action.hover', px: 1.5 }}><TextSnippetOutlined sx={{ color: 'text.disabled', fontSize: 30 }} /><Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>{w.promptOnly}</Typography></Stack>}
+              {images.length ? <Box sx={{ display: 'grid', gridTemplateColumns: `repeat(${node.type === 'group' ? images.length : 1}, minmax(0, 1fr))`, height: node.imageHeight ?? 124, gap: 0.5, bgcolor: 'action.hover' }}>{(node.type === 'group' ? images : images.slice(0, 1)).map((image, index) => <Box key={`${image.id}-${index}`} component="img" src={image.thumbnail_url || image.url} alt="" draggable={false} onDragStart={(event) => event.preventDefault()} sx={{ width: '100%', height: node.imageHeight ?? 124, objectFit: 'contain', pointerEvents: 'none' }} />)}</Box>
+                : <Stack spacing={0.5} alignItems="center" justifyContent="center" sx={{ height: node.imageHeight ?? 124, bgcolor: 'action.hover', px: 1.5 }}><TextSnippetOutlined sx={{ color: 'text.disabled', fontSize: 30 }} /><Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>{w.promptOnly}</Typography></Stack>}
               <Typography variant="caption" sx={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.35, px: 1, py: 0.75, overflowWrap: 'anywhere' }}>{node.type === 'group' ? `${node.memberIds.length} ${w.versions}` : node.version.message || w.noMessage}</Typography>
             </Box>
             {node.hiddenAncestorIds.length > 0 && <Button size="small" variant="contained" data-blueprint-control="true" disabled={disabled} aria-label={w.expandPath} onClick={() => restoreNodes(node.hiddenAncestorIds)} sx={{ position: 'absolute', left: -12, top: -14, minWidth: 0, px: 1, fontSize: 11 }}>+{node.hiddenAncestorIds.length}</Button>}
@@ -320,7 +340,20 @@ export default function VersionBlueprintCanvas({ versions, blueprint, onBlueprin
       </Box>
       <Typography variant="caption" sx={{ position: 'absolute', right: 10, bottom: 8, px: 0.75, borderRadius: 1, bgcolor: alpha(theme.palette.background.paper, 0.85), color: 'text.secondary', pointerEvents: 'none' }}>{versions.length} {w.versions}{hiddenCount ? ` · ${hiddenCount} ${w.hidden}` : ''}</Typography>
     </Box>
-    <Typography id={`${markerId}-help`} variant="caption" color="text.secondary"><Box component="span" sx={{ display: { xs: 'inline', sm: 'none' } }}>{w.mobileHint}</Box><Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{w.hint} {w.keyboard}</Box></Typography>
+    <Typography id={`${markerId}-help`} variant="caption" color="text.secondary"><Box component="span" sx={{ display: { xs: 'inline', sm: 'none' } }}>{w.mobileHint}</Box><Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{w.hint}</Box></Typography>
+
+    <Menu open={Boolean(contextMenu)} onClose={() => setContextMenu(null)} anchorReference="anchorPosition"
+      anchorPosition={contextMenu ? { top: contextMenu.y, left: contextMenu.x } : undefined} onClick={() => setContextMenu(null)}>
+      {contextMenu?.version && <MenuItem disabled={disabled} onClick={() => onContinue(contextMenu.version)}>{locale === 'zh-CN' ? '从此节点继续' : 'Continue from this node'}</MenuItem>}
+      {contextMenu?.version && <MenuItem disabled={disabled} onClick={() => onApply(contextMenu.version)}>{locale === 'zh-CN' ? '应用所有参数' : 'Apply all parameters'}</MenuItem>}
+      {contextMenu?.version && <MenuItem disabled={disabled} onClick={() => onEditMessage(contextMenu.version)}>{locale === 'zh-CN' ? '编辑改动说明' : 'Edit change description'}</MenuItem>}
+      <MenuItem disabled={disabled || selection.length < 2} onClick={groupSelected}>{w.group}</MenuItem>
+      <MenuItem disabled={disabled || !selection.length} onClick={hideSelected}>{w.hide}</MenuItem>
+      <MenuItem disabled={disabled || !selection.length} onClick={collapseSelected}>{w.collapsePath}</MenuItem>
+      <MenuItem onClick={fit}>{w.fit}</MenuItem>
+      <MenuItem disabled={disabled || !versions.length} onClick={arrange}>{w.arrange}</MenuItem>
+      <MenuItem disabled={disabled || (!hiddenCount && !collapsedCount)} onClick={expandAll}>{w.expandAll}</MenuItem>
+    </Menu>
 
     <Dialog open={Boolean(groupDraft)} onClose={() => setGroupDraft(null)} maxWidth="xs" fullWidth><DialogTitle>{groupDraft?.id ? w.editGroup : w.group}</DialogTitle><DialogContent sx={{ pt: '8px !important' }}><TextField autoFocus fullWidth size="small" label={w.groupTitle} value={groupDraft?.title || ''} inputProps={{ maxLength: 80 }} onChange={(event) => setGroupDraft({ ...groupDraft, title: event.target.value })} /><Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>{w.groupHint}</Typography></DialogContent><DialogActions><Button onClick={() => setGroupDraft(null)}>{w.cancel}</Button><Button variant="contained" disabled={disabled || !groupDraft?.title.trim()} onClick={() => {
       const draft = groupDraft;

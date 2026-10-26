@@ -55,13 +55,6 @@ function buildGenerationRequest(params) {
       ? params.characterControl.use_coords
       : Boolean(params.characterControl.aiDecidePosition);
   }
-  // 版本编辑态单独传给本地后端，不把禁用参考、原图和 Vibe 文件信息发给 NovelAI。
-  if (params.version_editor) {
-    requestBody.version_editor = params.version_editor;
-  } else if (Array.isArray(params.characterControl?.characterTabs)) {
-    requestBody.version_editor = { characterTabs: params.characterControl.characterTabs };
-  }
-
   if (params.vibeTransfer) {
     if (isV4Model(params.model)) {
       if (params.vibeTransfer.use_v4_vibe && params.vibeTransfer.reference_image_multiple) {
@@ -106,11 +99,18 @@ function buildGenerationRequest(params) {
   if (params.batch_id) requestBody.batch_id = params.batch_id;
   if (Number.isInteger(params.index)) requestBody.index = params.index;
   if (Number.isInteger(params.batch_size)) requestBody.batch_size = params.batch_size;
-  // 本地版本关系由 Flask 截留，不能混入 NovelAI 的生成参数。
-  if (params.version_context) requestBody.version_context = {
-    work_id: params.version_context.work_id,
-    parent_version_id: params.version_context.parent_version_id,
-  };
+  // 普通生成不携带版本编辑态；用户启用作品后才传给本地后端保存。
+  if (params.version_context) {
+    requestBody.version_context = {
+      work_id: params.version_context.work_id,
+      parent_version_id: params.version_context.parent_version_id,
+    };
+    if (params.version_editor) {
+      requestBody.version_editor = params.version_editor;
+    } else if (Array.isArray(params.characterControl?.characterTabs)) {
+      requestBody.version_editor = { characterTabs: params.characterControl.characterTabs };
+    }
+  }
   return requestBody;
 }
 

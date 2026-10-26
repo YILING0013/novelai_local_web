@@ -306,7 +306,7 @@ const getResponsiveGenerateButtonContent = ({
 // 使用GenerationContext包装的AIPaintingPage内部组件
 const ImageProcessingWorkspace = dynamic(() => import('./ImageProcessing/ImageProcessingWorkspace'), { ssr: false });
 
-const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }) => {
+const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange }) => {
   const { t, formatNumber, locale } = useI18n();
   const comicText = locale === 'en-US' ? {
     title: 'Comic maker', edit: 'Panel parameters', save: 'Save task', close: 'Back to canvas',
@@ -387,13 +387,14 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
   const [parameterEditorState, setParameterEditorState] = useState(null);
   const [parameterEditorKey, setParameterEditorKey] = useState(0);
   const [leftPanelMode, setLeftPanelMode] = useState('generation');
-  const [versionContext, setVersionContext] = useState(null);
+  const versionContext = workContext;
+  const setVersionContext = onWorkContextChange;
   const [versionLoading, setVersionLoading] = useState(false);
   const versionSelectionRef = useRef(0);
   const changeVersionContext = useCallback((context) => {
     versionSelectionRef.current += 1;
     setVersionContext(context);
-  }, []);
+  }, [setVersionContext]);
   useEffect(() => () => {
     // 退出登录或关闭工作区时，只阻止尚未发送的后续请求。
     const flight = comicFlightRef.current;
@@ -1408,7 +1409,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
       vibe: restored.vibeImages.length > 0, reference: restored.parameterState.referenceImages.length > 0,
       character: restored.parameterState.characterTabs.length > 0,
     }));
-    changeVersionContext(context);
+    if (context !== undefined) changeVersionContext(context);
   }, [changeVersionContext, promptsByModel, vibeImages]);
   const continueWorkVersionRef = useRef(continueWorkVersion);
   continueWorkVersionRef.current = continueWorkVersion;
@@ -1422,12 +1423,19 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
       setVersionLoading(true);
       try {
         // Web Storage 只交接 ID；图片、遮罩和 Vibe 从本地后端读取，不受 5 MiB 配额限制。
-        const result = await apiClient.getWorkVersion(context.work_id, context.parent_version_id);
+        const result = context.parent_version_id
+          ? await apiClient.getWorkVersion(context.work_id, context.parent_version_id)
+          : await apiClient.getWork(context.work_id);
         if (!active || selection !== versionSelectionRef.current) return;
-        continueWorkVersionRef.current(result.version.parameters, {
-          ...context, work_title: result.work.title, number: result.version.number,
-        });
-        showNotification(t('gallery.versionWorkspace.loaded'), 'success');
+        if (result.version) {
+          continueWorkVersionRef.current(result.version.parameters, context.apply_only ? undefined : {
+            work_id: result.work.id, parent_version_id: result.version.id,
+            work_title: result.work.title, number: result.version.number,
+          });
+        } else {
+          changeVersionContext({ work_id: result.work.id, work_title: result.work.title, parent_version_id: null, number: null });
+        }
+        showNotification(t(context.apply_only ? 'gallery.versionWorkspace.applied' : 'gallery.versionWorkspace.loaded'), 'success');
       } catch (error) {
         if (active && selection === versionSelectionRef.current) showNotification(error.data?.error || error.message, 'error', false);
       } finally { if (active) setVersionLoading(false); }
@@ -1439,7 +1447,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
       catch { window.localStorage.removeItem('novelai:pending-version'); }
     }
     return () => { active = false; window.removeEventListener('novelai:continue-version', loadVersion); };
-  }, [showNotification, t]);
+  }, [changeVersionContext, showNotification, t]);
 
   // 处理应用图像参数
   const handleApplyImageParameters = useCallback((parsedParams) => {
@@ -1569,16 +1577,19 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
         dyn: false,
         autoSmea: false,
       };
-      if (source.version) params.version_context = {
-        work_id: source.version.work_id, parent_version_id: source.version.version_id,
-      };
-      const versionSelection = versionSelectionRef.current;
-      params.onVersionCreated = (version) => {
-        if (versionSelection === versionSelectionRef.current) setVersionContext({
-          work_id: version.work_id, parent_version_id: version.version_id,
-          work_title: version.work_title, number: version.number,
-        });
-      };
+      // 退出作品后操作旧图片也保持普通生成；当前作品内才沿用源图的分支。
+      if (versionContext) {
+        params.version_context = source.version?.work_id === versionContext.work_id ? {
+          work_id: source.version.work_id, parent_version_id: source.version.version_id,
+        } : versionContext;
+        const versionSelection = versionSelectionRef.current;
+        params.onVersionCreated = (version) => {
+          if (versionSelection === versionSelectionRef.current) setVersionContext((current) => current?.work_id === version.work_id ? {
+            work_id: version.work_id, parent_version_id: version.version_id,
+            work_title: version.work_title, number: version.number,
+          } : current);
+        };
+      }
       for (const key of NOVELAI_DIRECTOR_REFERENCE_PARAM_KEYS) delete params[key];
       setEnhanceSource(null);
       const newItem = await generate(params);
@@ -1709,14 +1720,14 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
         };
       }
       requestedModel = params.model || requestedModel;
-      if (!comicTarget) {
+      if (!comicTarget && versionContext) {
         params.version_context = versionContext;
         const versionSelection = versionSelectionRef.current;
         params.onVersionCreated = (version) => {
-          if (versionSelection === versionSelectionRef.current) setVersionContext({
+          if (versionSelection === versionSelectionRef.current) setVersionContext((current) => current?.work_id === version.work_id ? {
             work_id: version.work_id, parent_version_id: version.version_id,
             work_title: version.work_title, number: version.number,
-          });
+          } : current);
         };
       }
 
@@ -1797,10 +1808,9 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
             if (!previewItem) {
               throw createWorkspaceError('INPAINT_PREVIEW_GENERATION_FAILED');
             }
-            if (!previewParams.version_context && previewItem.version) previewParams.version_context = {
-              work_id: previewItem.version.work_id, parent_version_id: previewItem.version.version_id,
-            };
-
+            if (previewParams.version_context && !previewParams.version_context.parent_version_id && previewItem.version) {
+              previewParams.version_context = { ...previewParams.version_context, parent_version_id: previewItem.version.version_id };
+            }
             let applied = false;
             try {
               applied = await inpaintWorkspaceRef.current.applyGeneratedPatch(previewItem);
@@ -2664,10 +2674,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
                 // 手动提交保留未展开的随机提示语法和空种子，不执行生成或采样。
                 request.seed = parameters.seed;
                 request.characterTabs = parameterEditorRef.current.getSnapshot().characterTabs;
-                request.editor_state = request.version_editor;
-                delete request.version_editor;
+                request.editor_state = parameters.version_editor;
                 return request;
               }}
+              onApply={(version) => continueWorkVersion(version.parameters)}
               onContinue={(version, work) => continueWorkVersion(version.parameters, {
                 work_id: work.id, parent_version_id: version.id, work_title: work.title, number: version.number,
               })}
@@ -3510,10 +3520,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true }
 };
 
 // 包装了Context Provider的根组件
-const AIPaintingPage = ({ userId, accountSnapshot = null, active = true }) => {
+const AIPaintingPage = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange }) => {
   return (
     <GenerationProvider>
-      <AIPaintingPageContent userId={userId} accountSnapshot={accountSnapshot} active={active} />
+      <AIPaintingPageContent userId={userId} accountSnapshot={accountSnapshot} active={active} workContext={workContext} onWorkContextChange={onWorkContextChange} />
     </GenerationProvider>
   );
 };

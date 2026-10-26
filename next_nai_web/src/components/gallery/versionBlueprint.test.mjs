@@ -57,3 +57,22 @@ test('全部隐藏后可恢复默认图；无节点和无分组成员时仍有�
   assert.equal(buildVersionBlueprint(versions, empty).nodes.length, versions.length);
   assert.deepEqual(buildVersionBlueprint([], empty).edges, []);
 });
+
+
+test('横竖图按原比例确定节点尺寸，自动排布和分组范围容纳完整图片', () => {
+  const versions = [
+    { id: 'portrait', number: 1, images: [{ width: 512, height: 768 }] },
+    { id: 'wide', number: 2, parent_id: 'portrait', images: [{ width: 1024, height: 512 }] },
+    { id: 'square', number: 3, parent_id: 'portrait', images: [{ width: 512, height: 512 }] },
+  ];
+  const graph = buildVersionBlueprint(versions, { ...empty, groups: [{ id: 'g', node_ids: ['wide', 'square'], collapsed: false }] });
+  const [portrait, wide, square] = graph.nodes;
+  assert.equal((portrait.width - 4) / portrait.imageHeight, 512 / 768);
+  assert.equal((wide.width - 4) / wide.imageHeight, 2);
+  assert.ok(portrait.height > wide.height && wide.width > portrait.width);
+  assert.ok(wide.x >= portrait.x + portrait.width);
+  assert.ok(square.y >= wide.y + wide.height);
+  const group = graph.groups[0];
+  assert.ok(group.x + group.width >= square.x + square.width);
+  assert.ok(group.y + group.height >= square.y + square.height);
+});

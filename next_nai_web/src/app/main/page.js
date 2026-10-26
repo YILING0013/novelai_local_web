@@ -498,6 +498,7 @@ export default function MainPage() {
   const sidebarHandleInset = desktopDrawerMode === 'hidden' ? 0 : sidebarHandleWidth - 14;
   const sidebarEdgeCurve = `M${sidebarHandleInset + 0.5} 0 C${sidebarHandleInset + 0.5} 24 ${sidebarHandleWidth - 0.5} 32 ${sidebarHandleWidth - 0.5} 56 C${sidebarHandleWidth - 0.5} 80 ${sidebarHandleInset + 0.5} 88 ${sidebarHandleInset + 0.5} 112`;
   const [openPages, setOpenPages] = useState([]);
+  const [workContext, setWorkContext] = useState(null);
   const [activePage, setActivePage] = useState(null);
   const [hoveredItem, setHoveredItem] = useState(null);
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
@@ -626,6 +627,7 @@ export default function MainPage() {
   }, [openPages, t]);
 
   const confirmClosePage = (pageId) => {
+    if (pageId === PAGE_IDS.AI_PAINTING) setWorkContext(null);
     const remaining = openPages.filter((page) => page.id !== pageId);
     setOpenPages(remaining);
     if (activePage === pageId) setActivePage(remaining.at(-1)?.id || null);
@@ -841,6 +843,7 @@ export default function MainPage() {
                       : React.cloneElement(page.component, {
                         userId: accountSnapshot?.information?.email || '',
                         accountSnapshot,
+                        workContext, onWorkContextChange: setWorkContext,
                         active: page.id === activePage,
                       })}
                   </Box>

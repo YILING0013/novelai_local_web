@@ -19,7 +19,7 @@ const EMPTY_FILTERS = { model: '', orientation: '', tags: '', negative_tags: '',
  * @param {object} props source 为 references 或 outputs；分组只整理索引，不移动原图。
  * @returns {React.ReactElement} 图片浏览、分组、批量操作和详情工作区。
  */
-export default function GalleryWorkspace({ source = 'references' }) {
+export default function GalleryWorkspace({ source = 'references', workContext, onWorkContextChange }) {
   const { t } = useI18n();
   const theme = useTheme();
   const tablet = useMediaQuery(theme.breakpoints.up('sm'));
@@ -244,6 +244,16 @@ export default function GalleryWorkspace({ source = 'references' }) {
   const selectedIds = [...selected];
   const actionButtonSx = { minHeight: 34, px: 1.25, whiteSpace: 'nowrap', '& .MuiButton-startIcon': { mr: 0.5 }, '& .MuiButton-startIcon .MuiSvgIcon-root': { fontSize: 18 } };
 
+  const openVersion = (version, work, applyOnly = false) => {
+    try {
+      const context = { work_id: work.id, parent_version_id: version?.id || null, apply_only: applyOnly };
+      window.localStorage.setItem('novelai:pending-version', JSON.stringify(context));
+      window.dispatchEvent(new CustomEvent('novelai:continue-version', { detail: context }));
+      setVersionTarget(null); setDetailId(null);
+      window.dispatchEvent(new CustomEvent('novelai:open-page', { detail: 'ai-painting' }));
+    } catch { setError(t('gallery.applyFailed')); }
+  };
+
   return <Box ref={scrollRef} sx={{ height: '100%', minHeight: 0, overflowY: 'auto', p: { xs: 1, md: 2 }, position: 'relative' }}
     onDragEnter={(event) => {
       if (source !== 'references' || trash || !event.dataTransfer.types.includes('Files')) return;
@@ -371,15 +381,9 @@ export default function GalleryWorkspace({ source = 'references' }) {
     {metadataTarget && <GalleryMetadataDialog count={metadataTarget.ids.length} initialParameters={metadataTarget.parameters} initialDocument={metadataTarget.document} metadataSharedPaths={metadataTarget.sharedPaths} templateEntries={metadataTarget.templates} busy={busy} error={error} onClose={() => setMetadataTarget(null)}
       onSubmit={async (options) => { const result = await batch('export', metadataTarget.ids, options); if (result && !result.errors.length) setMetadataTarget(null); else if (result) setMetadataTarget({ ...metadataTarget, ids: result.errors.map((item) => item.id) }); }} />}
     <Snackbar open={Boolean(notice)} autoHideDuration={3500} onClose={() => setNotice('')} message={notice} />
-    {versionTarget && <GalleryVersionsDialog open {...versionTarget} onClose={() => setVersionTarget(null)} onContinue={(version, work) => {
-      try {
-        const context = { work_id: work.id, parent_version_id: version.id, work_title: work.title, number: version.number };
-        window.localStorage.setItem('novelai:pending-version', JSON.stringify(context));
-        window.dispatchEvent(new CustomEvent('novelai:continue-version', { detail: context }));
-        setVersionTarget(null); setDetailId(null);
-        window.dispatchEvent(new CustomEvent('novelai:open-page', { detail: 'ai-painting' }));
-      } catch { setError(t('gallery.applyFailed')); }
-    }} />}
+    {versionTarget && <GalleryVersionsDialog open {...versionTarget} activeContext={workContext} onContextChange={onWorkContextChange}
+      onClose={() => setVersionTarget(null)} onContinue={(version, work) => openVersion(version, work)}
+      onApply={(version, work) => openVersion(version, work, true)} onStartWork={(work) => openVersion(null, work)} />}
     <Dialog open={collectionDialog} onClose={() => !busy && setCollectionDialog(false)} fullWidth maxWidth="xs"><DialogTitle>{t('gallery.smart.saveCollection')}</DialogTitle><DialogContent sx={{ pt: '8px !important' }}>{error && <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>}<TextField fullWidth size="small" label={t('gallery.smart.collectionName')} value={collectionName} inputProps={{ maxLength: 80 }} onChange={(event) => setCollectionName(event.target.value)} /><Typography variant="caption" sx={{ display: 'block', mt: 1 }}>{t('gallery.smart.saveAppliedHint')}</Typography></DialogContent><DialogActions><Button disabled={busy} onClick={() => setCollectionDialog(false)}>{t('gallery.cancel')}</Button><Button disabled={busy || !collectionName.trim()} onClick={async () => {
       setBusy(true); setError(''); try { const { collection_id: ignored, ...savedFilters } = filters; await apiClient.createGalleryCollection({ source, name: collectionName.trim(), filters: { ...savedFilters, q: search, group, trash } }); setCollectionDialog(false); setRevision((value) => value + 1); setNotice(t('gallery.saved')); } catch (requestError) { setError(requestError.data?.error || requestError.message); } finally { setBusy(false); }
     }}>{t('gallery.create')}</Button></DialogActions></Dialog>

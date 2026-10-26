@@ -277,13 +277,13 @@ class ImageVersionStore:
 
     def create_work(self, body):
         """
-        创建作品及首个版本，支持只有提示词而没有图片。
+        创建空作品；从已有图库图片创建时，将图片保存为首个版本。
 
         Args:
             body: title、image_ids、parameters 与可选提交说明。
 
         Returns:
-            work 与 version。
+            work 与 version；空作品的 version 为 None。
         """
         title = body.get("title", "")
         if not isinstance(title, str) or not title.strip() or len(title) > 200:
@@ -291,7 +291,9 @@ class ImageVersionStore:
         with self.library.lock, self.library._connect() as db:
             work_id, now = uuid.uuid4().hex, datetime.now(timezone.utc).isoformat()
             db.execute("INSERT INTO works VALUES(?,?,?,?)", (work_id, title.strip(), now, now))
-            return self._commit(db, work_id, body)
+            if body.get("image_ids"):
+                return self._commit(db, work_id, body)
+            return {"work": self._work(db, work_id), "version": None}
 
     def get_work(self, work_id):
         """
@@ -377,9 +379,72 @@ class ImageVersionStore:
             work 与 version。
         """
         with self.library.lock, self.library._connect() as db:
-            self._work(db, work_id)
-            parent = self._parent(db, work_id, body.get("parent_id"))
+            work = self._work(db, work_id)
+            # 空作品第一张成图成为根节点；并发首图完成时，后来的结果接在已有首版后。
+            parent_id = body.get("parent_id") or work["latest_version_id"]
+            parent = self._parent(db, work_id, parent_id) if parent_id else None
+            if parent is None and not body.get("image_ids"):
+                raise ExposableError("Generate or choose the first image before saving a prompt version.", code="VERSION_FIRST_IMAGE_REQUIRED")
             return self._commit(db, work_id, body, parent)
+
+    def update_message(self, work_id, version_id, body):
+        """
+        编辑节点改动说明，不更改参数、图片或父子关系。
+
+        Args:
+            work_id: 作品 ID。
+            version_id: 节点 ID。
+            body: 只包含 message 的修改内容。
+
+        Returns:
+            更新后的完整版本。
+        """
+        message = body.get("message")
+        if set(body) != {"message"} or not isinstance(message, str) or len(message) > 2000:
+            raise ExposableError("Enter a change description of at most 2000 characters.", code="VERSION_MESSAGE_INVALID")
+        with self.library.lock, self.library._connect() as db:
+            self._parent(db, work_id, version_id)
+            db.execute("UPDATE work_versions SET message=? WHERE id=?", (message, version_id))
+            return self._version(db, db.execute("SELECT * FROM work_versions WHERE id=?", (version_id,)).fetchone())
+
+    def delete_works(self, ids):
+        """
+        删除选定作品及其历史，保留图库原图和其他作品仍在使用的快照。
+
+        Args:
+            ids: 一至一百个作品 ID。
+
+        Returns:
+            已删除作品 ID 与快照文件清理失败数量。
+        """
+        if not isinstance(ids, list) or not 1 <= len(ids) <= 100 or any(not isinstance(item, str) or not item for item in ids):
+            raise ExposableError("Choose between 1 and 100 works.", code="WORK_IDS_INVALID")
+        ids = list(dict.fromkeys(ids))
+        with self.library.lock, self.library._connect() as db:
+            for work_id in ids:
+                self._work(db, work_id)
+            marks = ",".join("?" for _ in ids)
+            assets = db.execute(f"""SELECT DISTINCT a.* FROM version_assets a
+                JOIN version_images i ON i.asset_id=a.id JOIN work_versions v ON v.id=i.version_id
+                WHERE v.work_id IN ({marks})""", ids).fetchall()
+            db.execute(f"DELETE FROM version_images WHERE version_id IN (SELECT id FROM work_versions WHERE work_id IN ({marks}))", ids)
+            db.execute(f"DELETE FROM work_blueprints WHERE work_id IN ({marks})", ids)
+            db.execute(f"UPDATE work_versions SET parent_id=NULL WHERE work_id IN ({marks})", ids)
+            db.execute(f"DELETE FROM work_versions WHERE work_id IN ({marks})", ids)
+            db.execute(f"DELETE FROM works WHERE id IN ({marks})", ids)
+            unused = [asset for asset in assets if not db.execute("SELECT 1 FROM version_images WHERE asset_id=? LIMIT 1", (asset["id"],)).fetchone()]
+            for asset in unused:
+                db.execute("DELETE FROM version_assets WHERE id=?", (asset["id"],))
+            # 数据库提交成功后再逐个清理明确的快照文件，避免回滚后历史图片已丢失。
+            db.commit()
+            cleanup_failed = 0
+            for asset in unused:
+                for suffix in (asset["suffix"], ".thumb.png"):
+                    try:
+                        (self.asset_dir / f"{asset['id']}{suffix}").unlink(missing_ok=True)
+                    except OSError:
+                        cleanup_failed += 1
+            return {"deleted_ids": ids, "cleanup_failed": cleanup_failed}
 
     def get_version(self, work_id, version_id):
         """
@@ -443,12 +508,16 @@ class ImageVersionStore:
         """
         if context is None:
             return None
-        if not isinstance(context, dict) or set(context) != {"work_id", "parent_version_id"} or not all(isinstance(value, str) and value for value in context.values()):
+        if (not isinstance(context, dict) or set(context) != {"work_id", "parent_version_id"}
+                or not isinstance(context["work_id"], str) or not context["work_id"]
+                or (context["parent_version_id"] is not None and (not isinstance(context["parent_version_id"], str) or not context["parent_version_id"]))):
             raise ExposableError("The version context is invalid.", code="VERSION_CONTEXT_INVALID")
         with self.library.lock, self.library._connect() as db:
-            self._work(db, context["work_id"])
-            self._parent(db, context["work_id"], context["parent_version_id"])
-        return dict(context)
+            work = self._work(db, context["work_id"])
+            parent_id = context["parent_version_id"] or work["latest_version_id"]
+            if parent_id:
+                self._parent(db, context["work_id"], parent_id)
+        return {"work_id": context["work_id"], "parent_version_id": parent_id}
 
     def asset_path(self, asset_id, thumbnail=False):
         """

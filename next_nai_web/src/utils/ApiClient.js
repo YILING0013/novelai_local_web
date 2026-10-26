@@ -291,6 +291,22 @@ class ApiClient {
   /** 修改作品标题，历史快照保持不变。 */
   async updateWork(id, body) { return this.request(`/local/works/${encodeURIComponent(id)}`, { method: 'PATCH', body }); }
 
+  /**
+   * 编辑节点说明，保留参数和图片快照。
+   * @param {string} id 作品 ID。
+   * @param {string} versionId 节点 ID。
+   * @param {object} body 新的 message。
+   * @returns {Promise<object>} 更新后的节点。
+   */
+  async updateWorkVersion(id, versionId, body) { return this.request(`/local/works/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}`, { method: 'PATCH', body }); }
+
+  /**
+   * 删除选定作品历史，保留图库原图。
+   * @param {string[]} ids 选中的作品 ID。
+   * @returns {Promise<object>} 已删除作品和快照清理结果。
+   */
+  async deleteWorks(ids) { return this.request('/local/works/batch-delete', { method: 'POST', body: { ids } }); }
+
   /** 保存蓝图布局、连线思路、路径折叠和分组，不改变生成快照。 */
   async updateWorkBlueprint(id, body) { return this.request(`/local/works/${encodeURIComponent(id)}/blueprint`, { method: 'PATCH', body }); }
 

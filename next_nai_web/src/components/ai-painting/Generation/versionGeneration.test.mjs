@@ -45,12 +45,14 @@ test('本地角色编辑数据保留名称和禁用角色，官方角色请求�
   ];
   const request = buildGenerationRequest({
     model: 'nai-diffusion-4-5-full', positivePrompt: 'scene',
+    version_context: { work_id: 'work', parent_version_id: 'parent' },
     characterControl: { characterTabs: tabs, characterPrompts: [{ prompt: 'blue hair' }], enabledCharacterCount: 1 },
   });
   assert.deepEqual(JSON.parse(JSON.stringify(request.version_editor)), { characterTabs: tabs });
   assert.deepEqual(JSON.parse(JSON.stringify(request.characterPrompts)), [{ prompt: 'blue hair' }]);
   const disabled = buildGenerationRequest({
     model: 'nai-diffusion-4-5-full', characterControl: { characterTabs: tabs, enabledCharacterCount: 0 },
+    version_context: { work_id: 'work', parent_version_id: 'parent' },
   });
   assert.deepEqual(JSON.parse(JSON.stringify(disabled.version_editor)), { characterTabs: tabs });
   assert.equal(disabled.characterPrompts, undefined);
@@ -63,16 +65,22 @@ test('完整本机编辑态随生成传递，官方参考字段只取当前启�
   });
   const editor = { parameterState: { params: { seed: '' }, referenceImages: [{ data: 'disabled-ref', disabled: true }], characterTabs: [] }, vibeImages: [{ name: 'Vibe', encoding: 'encoded', isTemporarilyDisabled: true }] };
   const request = buildGenerationRequest({ model: 'nai-diffusion-4-5-full', version_editor: editor,
+    version_context: { work_id: 'work', parent_version_id: 'parent' },
     director_reference_images_cached: [{ data: 'active-ref', cache_secret_key: 'live-key' }],
     characterControl: { characterTabs: [], enabledCharacterCount: 0 },
   });
   assert.deepEqual(JSON.parse(JSON.stringify(request.version_editor)), editor);
   assert.equal(request.director_reference_images_cached[0].data, 'active-ref');
   assert.equal(request.reference_image_multiple, undefined);
+  const ordinary = buildGenerationRequest({ model: 'nai-diffusion-4-5-full', version_editor: editor,
+    characterControl: { characterTabs: [{ name: '不记录的角色' }], enabledCharacterCount: 0 },
+  });
+  assert.equal(ordinary.version_context, undefined);
+  assert.equal(ordinary.version_editor, undefined, '普通生成不上传禁用参考、原图等完整版本编辑态');
 });
 
-for (const existingParent of [null, { work_id: 'existing-work', parent_version_id: 'selected-parent' }]) {
-  test(`批量候选共享作品并从固定父节点分支（${existingParent ? '已选旧版本' : '新作品'}）`, async () => {
+for (const existingParent of [null, { work_id: 'existing-work', parent_version_id: 'selected-parent' }, { work_id: 'empty-work', parent_version_id: null }]) {
+  test(`批量生成保持用户选择的作品模式（${existingParent ? '固定父节点分支' : '不启用作品'}）`, async () => {
     const batch = loadModule('../tools/BatchGeneration/BatchGenerationService.js');
     batch.default.config.bufferTime = 0;
     const requests = [];
@@ -96,11 +104,12 @@ for (const existingParent of [null, { work_id: 'existing-work', parent_version_i
       onVersionCreated: (version) => versions.push(version),
     });
     assert.equal(requests.length, 3);
-    assert.equal(versions.length, 3, '实时参数刷新不能丢失保存成功回调');
-    assert.equal(requests[0].version_context, existingParent);
-    for (const request of requests.slice(1)) {
-      assert.equal(request.version_context.work_id, existingParent?.work_id || 'new-work');
-      assert.equal(request.version_context.parent_version_id, existingParent?.parent_version_id || 'v1');
+    assert.equal(versions.length, existingParent ? 3 : 0, '普通生成不会因旧后端返回版本信息而启用作品');
+    for (const request of requests) {
+      if (existingParent && !existingParent.parent_version_id && request !== requests[0]) {
+        assert.equal(request.version_context.work_id, 'empty-work');
+        assert.equal(request.version_context.parent_version_id, 'v1');
+      } else assert.equal(request.version_context, existingParent);
     }
   });
 }

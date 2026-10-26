@@ -119,3 +119,22 @@ test('连线备注按子版本保存，框选可选中多个节点且不移动�
   assert.equal(canvas.props.blueprint.edge_notes.b, '降低背景饱和度');
   assert.deepEqual(Object.keys(canvas.props.blueprint.positions), []);
 });
+
+
+test('绿色标记只跟随当前创作节点，右键提供节点动作且图片不裁剪', () => {
+  const canvas = harness(); canvas.props.activeVersionId = 'a';
+  canvas.render(); canvas.flush(); canvas.render(); canvas.flush();
+  const event = canvas.event('b', 180, 160);
+  event.preventDefault = () => {};
+  surface(canvas.render()).props.onContextMenu(event);
+  const tree = canvas.render();
+  assert.equal(find(tree, (node) => node.props?.['data-blueprint-node'] === 'a').props['data-active-version'], true);
+  assert.equal(find(tree, (node) => node.props?.['data-blueprint-node'] === 'b').props['data-active-version'], undefined);
+  assert.equal(find(tree, (node) => node.props?.component === 'img').props.sx.objectFit, 'contain');
+  assert.equal(find(tree, (node) => node.type === 'Menu').props.open, true);
+  const applied = [];
+  canvas.props.onApply = (version) => applied.push(version.id);
+  find(canvas.render(), (node) => node.type === 'MenuItem' && node.props.children === '应用所有参数').props.onClick();
+  assert.deepEqual(applied, ['b']);
+  assert.equal(canvas.props.activeVersionId, 'a');
+});

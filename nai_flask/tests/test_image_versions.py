@@ -19,9 +19,22 @@ def library(tmp_path):
     return LocalImageLibrary(tmp_path / "data")
 
 
+@pytest.fixture
+def work_context(app):
+    """预先建立用户主动启用的作品，供生成后的版本关联测试复用。"""
+    created = app.extensions["image_library"].versions.create_work({"title": "主动启用的作品", "parameters": {}})
+    return {"work_id": created["work"]["id"], "parent_version_id": None}
+
+
+def create_image_work(library, body):
+    """用合成图片建立有根节点的作品，复用于分支和快照测试。"""
+    image = library.import_image(base64.b64decode(PNG_BASE64), "root.png")
+    return library.versions.create_work({**body, "image_ids": [image["id"]]})
+
+
 def test_branches_restore_and_prompt_only_commits_keep_history(library):
     store = library.versions
-    first = store.create_work({"title": "角色探索", "parameters": {"positivePrompt": "red hair", "seed": 42}})
+    first = create_image_work(library, {"title": "角色探索", "parameters": {"positivePrompt": "red hair", "seed": 42}})
     work_id, root_id = first["work"]["id"], first["version"]["id"]
     second = store.create_version(work_id, {"parent_id": root_id, "parameters": {"positivePrompt": "blue hair"}})
     branch = store.create_version(work_id, {"parent_id": root_id, "parameters": {"positivePrompt": "green hair"}})
@@ -32,9 +45,10 @@ def test_branches_restore_and_prompt_only_commits_keep_history(library):
     assert restored["version"]["parent_id"] == branch["version"]["id"]
     assert restored["version"]["parameters"] == versions[0]["parameters"]
     assert versions[1]["parameters"]["positivePrompt"] == "blue hair"
-    assert all(item["images"] == [] for item in versions)
+    assert all(item["images"] == [] for item in versions[1:3])
+    assert versions[0]["images"] == versions[3]["images"]
     assert store.rename_work(work_id, "改名")["version_count"] == 4
-    other = store.create_work({"title": "另一作品"})
+    other = create_image_work(library, {"title": "另一作品"})
     with pytest.raises(ExposableError, match="parent version"):
         store.create_version(work_id, {"parent_id": other["version"]["id"]})
     with pytest.raises(ExposableError, match="parent version"):
@@ -43,7 +57,7 @@ def test_branches_restore_and_prompt_only_commits_keep_history(library):
 
 
 def test_blueprint_persists_per_work_without_changing_versions(library):
-    first = library.versions.create_work({"title": "画布", "parameters": {"positivePrompt": "first"}})
+    first = create_image_work(library, {"title": "画布", "parameters": {"positivePrompt": "first"}})
     work_id, root_id = first["work"]["id"], first["version"]["id"]
     child = library.versions.create_version(work_id, {"parent_id": root_id, "parameters": {"positivePrompt": "second"}})["version"]
     before = library.versions.get_work(work_id)["versions"]
@@ -63,10 +77,10 @@ def test_blueprint_persists_per_work_without_changing_versions(library):
 
 
 def test_blueprint_rejects_invalid_coordinates_edges_and_group_members(library):
-    first = library.versions.create_work({"title": "画布"})
+    first = create_image_work(library, {"title": "画布"})
     work_id, root_id = first["work"]["id"], first["version"]["id"]
     child_id = library.versions.create_version(work_id, {"parent_id": root_id})["version"]["id"]
-    foreign_id = library.versions.create_work({"title": "外部作品"})["version"]["id"]
+    foreign_id = create_image_work(library, {"title": "外部作品"})["version"]["id"]
     empty = {"positions": {}, "edge_notes": {}, "hidden_node_ids": [], "groups": []}
     invalid = [
         {**empty, "positions": {foreign_id: {"x": 0, "y": 0}}},
@@ -90,7 +104,7 @@ def test_blueprint_route_requires_session_csrf_and_returns_saved_layout(client, 
     empty = {"positions": {}, "edge_notes": {}, "hidden_node_ids": [], "groups": []}
     assert client.patch("/api/local/works/missing/blueprint", json=empty, headers={"Origin": ORIGIN}).status_code == 401
     csrf = login(client)
-    created = app.extensions["image_library"].versions.create_work({"title": "路由画布"})
+    created = create_image_work(app.extensions["image_library"], {"title": "路由画布"})
     work_id, version_id = created["work"]["id"], created["version"]["id"]
     path = f"/api/local/works/{work_id}/blueprint"
     assert client.patch(path, json=empty, headers={"Origin": ORIGIN}).status_code == 403
@@ -139,7 +153,7 @@ def test_parameter_snapshot_keeps_inputs_but_strips_credentials(library):
         "characterPrompts": [{"prompt": "red hair", "uc": "blue hair", "center": {"x": 0.3, "y": 0.7}}],
         "batch_id": "temporary", "version_context": {"work_id": "temporary"},
     }
-    result = library.versions.create_work({"title": "可恢复", "parameters": parameters})
+    result = create_image_work(library, {"title": "可恢复", "parameters": parameters})
     snapshot = result["version"]["parameters"]
     assert snapshot["guidanceScale"] == 6
     assert snapshot["image"] == snapshot["mask"] == PNG_BASE64
@@ -161,7 +175,7 @@ def test_medium_model_normalization_preserves_variant(model):
 def test_v4_character_positions_survive_version_restore(library, model, center, position):
     parameters = {"model": model, "use_coords": True, "positivePrompt": "scene",
                   "characterPrompts": [{"prompt": "blue hair", "uc": "red hair", "center": center}]}
-    first = library.versions.create_work({"title": "角色坐标", "parameters": parameters})
+    first = create_image_work(library, {"title": "角色坐标", "parameters": parameters})
     work_id, root_id = first["work"]["id"], first["version"]["id"]
     changed = library.versions.create_version(work_id, {"parent_id": root_id, "parameters": {"positivePrompt": "other scene"}})
     restored = library.versions.create_version(work_id, {"parent_id": changed["version"]["id"], "operation": "restore", "restore_version_id": root_id})
@@ -212,7 +226,7 @@ def test_version_routes_require_session_csrf_and_assets_use_ids(client, app):
     assert len(client.get(f"/api/local/works/{work_id}").get_json()["versions"]) == 2
     single = client.get(f"/api/local/works/{work_id}/versions/{payload['version']['id']}")
     assert single.status_code == 200 and single.get_json()["version"] == payload["version"]
-    other = app.extensions["image_library"].versions.create_work({"title": "另一作品"})
+    other = create_image_work(app.extensions["image_library"], {"title": "另一作品"})
     assert client.get(f"/api/local/works/{work_id}/versions/{other['version']['id']}").status_code == 400
 
 
@@ -243,8 +257,54 @@ def test_smart_collection_routes_apply_saved_filters_and_require_csrf(client, ap
     assert library.image_path(selected["id"]).is_file()
 
 
+def test_work_history_is_opt_in_and_leaving_keeps_existing_history(client, app, fake_client, monkeypatch, clock):
+    csrf = login(client)
+    headers = {"Origin": ORIGIN, "X-CSRF-Token": csrf}
+    real_generate = fake_client.generate_image
+
+    def generated(token, payload, correlation_id):
+        images = real_generate(token, payload, correlation_id)
+        images[0]["data"] = PNG_BASE64
+        return images
+
+    monkeypatch.setattr(fake_client, "generate_image", generated)
+    library = app.extensions["image_library"]
+    body = {"model": "nai-diffusion-4-5-full", "positivePrompt": "ordinary image", "seed": 42,
+            "version_editor": {"obsolete": "ignored without an active work"}}
+    ordinary = client.post("/api/images/generate", json=body, headers=headers)
+    assert ordinary.status_code == 200
+    image = ordinary.json["images"][0]
+    assert library.image_path(image["saved_file"]["id"]).is_file()
+    assert "version" not in image and "version_error" not in image
+    assert library.versions.list_works() == []
+    assert not library.versions.asset_dir.exists()
+    assert "version_editor" not in json.dumps(next(call[2] for call in fake_client.calls if call[0] == "generate"))
+
+    created = client.post("/api/local/works", json={"title": "主动启用", "parameters": {"positivePrompt": "draft"}}, headers=headers)
+    assert created.status_code == 200
+    work = created.json
+    body.pop("version_editor")
+    body["version_context"] = {"work_id": work["work"]["id"], "parent_version_id": None}
+    clock[0] += 15
+    recorded = client.post("/api/images/generate", json=body, headers=headers)
+    assert recorded.status_code == 200
+    assert work["version"] is None and work["work"]["version_count"] == 0
+    assert recorded.json["images"][0]["version"]["number"] == 1
+    history = library.versions.get_work(work["work"]["id"])
+
+    body.pop("version_context")
+    body["seed"] = 43
+    clock[0] += 15
+    left = client.post("/api/images/generate", json=body, headers=headers)
+    assert left.status_code == 200
+    assert "version" not in left.json["images"][0]
+    assert library.image_path(left.json["images"][0]["saved_file"]["id"]).is_file()
+    assert library.versions.get_work(work["work"]["id"]) == history
+    assert len(library.versions.list_works()) == 1
+
+
 @pytest.mark.parametrize("model", ["nai-diffusion-4-5-full", "nai-diffusion-5-full-medium"])
-def test_generation_commits_actual_seed_and_branch_without_sending_context(client, app, fake_client, monkeypatch, clock, model):
+def test_generation_commits_actual_seed_and_branch_without_sending_context(client, app, fake_client, monkeypatch, clock, model, work_context):
     csrf = login(client)
     real_generate = fake_client.generate_image
 
@@ -254,13 +314,15 @@ def test_generation_commits_actual_seed_and_branch_without_sending_context(clien
         return images
 
     monkeypatch.setattr(fake_client, "generate_image", generated)
-    body = {"model": model, "positivePrompt": "1girl", "negativePrompt": "", "seed": "", "width": 512, "height": 512}
+    body = {"model": model, "positivePrompt": "1girl", "negativePrompt": "", "seed": "", "width": 512, "height": 512,
+            "version_context": work_context}
     headers = {"Origin": ORIGIN, "X-CSRF-Token": csrf}
     first = client.post("/api/images/generate", json=body, headers=headers)
     assert first.status_code == 200
     image = first.get_json()["images"][0]
     version = image["version"]
-    saved = app.extensions["image_library"].versions.get_work(version["work_id"])["versions"][0]
+    saved = app.extensions["image_library"].versions.get_version(version["work_id"], version["version_id"])["version"]
+    assert saved["parent_id"] == work_context["parent_version_id"]
     assert saved["parameters"]["seed"] == image["seed"] and isinstance(image["seed"], int)
     assert saved["parameters"]["model"] == model
     assert saved["images"][0]["id"] == image["saved_file"]["id"]
@@ -285,7 +347,7 @@ def test_generation_commits_actual_seed_and_branch_without_sending_context(clien
 
 
 @pytest.mark.parametrize("tool,prompt", [("emotion", "happy;; smiling character"), ("colorize", "red dress, blue sky")])
-def test_director_version_preserves_tool_prompt_separately(client, app, fake_client, monkeypatch, tool, prompt):
+def test_director_version_preserves_tool_prompt_separately(client, app, fake_client, monkeypatch, tool, prompt, work_context):
     csrf = login(client)
     real_augment = fake_client.augment_image
 
@@ -296,7 +358,8 @@ def test_director_version_preserves_tool_prompt_separately(client, app, fake_cli
 
     monkeypatch.setattr(fake_client, "augment_image", augmented)
     body = {"model": "nai-diffusion-4-5-full", "positivePrompt": "main workbench prompt", "negativePrompt": "", "seed": 123,
-            "width": 512, "height": 512, "image": PNG_BASE64, "action": True, "req_type": tool, "prompt": prompt, "defry": 2}
+            "width": 512, "height": 512, "image": PNG_BASE64, "action": True, "req_type": tool, "prompt": prompt, "defry": 2,
+            "version_context": work_context}
     response = client.post("/api/images/generate", json=body, headers={"Origin": ORIGIN, "X-CSRF-Token": csrf})
     assert response.status_code == 200
     version = response.get_json()["images"][0]["version"]
@@ -306,7 +369,7 @@ def test_director_version_preserves_tool_prompt_separately(client, app, fake_cli
     assert snapshot["req_type"] == tool and snapshot["defry"] == 2
 
 
-def test_generation_preserves_local_character_editor_without_sending_it_upstream(client, app, fake_client, monkeypatch):
+def test_generation_preserves_local_character_editor_without_sending_it_upstream(client, app, fake_client, monkeypatch, work_context):
     csrf = login(client)
     real_generate = fake_client.generate_image
 
@@ -320,7 +383,7 @@ def test_generation_preserves_local_character_editor_without_sending_it_upstream
             {"name": "同伴", "prompt": "red hair", "uc": "", "isTemporarilyDisabled": True, "colorId": 2}]
     characters = [{"prompt": "blue hair", "uc": "", "center": {"x": 0.3, "y": 0.3}}]
     body = {"model": "nai-diffusion-4-5-full", "positivePrompt": "scene", "seed": 123,
-            "characterPrompts": characters, "version_editor": {"characterTabs": tabs}}
+            "characterPrompts": characters, "version_editor": {"characterTabs": tabs}, "version_context": work_context}
     headers = {"Origin": ORIGIN, "X-CSRF-Token": csrf}
     rejected = client.post("/api/images/generate", json={**body, "version_editor": {"characterTabs": tabs, "settings": {}}}, headers=headers)
     assert rejected.status_code == 400 and rejected.get_json()["code"] == "VERSION_EDITOR_INVALID"
@@ -336,7 +399,7 @@ def test_generation_preserves_local_character_editor_without_sending_it_upstream
     assert "version_editor" not in json.dumps(official) and "characterTabs" not in json.dumps(official)
 
 
-def test_complete_editor_state_is_local_reusable_and_immutable(client, app, fake_client, monkeypatch):
+def test_complete_editor_state_is_local_reusable_and_immutable(client, app, fake_client, monkeypatch, work_context):
     csrf = login(client)
     real_generate = fake_client.generate_image
 
@@ -359,7 +422,8 @@ def test_complete_editor_state_is_local_reusable_and_immutable(client, app, fake
         "positivePrompt": "unexpanded draft", "negativePrompt": "",
     }
     headers = {"Origin": ORIGIN, "X-CSRF-Token": csrf}
-    body = {"model": "nai-diffusion-4-5-full", "positivePrompt": "actual prompt", "seed": "", "version_editor": editor}
+    body = {"model": "nai-diffusion-4-5-full", "positivePrompt": "actual prompt", "seed": "", "version_editor": editor,
+            "version_context": work_context}
     rejected = client.post("/api/images/generate", json={**body, "version_editor": {"parameterState": {"referenceImages": "invalid"}}}, headers=headers)
     assert rejected.status_code == 400
     assert not any(call[0] == "generate" for call in fake_client.calls)
@@ -386,9 +450,77 @@ def test_complete_editor_state_is_local_reusable_and_immutable(client, app, fake
 
 def test_prompt_only_version_keeps_complete_editor_and_rejects_invalid_structure(library):
     parameters = {"positivePrompt": "draft", "editor_state": {"parameterState": {"params": {"seed": ""}, "referenceImages": [{"data": "reference", "disabled": True}]}, "vibeImages": [{"encoding": "encoded-vibe", "name": "Saved vibe"}]}}
-    created = library.versions.create_work({"title": "纯提示词编辑态", "parameters": parameters})
+    root = create_image_work(library, {"title": "纯提示词编辑态"})
+    created = library.versions.create_version(root["work"]["id"], {"parent_id": root["version"]["id"], "parameters": parameters})
     assert created["version"]["images"] == []
     assert created["version"]["parameters"]["editor_state"] == parameters["editor_state"]
     with pytest.raises(ExposableError) as caught:
         library.versions.create_version(created["work"]["id"], {"parent_id": created["version"]["id"], "parameters": {"editor_state": {"parameterState": {"characterTabs": [1]}}}})
     assert caught.value.code == "VERSION_EDITOR_INVALID"
+
+
+def test_empty_work_starts_with_first_image_and_rejects_prompt_root(library):
+    created = library.versions.create_work({"title": "空作品", "parameters": {"positivePrompt": "draft"}})
+    work_id = created["work"]["id"]
+    assert created["version"] is None and created["work"]["version_count"] == 0
+    assert library.versions.get_work(work_id)["versions"] == []
+    context = {"work_id": work_id, "parent_version_id": None}
+    assert library.versions.validate_context(context) == context
+    with pytest.raises(ExposableError) as caught:
+        library.versions.create_version(work_id, {"parent_id": None, "parameters": {"positivePrompt": "draft"}})
+    assert caught.value.code == "VERSION_FIRST_IMAGE_REQUIRED"
+    image = library.import_image(base64.b64decode(PNG_BASE64), "first.png")
+    first = library.versions.create_version(work_id, {"parent_id": None, "image_ids": [image["id"]]})["version"]
+    assert first["number"] == 1 and first["parent_id"] is None
+    # 两个首图请求同时开始时，后保存的图片仍接在有效根节点之后。
+    next_version = library.versions.create_version(work_id, {"parent_id": None, "image_ids": [image["id"]]})["version"]
+    assert next_version["number"] == 2 and next_version["parent_id"] == first["id"]
+
+
+def test_edit_message_keeps_snapshot_and_rejects_other_changes(library):
+    created = create_image_work(library, {"title": "说明", "parameters": {"seed": 12}})
+    work_id, version = created["work"]["id"], created["version"]
+    edited = library.versions.update_message(work_id, version["id"], {"message": "蓝色灯光"})
+    assert edited == {**version, "message": "蓝色灯光"}
+    for body in ({"message": 123}, {"message": "x" * 2001}, {"message": "valid", "parameters": {}}):
+        with pytest.raises(ExposableError):
+            library.versions.update_message(work_id, version["id"], body)
+
+
+def test_bulk_delete_preserves_gallery_and_shared_assets(library):
+    image = library.import_image(base64.b64decode(PNG_BASE64), "shared.png")
+    first = library.versions.create_work({"title": "一", "image_ids": [image["id"]]})
+    second = library.versions.create_work({"title": "二", "image_ids": [image["id"]]})
+    empty = library.versions.create_work({"title": "空"})
+    library.versions.create_version(first["work"]["id"], {"parent_id": first["version"]["id"], "parameters": {"seed": 2}})
+    asset = first["version"]["images"][0]["asset_id"]
+    asset_path = library.versions.asset_path(asset)
+    # 任意选中作品不存在时，整批拒绝，不出现只删掉前半批的情况。
+    with pytest.raises(ExposableError):
+        library.versions.delete_works([first["work"]["id"], "missing"])
+    assert len(library.versions.list_works()) == 3
+    result = library.versions.delete_works([first["work"]["id"], empty["work"]["id"]])
+    assert len(result["deleted_ids"]) == 2 and result["cleanup_failed"] == 0
+    assert library.versions.asset_path(asset).is_file()
+    assert library.versions.get_work(second["work"]["id"])["versions"][0]["images"][0]["available"]
+    library.versions.delete_works([second["work"]["id"]])
+    assert not asset_path.exists()
+    assert library.image_path(image["id"]).is_file()
+    with library._connect() as db:
+        assert db.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert db.execute("SELECT COUNT(*) FROM version_assets").fetchone()[0] == 0
+
+
+def test_message_and_bulk_delete_require_session_and_csrf(client, app):
+    created = create_image_work(app.extensions["image_library"], {"title": "受保护"})
+    work_id = created["work"]["id"]
+    version_path = f"/api/local/works/{work_id}/versions/{created['version']['id']}"
+    assert client.patch(version_path, json={"message": "改动"}, headers={"Origin": ORIGIN}).status_code == 401
+    assert client.post("/api/local/works/batch-delete", json={"ids": [work_id]}, headers={"Origin": ORIGIN}).status_code == 401
+    csrf = login(client)
+    assert client.patch(version_path, json={"message": "改动"}, headers={"Origin": ORIGIN}).status_code == 403
+    assert client.post("/api/local/works/batch-delete", json={"ids": [work_id]}, headers={"Origin": ORIGIN}).status_code == 403
+    headers = {"Origin": ORIGIN, "X-CSRF-Token": csrf}
+    assert client.patch(version_path, json={"message": "改动"}, headers=headers).json["version"]["message"] == "改动"
+    assert client.post("/api/local/works/batch-delete", json={"ids": [work_id]}, headers=headers).json["deleted_ids"] == [work_id]
+    assert client.get(f"/api/local/works/{work_id}").status_code == 404

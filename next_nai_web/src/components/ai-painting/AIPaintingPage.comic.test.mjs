@@ -7,7 +7,7 @@ import { getPanelResolutionParameters } from './utils/parameterMapping.js';
 import { isNovelAIV4OrAboveModel as isV4Model } from './utils/modelUtils.js';
 import { panelBounds } from './ComicWorkspace/comicDocument.mjs';
 
-const source = readFileSync(new URL('./AIPaintingPage.js', import.meta.url), 'utf8');
+const source = readFileSync(new URL('./AIPaintingPage.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const start = source.indexOf('  const handleGenerate = async (');
 const implementation = source.slice(start, source.indexOf('  // 添加取消批量生成', start));
 
