@@ -10,9 +10,9 @@ import { saveAs } from 'file-saver';
 import { useI18n } from '@/i18n/I18nProvider';
 import { fetchUrlAsBlob } from '@/utils/mediaAssets';
 import apiClient from '@/utils/ApiClient';
-import { COMIC_LAYOUTS, COMIC_TEMPLATES, comicContentBounds, applyTemplate, convertPanelType, createComicPage, createComicTemplate, createRectanglePanel, fitPanelImage, movePanel, movePanelEdge, movePanelVertex, panelBounds, rotatePanel, sectionBounds, splitPanel, transformPanelImage } from './comicDocument.mjs';
+import { COMIC_LAYOUTS, COMIC_TEMPLATES, comicContentBounds, applyTemplate, convertPanelType, createComicPage, createComicTemplate, createRectanglePanel, fitPanelImage, getComicLayoutSize, movePanel, movePanelEdge, movePanelVertex, panelBounds, resizeComicPage, rotatePanel, sectionBounds, splitPanel, transformPanelImage } from './comicDocument.mjs';
 import { comicCutIntersections, snapComicCutPoint, snapPanelAngle, snapPanelDrag } from './comicSnapping.mjs';
-import { deleteComicPage, deleteComicTemplate, exportComicZip, importComicProject, loadComicLibrary, saveComicDraft, saveComicPage, saveComicTemplate } from './comicStorage.mjs';
+import { deleteComicPage, deleteComicTemplate, exportComicZip, importComicProject, loadComicLibrary, saveComicCanvasDefaults, saveComicDraft, saveComicPage, saveComicTemplate } from './comicStorage.mjs';
 import { exportComicProject, readComicProject } from './comicProject.mjs';
 import ComicCropDialog from './ComicCropDialog';
 import ComicElementArt from './ComicElementArt';
@@ -100,6 +100,8 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
   const [galleryTab, setGalleryTab] = useState(0);
   const [templateDialog, setTemplateDialog] = useState(false);
   const [templateName, setTemplateName] = useState('');
+  const [canvasDimensions, setCanvasDimensions] = useState(null);
+  const [canvasDefaults, setCanvasDefaults] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
   const [notice, setNotice] = useState(null);
   const [dirty, setDirty] = useState(false);
@@ -151,7 +153,8 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
     loadComicLibrary().then((library) => {
       if (!mounted) return;
       pagesRef.current = library.pages; setPages(library.pages); setTemplates(library.templates);
-      const draft = ensureComicLayers(library.draft || createComicPage()); pageRef.current = draft; setPage(draft); setActiveLayerId(draft.layers[0].id);
+      const draft = ensureComicLayers(library.draft || createComicPage('portrait', 'blank', getComicLayoutSize('portrait', library.canvasDefaults))); pageRef.current = draft; setPage(draft); setActiveLayerId(draft.layers[0].id);
+      setCanvasDefaults(library.canvasDefaults);
       setDirty(Boolean(library.draft)); setStorageReady(true);
     }).catch(() => { if (mounted) { setNotice({ severity: 'error', text: textRef.current.storageError }); const draft = createComicPage(); pageRef.current = draft; setPage(draft); } });
     return () => { mounted = false; };
@@ -780,7 +783,7 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
     if (command && key === 'z') { action = () => undo(event.shiftKey); label = event.shiftKey ? c.redo : c.undo; }
     else if (command && key === 'y') { action = () => undo(true); label = c.redo; }
     else if (command && key === 's') { action = event.shiftKey ? () => { setTemplateName(''); setTemplateDialog(true); } : () => perform(savePage); label = event.shiftKey ? c.saveTemplate : c.savePage; }
-    else if (command && key === 'n') { action = () => navigate(createComicPage(page.layout), true); label = c.newPage; }
+    else if (command && key === 'n') { action = () => navigate(createComicPage(page.layout, 'blank', getComicLayoutSize(page.layout, canvasDefaults)), true); label = c.newPage; }
     else if (command && key === 'o' && selected) { action = () => { uploadTarget.current = target; upload.current.click(); }; label = c.upload; }
     else if (command && ['=', '+', '-', '0'].includes(key)) { action = () => key === '0' ? setView({ zoom: 1, x: 0, y: 0 }) : changeZoom(zoom * (key === '-' ? 0.8 : 1.25)); label = c.zoomCanvas; }
     else if (command && key === 'j' && selectedItem) { action = duplicateSelection; label = c.duplicate; }
@@ -822,7 +825,7 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}><Typography variant="subtitle2">{c.pages}</Typography><Chip size="small" label={pages.length} />{isMobile && <ComicButton icon={Close} label={c.close} onClick={() => setPagesOpen(false)} />}</Box>
       <TextField fullWidth hiddenLabel size="small" placeholder={c.pageTitle} slotProps={{ htmlInput: { 'aria-label': c.pageTitle } }} value={page.title} onChange={(event) => replacePage({ ...page, title: event.target.value })} sx={{ '& .MuiInputBase-input': { height: 34, boxSizing: 'border-box', py: 0, px: 1, lineHeight: 'normal' } }} />
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.65, '& > span': { width: '100%' }, '& .MuiButton-root': { width: '100%', minHeight: 32, justifyContent: { xs: 'center', md: 'flex-start' }, px: 1 } }}>
-        <ComicButton icon={Add} label={c.newPage} shortcut="Ctrl+N" variant="outlined" disabled={busy} onClick={() => navigate(createComicPage(page.layout), true)} />
+        <ComicButton icon={Add} label={c.newPage} shortcut="Ctrl+N" variant="outlined" disabled={busy} onClick={() => navigate(createComicPage(page.layout, 'blank', getComicLayoutSize(page.layout, canvasDefaults)), true)} />
         <ComicButton icon={SaveOutlined} label={c.exportProject} tip={c.exportProjectTip} variant="contained" disabled={busy} onClick={() => perform(async () => {
           if (selectedIdRef.current) onSaveTask?.();
           const blob = await exportComicProject({ pages: pagesRef.current, templates, draft: pageRef.current });
@@ -845,7 +848,7 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
           try {
             await deleteComicPage(item.id);
             pagesRef.current = pagesRef.current.filter((saved) => saved.id !== item.id); setPages(pagesRef.current);
-            if (pageRef.current.id === item.id) loadPage(createComicPage(item.layout), true);
+            if (pageRef.current.id === item.id) loadPage(createComicPage(item.layout, 'blank', getComicLayoutSize(item.layout, canvasDefaults)), true);
           } catch (error) { deletingPages.current.delete(item.id); throw error; }
         } })}><DeleteOutline sx={{ fontSize: 16 }} /></IconButton></Box>
       </Paper>)}
@@ -956,9 +959,10 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
           <ToggleButton value="ai">{language === 'zh' ? 'AI制作' : 'AI creation'}</ToggleButton>
           <ToggleButton value="manual">{language === 'zh' ? '手动编排' : 'Manual layout'}</ToggleButton>
         </ToggleButtonGroup>
-        <TextField select size="small" value={page.layout} aria-label={c.title} onChange={(event) => navigate(createComicPage(event.target.value), true)} sx={{ minWidth: 108 }}>
+        <TextField select size="small" value={page.layout} aria-label={c.title} onChange={(event) => navigate(createComicPage(event.target.value, 'blank', getComicLayoutSize(event.target.value, canvasDefaults)), true)} sx={{ minWidth: 108 }}>
           {Object.keys(COMIC_LAYOUTS).map((layout) => <MenuItem key={layout} value={layout}>{c[layout]}</MenuItem>)}
         </TextField>
+        <ComicButton icon={SettingsOutlined} label={c.canvasSize} tip={c.canvasSizeTip} disabled={busy || aiBusy} onClick={() => setCanvasDimensions({ width: String(page.width), height: String(page.height) })} />
         {COMIC_LAYOUTS[page.layout].sections === 2 && <ToggleButtonGroup size="small" exclusive value={section} onChange={(_, value) => { if (value !== null) { setSection(value); choose(null); } }}>{sectionLabels.map((label, index) => <Tooltip key={index} title={label}><ToggleButton value={index} aria-label={label} data-action-label={label}>{isMobile ? (page.layout === 'spreadPortrait' ? (index ? <ArrowForward /> : <ArrowBack />) : (index ? <ArrowDownward /> : <ArrowUpward />)) : label}</ToggleButton></Tooltip>)}</ToggleButtonGroup>}
         <Box sx={{ flex: 1 }} />
         {isMobile && <Box sx={{ position: 'absolute', top: 3, right: 3 }}><ComicButton icon={MenuIcon} label={c.pages} onClick={() => setPagesOpen(true)} /></Box>}
@@ -1138,6 +1142,38 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
     </Menu>
 
     <ComicLLMSettings open={settingsOpen} onClose={() => setSettingsOpen(false)} language={language} disabled={aiBusy} onChange={setLLMSettings} />
+    <Dialog open={Boolean(canvasDimensions)} onClose={() => !busy && setCanvasDimensions(null)} maxWidth="xs" fullWidth aria-labelledby="comic-canvas-size-title">
+      <Box component="form" onSubmit={(event) => {
+        event.preventDefault();
+        const width = Number(canvasDimensions.width), height = Number(canvasDimensions.height);
+        if (![width, height].every((value) => Number.isInteger(value) && value > 0)) return;
+        perform(async () => {
+          cancelDrag();
+          const bounds = sectionBounds({ ...pageRef.current, width, height });
+          // 只记录单页基准，双页换版式不会反复翻倍，打开旧页也不会覆盖用户设置。
+          const defaults = { width: Math.min(bounds.width, bounds.height), height: Math.max(bounds.width, bounds.height) };
+          await saveComicCanvasDefaults(defaults);
+          setCanvasDefaults(defaults);
+          const current = pageRef.current;
+          if (width !== current.width || height !== current.height) replacePage(resizeComicPage(current, width, height));
+          setCut(null); setView({ zoom: 1, x: 0, y: 0 }); setCanvasDimensions(null);
+        });
+      }}>
+        <DialogTitle id="comic-canvas-size-title">{c.canvasSize}</DialogTitle>
+        <DialogContent sx={{ display: 'flex', gap: 1.5, pt: '12px !important' }}>
+          {['width', 'height'].map((dimension) => {
+            const value = canvasDimensions?.[dimension] ?? '';
+            const invalid = !Number.isInteger(Number(value)) || Number(value) <= 0;
+            return <TextField key={dimension} autoFocus={dimension === 'width'} disabled={busy} fullWidth type="number" size="small" label={c[dimension]} value={value} error={invalid} helperText={invalid ? c.canvasSizeError : null} slotProps={{ htmlInput: { min: 1, step: 1, inputMode: 'numeric' } }} onChange={(event) => setCanvasDimensions({ ...canvasDimensions, [dimension]: event.target.value })} />;
+          })}
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={busy} onClick={() => setCanvasDimensions(null)}>{c.cancel}</Button>
+          <Tooltip title={c.canvasSizeTip}><span><Button type="submit" variant="contained" disabled={busy || !canvasDimensions || !Object.values(canvasDimensions).every((value) => Number.isInteger(Number(value)) && value > 0)}>{c.confirm}</Button></span></Tooltip>
+        </DialogActions>
+      </Box>
+    </Dialog>
+
     <Dialog open={balloonPicker} onClose={() => setBalloonPicker(false)} maxWidth="md" fullWidth aria-labelledby="comic-balloon-title">
       <DialogTitle id="comic-balloon-title" sx={{ py: 1.5, fontSize: 16 }}>{c.dialogue}</DialogTitle>
       <DialogContent dividers sx={{ p: 1.5 }}>

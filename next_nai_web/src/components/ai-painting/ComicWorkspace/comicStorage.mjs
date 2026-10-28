@@ -45,7 +45,7 @@ async function writeRecord(storeName, operation, value) {
 
 /**
  * 读取当前浏览器的漫画库，已保存页面按手动顺序排列。
- * @returns {Promise<{pages:Array,templates:Array,draft:object|null}>} 漫画页、自定义模板和上次草稿。
+ * @returns {Promise<{pages:Array,templates:Array,draft:object|null,canvasDefaults:object|null}>} 漫画页、自定义模板、上次草稿和新建画布的默认单页尺寸。
  */
 export async function loadComicLibrary() {
   const database = await openComicDatabase();
@@ -54,10 +54,12 @@ export async function loadComicLibrary() {
     const pages = transaction.objectStore('pages').getAll();
     const templates = transaction.objectStore('templates').getAll();
     const draft = transaction.objectStore('drafts').get('current');
+    const canvasDefaults = transaction.objectStore('drafts').get('canvas-defaults');
     transaction.oncomplete = () => resolve({
       pages: pages.result.sort((a, b) => a.order - b.order || a.createdAt - b.createdAt).map(ensureComicLayers),
       templates: templates.result.sort((a, b) => a.createdAt - b.createdAt),
       draft: draft.result?.page ? ensureComicLayers(draft.result.page) : null,
+      canvasDefaults: canvasDefaults.result?.size ?? null,
     });
     transaction.onabort = () => reject(transaction.error || new Error('Comic library transaction aborted.'));
     transaction.onerror = () => reject(transaction.error);
@@ -71,6 +73,15 @@ export async function loadComicLibrary() {
  */
 export async function saveComicDraft(page) {
   await writeRecord('drafts', 'put', { id: 'current', page: page ? ensureComicLayers(page) : null });
+}
+
+/**
+ * 独立保存用户确认的默认单页尺寸，打开旧页面或更新草稿不会覆盖它。
+ * @param {{width:number,height:number}} size 单页短边和长边；拆分奇数双页时可含半像素。
+ * @returns {Promise<void>} 默认尺寸事务提交后完成。
+ */
+export async function saveComicCanvasDefaults(size) {
+  await writeRecord('drafts', 'put', { id: 'canvas-defaults', size });
 }
 
 /**

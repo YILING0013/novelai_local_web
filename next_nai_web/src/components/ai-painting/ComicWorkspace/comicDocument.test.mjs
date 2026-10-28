@@ -2,9 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   COMIC_LAYOUTS, COMIC_TEMPLATES, applyTemplate, convertPanelType, createComicPage,
-  createComicTemplate, createRectanglePanel, fitPanelImage, movePanel, movePanelEdge,
-  movePanelVertex, panelBounds, sectionBounds, splitPanel, comicContentBounds,
+  createComicTemplate, createRectanglePanel, fitPanelImage, getComicLayoutSize, movePanel, movePanelEdge,
+  movePanelVertex, panelBounds, resizeComicPage, sectionBounds, splitPanel, comicContentBounds,
 } from './comicDocument.mjs';
+import { createComicElement } from './comicElements.mjs';
 
 function createLegacyPage(layout) {
   const sizes = { spreadPortrait: [1600, 1120], spreadLandscape: [1120, 1600] };
@@ -71,6 +72,124 @@ test('跨页只替换指定半页，保留另一半页内容与跨页叠加框',
   assert.equal(changed.panels.find((panel) => panel.id === rightPanel.id), rightPanel);
   assert.equal(changed.panels.at(-1), overlay);
   assert.equal(page.panels.length, 3);
+});
+
+test('初始空单框连续调整时保持编号和相对边距，旧页面也能继续调整', () => {
+  for (const legacy of [false, true]) {
+    for (const size of [{ width: 800, height: 1120 }, { width: 1921, height: 1081 }, { width: 1, height: 1 }]) {
+      const original = createComicPage('portrait', 'blank', size);
+      if (legacy) delete original.panels[0].initialPoints;
+      const untouched = structuredClone(original);
+      let page = original;
+      for (const [width, height] of [[1200, 1800], [2401, 3603]]) {
+        page = resizeComicPage(page, width, height);
+        assert.equal(page.id, original.id);
+        assert.equal(page.width, width);
+        assert.equal(page.height, height);
+        assert.equal(page.panels[0].id, original.panels[0].id);
+        page.panels[0].points.forEach((point, index) => {
+          assert.ok(Math.abs(point.x / width - original.panels[0].points[index].x / original.width) < 1e-12);
+          assert.ok(Math.abs(point.y / height - original.panels[0].points[index].y / original.height) < 1e-12);
+        });
+        assert.deepEqual(page.layers, original.layers);
+        assert.deepEqual(page.elements, original.elements);
+        assert.deepEqual(page.strokes, original.strokes);
+      }
+      assert.deepEqual(original, untouched);
+    }
+  }
+});
+
+test('编辑过的框、已有内容、多框及锁定或隐藏图层调整画布时保持原状', () => {
+  const cases = [
+    (page) => { page.panels[0].points[0].x += 1; },
+    (page) => { page.panels[0] = movePanel(page.panels[0], { x: 10, y: 0 }, sectionBounds(page)); },
+    (page) => { page.panels[0].borderWidth = 0; },
+    (page) => { page.panels[0].image = fitPanelImage(page.panels[0], { dataUrl: 'data:image/png;base64,aW1hZ2U=', width: 100, height: 100 }); },
+    (page) => { page.panels[0].task = { params: { parameterState: { params: {} }, promptsByModel: {}, vibeImages: [] } }; },
+    (page) => { page.strokes.push({ id: 'ink', layerId: 'panels', order: 1, kind: 'brush', points: [{ x: 100, y: 100 }], color: '#111111', width: 5 }); },
+    (page) => { page.elements.push(createComicElement('text', { x: 100, y: 100, width: 200, height: 100 })); },
+    (page) => { page.panels.push(createRectanglePanel(page, 0, { x: 100, y: 100 }, { x: 200, y: 200 })); },
+    (page) => { page.aiWorkflow = { step: 'compose' }; },
+    (page) => { page.layers[0].locked = true; },
+    (page) => { page.layers[0].visible = false; },
+  ];
+  const pages = cases.map((change) => { const page = createComicPage(); change(page); return page; });
+  pages.push(createComicPage('spreadPortrait'));
+  for (const page of pages) {
+    const original = structuredClone(page);
+    assert.deepEqual(resizeComicPage(page, 1600, 2400), { ...original, width: 1600, height: 2400 });
+    assert.deepEqual(page, original);
+  }
+});
+
+test('新建四种版式始终使用同一单页基准，奇数双页只在最终画布取整', () => {
+  for (const [defaults, expected] of [
+    [{ width: 1200, height: 1800 }, { portrait: [1200, 1800], landscape: [1800, 1200], spreadPortrait: [2400, 1800], spreadLandscape: [1800, 2400] }],
+    [{ width: 901.5, height: 1603 }, { portrait: [902, 1603], landscape: [1603, 902], spreadPortrait: [1803, 1603], spreadLandscape: [1603, 1803] }],
+  ]) {
+    const original = structuredClone(defaults);
+    Object.freeze(defaults);
+    for (const layout of ['portrait', 'spreadLandscape', 'landscape', 'spreadPortrait', 'portrait']) {
+      const size = getComicLayoutSize(layout, defaults);
+      assert.deepEqual([size.width, size.height], expected[layout]);
+      const page = createComicPage(layout, 'blank', size);
+      assert.equal(page.width, size.width);
+      assert.equal(page.height, size.height);
+      assert.equal(page.panels.length, COMIC_LAYOUTS[layout].sections);
+    }
+    assert.deepEqual(defaults, original);
+  }
+  for (const [layout, preset] of Object.entries(COMIC_LAYOUTS)) {
+    assert.deepEqual(getComicLayoutSize(layout, null), { width: preset.width, height: preset.height });
+  }
+});
+
+test('自定义大画布、非整倍数和一像素画布都能套用模板，并按原坐标保存恢复模板', () => {
+  for (const layout of Object.keys(COMIC_LAYOUTS)) {
+    for (const dimensions of [{ width: 12345, height: 4567 }, { width: 64, height: 63 }, { width: 1, height: 1 }]) {
+      for (const preset of COMIC_TEMPLATES) {
+        const page = createComicPage(layout, preset.id, dimensions);
+        assert.equal(page.width, dimensions.width);
+        assert.equal(page.height, dimensions.height);
+        for (let section = 0; section < COMIC_LAYOUTS[layout].sections; section += 1) {
+          const bounds = sectionBounds(page, section);
+          const panels = page.panels.filter((panel) => panel.section === section);
+          assert.equal(panels.length, preset.panels.length);
+          for (const panel of panels) {
+            assert.ok(panel.points.length >= 3);
+            assert.ok(panel.points.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y)
+              && point.x >= bounds.x && point.x <= bounds.x + bounds.width
+              && point.y >= bounds.y && point.y <= bounds.y + bounds.height));
+          }
+          const template = createComicTemplate(page, section, '自定义画布模板');
+          assert.equal(template.panels.length, panels.length);
+          const restored = applyTemplate(page, template.id, section, [template]).panels.filter((panel) => panel.section === section);
+          for (let index = 0; index < panels.length; index += 1) {
+            assert.equal(restored[index].points.length, panels[index].points.length);
+            panels[index].points.forEach((point, vertex) => {
+              assert.ok(Math.abs(restored[index].points[vertex].x - point.x) < 0.00001);
+              assert.ok(Math.abs(restored[index].points[vertex].y - point.y) < 0.00001);
+            });
+          }
+        }
+      }
+    }
+  }
+});
+
+test('自定义跨页的拉框范围使用实际半页尺寸，叠加框仍可覆盖整张画布', () => {
+  for (const layout of ['spreadPortrait', 'spreadLandscape']) {
+    const page = createComicPage(layout, 'blank', { width: 5001, height: 7003 });
+    const whole = { x: 0, y: 0, width: 5001, height: 7003 };
+    const second = layout === 'spreadPortrait'
+      ? { x: 2500.5, y: 0, width: 2500.5, height: 7003 }
+      : { x: 0, y: 3501.5, width: 5001, height: 3501.5 };
+    assert.deepEqual(sectionBounds(page, 1), second);
+    assert.deepEqual(sectionBounds(page, -1), whole);
+    assert.deepEqual(panelBounds(createRectanglePanel(page, 1, { x: -100, y: -100 }, { x: 6000, y: 8000 })), second);
+    assert.deepEqual(panelBounds(createRectanglePanel(page, -1, { x: -100, y: -100 }, { x: 6000, y: 8000 })), whole);
+  }
 });
 
 test('直线切割产生两块留白画框，图像保持对齐，任务和旧编号不会复制', () => {
@@ -168,6 +287,25 @@ test('整体移动在半页边缘停止，不压扁画框；叠加框可越过�
   assert.deepEqual(panelBounds(movePanel(overlay, { x: 5000, y: -5000 }, sectionBounds(page, -1))), { x: 1400, y: 0, width: 200, height: 200 });
 });
 
+test('缩小画布后大框和越界小框不会起手跳位，逐步移回时原图同步平移', () => {
+  const page = createComicPage();
+  const small = createRectanglePanel(page, 0, { x: 200, y: 300 }, { x: 250, y: 350 });
+  const bounds = { x: 0, y: 0, width: 100, height: 100 };
+  for (const panel of [page.panels[0], small]) {
+    panel.image = fitPanelImage(panel, { dataUrl: 'original-image', width: 800, height: 600 });
+    const original = structuredClone(panel);
+    assert.equal(movePanel(panel, { x: 0, y: 0 }, bounds), panel);
+    const moved = movePanel(panel, { x: -10, y: -20 }, bounds);
+    assert.deepEqual(moved.points, panel.points.map((point) => ({ x: point.x - 10, y: point.y - 20 })));
+    assert.deepEqual(moved.image, { ...panel.image, x: panel.image.x - 10, y: panel.image.y - 20 });
+    const leftmost = panelBounds(movePanel(panel, { x: -10000, y: -10000 }, bounds));
+    const size = panelBounds(panel);
+    assert.equal(leftmost.x, Math.min(0, bounds.width - size.width));
+    assert.equal(leftmost.y, Math.min(0, bounds.height - size.height));
+    assert.deepEqual(panel, original);
+  }
+});
+
 test('图片按外接矩形居中铺满，保留完整原图以便再次裁剪', () => {
   const page = createComicPage();
   const panel = createRectanglePanel(page, 0, { x: 100, y: 200 }, { x: 500, y: 500 });
@@ -244,5 +382,16 @@ test('自定义模板只保存分镜形状，重新套用不叠加沟槽且不�
     }
     assert.equal(actual[index].image, null);
     assert.equal(actual[index].task, null);
+  }
+});
+
+
+test('旧单页保留32像素留白与7像素外沟槽，初始框调整后保持相对边距', () => {
+  for (const [layout, width, height] of [['portrait', 800, 1120], ['landscape', 1120, 800]]) {
+    const original = applyTemplate({ ...createComicPage(layout), layoutVersion: 1, width, height, panels: [] }, 'blank');
+    assert.deepEqual(comicContentBounds(original), { x: 32, y: 32, width: width - 64, height: height - 64 });
+    assert.deepEqual(panelBounds(original.panels[0]), { x: 39, y: 39, width: width - 78, height: height - 78 });
+    const resized = resizeComicPage(original, width * 2, height * 2);
+    assert.deepEqual(panelBounds(resized.panels[0]), { x: 78, y: 78, width: width * 2 - 156, height: height * 2 - 156 });
   }
 });

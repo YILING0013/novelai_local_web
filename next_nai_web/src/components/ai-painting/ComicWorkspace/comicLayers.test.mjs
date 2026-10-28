@@ -5,7 +5,7 @@ import {
   moveComicItemToLayer, reorderComicItem, reorderComicLayer,
 } from './comicLayers.mjs';
 import { applyTemplate, createComicPage, createRectanglePanel, splitPanel } from './comicDocument.mjs';
-import { loadComicLibrary, saveComicDraft, saveComicPage } from './comicStorage.mjs';
+import { loadComicLibrary, saveComicCanvasDefaults, saveComicDraft, saveComicPage } from './comicStorage.mjs';
 
 const visibleIds = (page) => getComicRenderItems(page).map(({ item }) => item.id);
 const mixedPage = () => ensureComicLayers({
@@ -130,7 +130,7 @@ test('模板保留锁定或隐藏图层的旧框，并且不向这些层新增�
   assert.equal(applyTemplate(page, 'grid-four', 0, [], 'overlays'), page);
 });
 
-test('漫画库保存、草稿和重新读取完整保留元素变形、蒙版、字体及未知业务字段', async () => {
+test('漫画库完整保留页面内容，默认画布尺寸与当前草稿独立保存', async () => {
   const originalIndexedDB = globalThis.indexedDB;
   const records = new Map(['pages', 'templates', 'drafts'].map((name) => [name, new Map()]));
   // 测试浏览器存储边界，记录按结构化克隆写入和读回，不依赖源码字段白名单。
@@ -164,6 +164,9 @@ test('漫画库保存、草稿和重新读取完整保留元素变形、蒙版�
     return request;
   } };
   try {
+    assert.equal((await loadComicLibrary()).canvasDefaults, null);
+    const canvasDefaults = { width: 901.5, height: 1603 };
+    await saveComicCanvasDefaults(canvasDefaults);
     const page = mixedPage();
     page.elements = [{ ...page.elements[0], rotation: 23, skewX: 14, flipY: true, masks: [{ points: [{ x: 2, y: 4 }], feather: 6 }], sourceAsset: { dataUrl: 'data:image/svg+xml,asset', kind: 'uploaded' } }];
     page.fonts = [{ id: 'font', family: 'Imported font', dataUrl: 'data:font/woff2;base64,saved' }];
@@ -176,6 +179,17 @@ test('漫画库保存、草稿和重新读取完整保留元素变形、蒙版�
     assert.deepEqual(library.pages[0].fonts, page.fonts);
     assert.deepEqual(library.pages[0].extra, page.extra);
     assert.deepEqual(library.draft, page);
+    assert.deepEqual(library.canvasDefaults, canvasDefaults);
+
+    const oldPage = { ...page, id: 'older-page', width: 800, height: 1120 };
+    await saveComicDraft(oldPage);
+    assert.deepEqual((await loadComicLibrary()).canvasDefaults, canvasDefaults);
+    const nextDefaults = { width: 1234, height: 2345 };
+    await saveComicCanvasDefaults(nextDefaults);
+    const reopened = await loadComicLibrary();
+    assert.deepEqual(reopened.canvasDefaults, nextDefaults);
+    assert.deepEqual(reopened.draft, oldPage);
+    assert.deepEqual(reopened.pages, library.pages);
   } finally {
     globalThis.indexedDB = originalIndexedDB;
   }

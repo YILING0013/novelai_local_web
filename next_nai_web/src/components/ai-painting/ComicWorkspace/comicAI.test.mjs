@@ -361,3 +361,23 @@ test('旧页整图完整contain，修改检测忽略工作流和另一分区而�
   metadataOnly.panels[0] = { ...metadataOnly.panels[0], borderWidth: 10 };
   assert.notEqual(comicAISectionFingerprint(metadataOnly, 0), before);
 });
+
+
+test('自定义画布的 AI 编排仍使用固定允许分辨率，参考分镜保持归一化', () => {
+  for (const layout of ['portrait', 'landscape', 'spreadPortrait', 'spreadLandscape']) {
+    for (const dimensions of [{ width: 5001, height: 7003 }, { width: 1, height: 1 }]) {
+      const page = createComicPage(layout, 'grid-four', dimensions);
+      const expected = layout === 'portrait' ? [832, 1216] : [1216, 832];
+      for (const section of buildComicAISections(page)) {
+        assert.deepEqual([section.width, section.height], expected);
+        assert.equal(section.referencePanels.length, 4);
+        for (const panel of section.referencePanels) {
+          assert.ok(panel.center.x > 0 && panel.center.x < 1);
+          assert.ok(panel.center.y > 0 && panel.center.y < 1);
+          assert.ok(panel.width > 0 && panel.width <= 1);
+          assert.ok(panel.height > 0 && panel.height <= 1);
+        }
+      }
+    }
+  }
+});

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import JSZip from 'jszip';
-import { applyTemplate, createComicPage, createComicTemplate, fitPanelImage } from './comicDocument.mjs';
+import { applyTemplate, createComicPage, createComicTemplate, fitPanelImage, resizeComicPage } from './comicDocument.mjs';
 import { applyComicAIImage, buildComicAISections, validateComicAIPlan } from './comicAI.mjs';
 import { createComicElement } from './comicElements.mjs';
 import { comicBalloonContours } from './comicBalloonPaths.mjs';
@@ -53,6 +53,40 @@ test('未保存的新页也导出，导入素材文件与临时预览在原地�
   assert.equal(await restored.referenceImages[0].file.text(), 'original bytes');
   assert.equal(await restored.referenceImages[1].file.text(), 'second bytes');
   assert.equal(restored.imagePreview, `data:image/png;base64,${Buffer.from('preview').toString('base64')}`);
+});
+
+test('自定义正整数画布尺寸随项目往返保留，非法宽高被拒绝', async () => {
+  const original = createComicPage('spreadPortrait');
+  const pages = [{ width: 12345, height: 4567 }, { width: 1, height: 1 }].map((size) => ({ ...structuredClone(original), ...size, id: crypto.randomUUID() }));
+  const blob = await exportComicProject({ pages, templates: [], draft: null });
+  const restored = await readComicProject(blob);
+  assert.deepEqual(restored.pages, pages.map((page, order) => ({ ...page, order })));
+  assert.deepEqual(restored.pages[0].panels, original.panels);
+  for (const size of [{ width: 0 }, { height: -1 }, { width: 1.5 }, { height: '1120' }, { width: Infinity }, { height: null }]) {
+    const draft = { ...original, ...size };
+    const invalid = await exportComicProject({ pages: [], templates: [], draft });
+    await assert.rejects(readComicProject(invalid), /Invalid comic page/);
+  }
+});
+
+test('初始画框经连续导出导入仍跟随画布调整，非法初始几何记录被拒绝', async () => {
+  const original = createComicPage();
+  let page = resizeComicPage(original, 1200, 1800);
+  for (const [width, height] of [[2501, 3407], [1000, 1000]]) {
+    const blob = await exportComicProject({ pages: [], templates: [], draft: page });
+    page = (await readComicProject(blob)).pages[0];
+    page = resizeComicPage(page, width, height);
+    assert.equal(page.panels[0].id, original.panels[0].id);
+    page.panels[0].points.forEach((point, index) => {
+      assert.ok(Math.abs(point.x / width - original.panels[0].points[index].x / original.width) < 1e-12);
+      assert.ok(Math.abs(point.y / height - original.panels[0].points[index].y / original.height) < 1e-12);
+    });
+  }
+  for (const initialPoints of [null, {}, [], original.panels[0].points.slice(0, 3), [{ x: 'bad', y: 0 }, ...original.panels[0].points.slice(1)]]) {
+    const draft = { ...original, panels: [{ ...original.panels[0], initialPoints }] };
+    const blob = await exportComicProject({ pages: [], templates: [], draft });
+    await assert.rejects(readComicProject(blob), /Invalid initial comic frame/);
+  }
 });
 
 test('拒绝图片 ZIP、未知项目版本、缺失素材及损坏结构，不返回部分项目', async () => {

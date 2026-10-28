@@ -69,16 +69,15 @@ function validatePage(page, allowWorkflow = true) {
   const points = (value, minimum) => Array.isArray(value) && value.length >= minimum && value.every((point) => point && finite(point.x) && finite(point.y));
   const collection = (value) => Array.isArray(value) && value.every((item) => item && typeof item.id === 'string') && new Set(value.map((item) => item.id)).size === value.length;
   const image = (value) => typeof value === 'string' && /^data:image\/(png|jpeg|webp|svg\+xml);base64,/.test(value);
-  const legacySizes = { portrait: [800, 1120], landscape: [1120, 800], spreadPortrait: [1600, 1120], spreadLandscape: [1120, 1600] };
-  const size = page?.layoutVersion === 2 ? [COMIC_LAYOUTS[page.layout]?.width, COMIC_LAYOUTS[page.layout]?.height] : legacySizes[page?.layout];
   if (!page || typeof page.id !== 'string' || typeof page.title !== 'string' || !Object.hasOwn(COMIC_LAYOUTS, page.layout) ||
-    ![undefined, 1, 2].includes(page.layoutVersion) || page.width !== size?.[0] || page.height !== size?.[1] ||
+    ![undefined, 1, 2].includes(page.layoutVersion) || ![page.width, page.height].every((value) => Number.isInteger(value) && value > 0) ||
     !collection(page.panels) || !collection(page.strokes) || !collection(page.elements) || !collection(page.layers) || !page.layers.length || !collection(page.fonts)) throw new Error('Invalid comic page.');
   const layers = new Set(page.layers.map((layer) => layer.id));
   if (page.layers.some((layer) => typeof layer.name !== 'string' || typeof layer.visible !== 'boolean' || typeof layer.locked !== 'boolean') ||
     [...page.panels, ...page.strokes, ...page.elements].some((item) => !layers.has(item.layerId) || !finite(item.order))) throw new Error('Invalid comic layer.');
   for (const panel of page.panels) {
     if (!points(panel.points, 3) || !finite(panel.borderWidth) || !['regular', 'overlay'].includes(panel.type) || !Number.isInteger(panel.section)) throw new Error('Invalid comic frame.');
+    if (panel.initialPoints !== undefined && (!points(panel.initialPoints, 4) || panel.initialPoints.length !== 4)) throw new Error('Invalid initial comic frame.');
     if (panel.image && (!image(panel.image.dataUrl) || !['x', 'y', 'width', 'height', 'scale'].every((key) => finite(panel.image[key])) || (panel.image.rotation !== undefined && !finite(panel.image.rotation)))) throw new Error('Invalid comic image.');
     if (panel.task && (!panel.task.params?.parameterState?.params || !panel.task.params.promptsByModel || !Array.isArray(panel.task.params.vibeImages))) throw new Error('Invalid comic task.');
   }
