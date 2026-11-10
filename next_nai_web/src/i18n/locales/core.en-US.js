@@ -1,4 +1,14 @@
 const messages = {
+  "desktop": {
+    "webAccess": "Web access settings",
+    "enable": "Enable browser access",
+    "hint": "Sign in from a browser on this PC or your private network. LAN connections use HTTP. Enable this only on a trusted network. Access stops when the desktop app closes.",
+    "loopback": "On this PC",
+    "lan": "On your local network",
+    "readFailed": "Could not read access settings. Please retry.",
+    "changeFailed": "Could not apply the change. Check that port {port} is available and the application data folder is writable.",
+    "restoreFailed": "Web access could not be restored. Check port {port} and turn access on again."
+  },
   "librarySettings": {
     "outputDirectory": "Generated image folder",
     "outputHint": "Enter an absolute local path, or leave blank for backend data/generated-images. After saving settings, completed images are written directly to disk without browser auto-downloads.",

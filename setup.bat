@@ -64,7 +64,10 @@ if errorlevel 1 (
 popd
 
 echo.
-echo 安装完成。电脑使用请双击 start.bat；同一 Wi-Fi 的手机也要使用时请双击 start-lan.bat。
+echo 正在构建桌面窗口...
+"nai_flask\.venv\Scripts\python.exe" "desktop\build_windows.py" --host-only
+if errorlevel 1 goto :failed
+echo 安装完成。双击 start.bat 启动桌面程序，在 Web 访问设置中可开启浏览器访问。
 pause
 exit /b 0
 

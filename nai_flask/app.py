@@ -1009,7 +1009,7 @@ def create_app(
     validate_llm_configuration(llm_configuration)
     app.extensions["reference_store"] = ReferenceStore(
         app.config["DATA_DIR"],
-        Path(app.config["FRONTEND_OUT_DIR"]).parent / "public",
+        app.config.get("REFERENCE_ASSETS_DIR", Path(app.config["FRONTEND_OUT_DIR"]).parent / "public"),
     )
     settings = app.extensions["local_store"].read("settings")
     app.extensions["image_library"] = LocalImageLibrary(app.config["DATA_DIR"], settings.get("outputDirectory"))
@@ -1102,6 +1102,7 @@ def create_app(
     def enforce_local_request_boundary() -> Response | None:
         """只接收回环或已枚举的本机 LAN Host，并校验实际连接地址与浏览器来源。"""
 
+        network = request.environ.get("novelai.network", app.config)
         g.allowed_request_origins = set()
         try:
             parsed_host = urlsplit(f"http://{request.host}")
@@ -1109,11 +1110,11 @@ def create_app(
             host_port = parsed_host.port if parsed_host.port is not None else (443 if request.scheme == "https" else 80)
         except ValueError:
             hostname = None
-        if hostname not in app.config["ALLOWED_HOSTS"]:
+        if hostname not in network["ALLOWED_HOSTS"]:
             raise ApiError("The Host header is not allowed.", 400, "HOST_NOT_ALLOWED")
-        is_lan_host = hostname in app.config["LAN_IPV4_ADDRESSES"]
+        is_lan_host = hostname in network["LAN_IPV4_ADDRESSES"]
         if (parsed_host.username is not None or parsed_host.password is not None or parsed_host.path or parsed_host.query
-                or parsed_host.fragment or (is_lan_host and host_port != app.config["PORT"])):
+                or parsed_host.fragment or (is_lan_host and host_port != network["PORT"])):
             raise ApiError("The Host header is not allowed.", 400, "HOST_NOT_ALLOWED")
 
         # 使用 WSGI 的真实 peer，不读取 Forwarded/X-Forwarded-For 提供的地址。
@@ -1124,13 +1125,13 @@ def create_app(
         if isinstance(peer, ipaddress.IPv6Address) and peer.ipv4_mapped is not None:
             peer = peer.ipv4_mapped
         is_lan_peer = isinstance(peer, ipaddress.IPv4Address) and any(peer in network for network in LAN_IPV4_NETWORKS)
-        if peer is None or not (peer.is_loopback or (app.config["ALLOW_LAN"] and is_lan_peer)):
+        if peer is None or not (peer.is_loopback or (network["ALLOW_LAN"] and is_lan_peer)):
             raise ApiError("Only local or enabled private-network connections are allowed.", 403, "PEER_NOT_ALLOWED")
 
-        allowed_origins = set() if is_lan_host else set(app.config["ALLOWED_ORIGINS"])
+        allowed_origins = set() if is_lan_host else set(network["ALLOWED_ORIGINS"])
         if is_lan_host:
-            allowed_origins.add(f"{request.scheme}://{hostname}:{app.config['PORT']}")
-            if app.config["PORT"] == (443 if request.scheme == "https" else 80):
+            allowed_origins.add(f"{request.scheme}://{hostname}:{network['PORT']}")
+            if network["PORT"] == (443 if request.scheme == "https" else 80):
                 allowed_origins.add(f"{request.scheme}://{hostname}")
         g.allowed_request_origins = allowed_origins
 

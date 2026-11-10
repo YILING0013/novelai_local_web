@@ -14,6 +14,7 @@ import {
 import { generateFileName, DOWNLOAD_NAMING_METHODS } from '@/components/ai-painting/tools/ImageTools/ImageSaveUtils';
 import GallerySourceSelect from '@/components/gallery/GallerySourceSelect';
 import apiClient from '@/utils/ApiClient';
+import DesktopWebAccess from '@/components/settings/DesktopWebAccess';
 import { useI18n } from '@/i18n/I18nProvider';
 import { PAGE_COLOR_DEFAULTS, getPageColorStorageKey } from '@/i18n/pageConfig.mjs';
 import { DEFAULT_THEME_SETTINGS, THEME_PRESETS } from '@/providers/themePresets.mjs';
@@ -251,6 +252,7 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
             id={`settings-tab-${item.id}`} aria-controls={`settings-panel-${item.id}`}
             label={t(`settings.sections.${item.id}.title`)} />)}
         </Tabs>
+        <DesktopWebAccess sx={{ mx: 1.5, alignSelf: 'flex-start' }} />
         <Typography variant="caption" color="text.secondary" sx={{ mt: 'auto', px: 3, pt: 3, display: { xs: 'none', sm: 'block' } }}>
           {t('settings.sidebarHint')}
         </Typography>

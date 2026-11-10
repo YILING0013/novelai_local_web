@@ -9,6 +9,16 @@
 - 手动安装时，在 `nai_flask` 创建虚拟环境并执行 `python -m pip install -r requirements.txt`；在 `next_nai_web` 执行 `npm ci`。
 - 本地配置请参考仓库配置示例，真实配置和凭据不得提交。前端修改后需要重新构建静态文件。
 
+## Windows x64 安装包
+
+使用独立 Git 检出、x64 CPython 3.12、Node.js / npm、.NET Framework 4.8、NSIS 3 和 Visual Studio 的 x64 CRT 可再发行目录。运行下列命令时，将 `$crt` 和 `$nsis` 指向本机相应工具。
+
+```powershell
+.\nai_flask\.venv\Scripts\python.exe desktop/build_windows.py --crt $crt --makensis $nsis
+```
+
+构建器使用 npm 锁文件和带 SHA-256 的 Windows wheel 清单，校验 WebView2 SDK 哈希和微软运行时签名，再用打包后的解释器检查原生依赖。产物在 `output/`。修改 Python 运行依赖时同步更新 `desktop/requirements-win-x64.lock` 并测试实际安装包。源码桌面入口只需 `desktop/build_windows.py --host-only`。
+
 ## 提交范围与本地数据
 
 贡献的是功能代码、结构定义、迁移逻辑及必要的合成测试，不能附带开发者自己的使用数据。
