@@ -81,15 +81,16 @@ def scan_patterns(root: Path, patterns: dict[str, re.Pattern[str]], failures: se
 def scan_built_javascript(failures: set[str]) -> None:
     """扫描 Next 静态导出的运行时 JavaScript。"""
 
-    static_root = FRONTEND / "out" / "_next" / "static"
-    if not static_root.is_dir():
-        failures.add("静态构建缺失: next_nai_web/out/_next/static")
-        return
-    for path in static_root.rglob("*.js"):
-        text = path.read_text(encoding="utf-8", errors="ignore")
-        for label, pattern in FRONTEND_FORBIDDEN.items():
-            if pattern.search(text):
-                failures.add(f"构建产物含{label}: {path.relative_to(ROOT)}")
+    bundles = [FRONTEND / "out/_next/static", ROOT / "desktop/build/ui/assets"]
+    for static_root in bundles:
+        if not static_root.is_dir():
+            failures.add(f"静态构建缺失: {static_root.relative_to(ROOT)}")
+            continue
+        for path in static_root.rglob("*.js"):
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            for label, pattern in FRONTEND_FORBIDDEN.items():
+                if pattern.search(text):
+                    failures.add(f"构建产物含{label}: {path.relative_to(ROOT)}")
 
 
 def scan_credentials(failures: set[str]) -> None:

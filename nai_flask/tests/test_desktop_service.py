@@ -81,3 +81,28 @@ def test_restore_and_recover_from_occupied_port(desktop):
     third = desktop()
     session, url = client(third)
     assert session.get(url).json()["enabled"] is True
+
+
+def test_offline_tools_are_private_and_cannot_authorize_official_requests(desktop, tmp_path):
+    service = desktop()
+    http, settings = client(service)
+    origin = settings.split("/api/")[0]
+    service.studio_dir = tmp_path / "studio"
+    service.studio_dir.mkdir()
+    (service.studio_dir / "index.html").write_text("native studio", encoding="utf-8")
+    assert http.get(origin + "/studio/index.html").text == "native studio"
+    session = http.get(origin + "/api/session").json()
+    assert not session["authenticated"]
+    assert http.get(origin + "/api/local/gallery?source=outputs").status_code == 200
+    assert http.put(origin + "/api/local/settings", json={}).status_code == 403
+    http.headers["X-CSRF-Token"] = session["csrf_token"]
+    assert http.put(origin + "/api/local/settings", json={"settings": {"locale": "zh-CN"}}).ok
+    assert http.get(origin + "/api/account").status_code == 401
+    assert http.post(origin + "/api/images/generate", json={}).status_code == 401
+    assert http.put(settings, json={"enabled": True}).ok
+    public = f"http://127.0.0.1:{service.web_port}"
+    http.headers["Origin"] = public
+    assert http.get(public + "/studio/index.html").status_code == 404
+    assert http.get(public + "/api/session").json() == {"authenticated": False}
+    assert http.get(public + "/api/local/gallery").status_code == 401
+    assert http.put(public + "/api/local/settings", json={}).status_code == 401

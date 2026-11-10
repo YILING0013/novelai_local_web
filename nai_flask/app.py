@@ -336,7 +336,7 @@ def _expire_session_cookie(response: Response) -> None:
     )
 
 
-def session_required(*, csrf: bool = False) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+def session_required(*, csrf: bool = False, desktop_tool: bool = False) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     要求路由具有有效内存会话，并可额外校验 CSRF。
 
@@ -351,6 +351,10 @@ def session_required(*, csrf: bool = False) -> Callable[[Callable[..., Any]], Ca
         @wraps(function)
         def wrapped(*args: Any, **kwargs: Any) -> Any:
             session_id, entry = _current_session()
+            if entry is None and desktop_tool:
+                local = request.environ.get("novelai.local_tools")
+                if local is not None:
+                    session_id, entry = local
             if entry is None:
                 raise ApiError("Authentication is required.", 401, "AUTH_REQUIRED")
             if csrf:
@@ -360,7 +364,7 @@ def session_required(*, csrf: bool = False) -> Callable[[Callable[..., Any]], Ca
                     raise ApiError("The CSRF token is invalid.", 403, "CSRF_INVALID")
             g.local_session_id = session_id
             g.local_session = entry
-            g.request_authenticated = True
+            g.request_authenticated = entry["login_mode"] != "local"
             g.request_login_mode = entry["login_mode"]
             return function(*args, **kwargs)
 
@@ -1263,6 +1267,9 @@ def create_app(
 
         _, entry = _current_session()
         if entry is None:
+            local = request.environ.get("novelai.local_tools")
+            if local is not None:
+                return jsonify(authenticated=False, csrf_token=local[1]["csrf_token"])
             return jsonify({"authenticated": False})
         return jsonify({
             "authenticated": True,
@@ -2116,7 +2123,7 @@ def create_app(
         return jsonify({"translations": translations})
 
     @app.get("/api/local/settings")
-    @session_required()
+    @session_required(desktop_tool=True)
     def get_settings() -> Response:
         """读取本地设置对象。"""
 
@@ -2127,7 +2134,7 @@ def create_app(
         return jsonify({"settings": settings})
 
     @app.put("/api/local/settings")
-    @session_required(csrf=True)
+    @session_required(csrf=True, desktop_tool=True)
     def put_settings() -> Response:
         """合并并原子保存本地设置，先确认生成目录可写。"""
 
@@ -2184,68 +2191,68 @@ def create_app(
         return jsonify(notebook)
 
     @app.get("/api/local/works")
-    @session_required()
+    @session_required(desktop_tool=True)
     def works_list() -> Response:
         """读取本机作品摘要，图片始终通过受保护快照地址展示。"""
         return jsonify({"works": app.extensions["image_library"].versions.list_works()})
 
     @app.post("/api/local/works")
-    @session_required(csrf=True)
+    @session_required(csrf=True, desktop_tool=True)
     def works_create() -> Response:
         """创建空作品，只有附带图库图片时才同时创建首版。"""
         return jsonify(app.extensions["image_library"].versions.create_work(_request_json()))
 
     @app.post("/api/local/works/batch-delete")
-    @session_required(csrf=True)
+    @session_required(csrf=True, desktop_tool=True)
     def works_delete() -> Response:
         """批量删除作品历史，保留图库原图。"""
         return jsonify(app.extensions["image_library"].versions.delete_works(_request_json().get("ids")))
 
     @app.get("/api/local/works/<work_id>")
-    @session_required()
+    @session_required(desktop_tool=True)
     def work_detail(work_id: str) -> Response:
         """读取作品的不可变参数、图片与分支父节点。"""
         return jsonify(app.extensions["image_library"].versions.get_work(work_id))
 
     @app.patch("/api/local/works/<work_id>")
-    @session_required(csrf=True)
+    @session_required(csrf=True, desktop_tool=True)
     def work_rename(work_id: str) -> Response:
         """重命名作品，不改写已有版本。"""
         return jsonify({"work": app.extensions["image_library"].versions.rename_work(work_id, _request_json().get("title"))})
 
     @app.patch("/api/local/works/<work_id>/blueprint")
-    @session_required(csrf=True)
+    @session_required(csrf=True, desktop_tool=True)
     def work_blueprint_update(work_id: str) -> Response:
         """保存作品画布布局与备注，版本参数和图片快照保持不变。"""
         return jsonify({"blueprint": app.extensions["image_library"].versions.save_blueprint(work_id, _request_json())})
 
     @app.post("/api/local/works/<work_id>/versions")
-    @session_required(csrf=True)
+    @session_required(csrf=True, desktop_tool=True)
     def version_create(work_id: str) -> Response:
         """从选定父节点提交参数或恢复历史，始终追加一个新版本。"""
         return jsonify(app.extensions["image_library"].versions.create_version(work_id, _request_json()))
 
     @app.get("/api/local/works/<work_id>/versions/<version_id>")
-    @session_required()
+    @session_required(desktop_tool=True)
     def version_detail(work_id: str, version_id: str) -> Response:
         """读取单个版本的完整参数，工作台直接通过会话接口恢复图像输入。"""
         return jsonify(app.extensions["image_library"].versions.get_version(work_id, version_id))
 
     @app.patch("/api/local/works/<work_id>/versions/<version_id>")
-    @session_required(csrf=True)
+    @session_required(csrf=True, desktop_tool=True)
     def version_message_update(work_id: str, version_id: str) -> Response:
         """编辑节点改动说明，其他历史内容保持不变。"""
         return jsonify({"version": app.extensions["image_library"].versions.update_message(work_id, version_id, _request_json())})
 
     @app.get("/api/local/gallery/<image_id>/versions")
-    @session_required()
+    @session_required(desktop_tool=True)
     def image_versions(image_id: str) -> Response:
         """读取图片在各个作品中的使用历史，原图移除后记录仍保留。"""
         return jsonify(app.extensions["image_library"].versions.image_versions(image_id))
 
     @app.get("/api/local/versions/assets/<asset_id>")
     @app.get("/api/local/versions/assets/<asset_id>/thumbnail")
-    @session_required()
+    @session_required(desktop_tool=True)
     def version_asset(asset_id: str) -> Response:
         """按内容 ID 读取历史原图或缩略图，不开放任意系统路径。"""
         path = app.extensions["image_library"].versions.asset_path(asset_id, thumbnail=request.path.endswith("/thumbnail"))
@@ -2254,7 +2261,7 @@ def create_app(
         return response
 
     @app.get("/api/local/gallery")
-    @session_required()
+    @session_required(desktop_tool=True)
     def gallery_list() -> Response:
         """按来源分页读取本机图库，返回缩略图地址而不返回原图数据。"""
         source = request.args.get("source", "references")
@@ -2282,13 +2289,13 @@ def create_app(
         return jsonify(result)
 
     @app.get("/api/local/gallery/collections")
-    @session_required()
+    @session_required(desktop_tool=True)
     def gallery_collections() -> Response:
         """读取当前来源的智能收藏，收藏保存筛选条件而不复制图片。"""
         return jsonify({"collections": list_collections(app.extensions["image_library"], request.args.get("source"))})
 
     @app.post("/api/local/gallery/collections")
-    @session_required(csrf=True)
+    @session_required(csrf=True, desktop_tool=True)
     def gallery_collection_create() -> Response:
         """保存当前筛选条件，后续图片按同一条件自动加入结果。"""
         body = _request_json()
@@ -2296,13 +2303,13 @@ def create_app(
                                                         body.get("name", ""), body.get("filters", {}))})
 
     @app.delete("/api/local/gallery/collections/<collection_id>")
-    @session_required(csrf=True)
+    @session_required(csrf=True, desktop_tool=True)
     def gallery_collection_delete(collection_id: str) -> Response:
         """删除智能收藏定义，图库文件和普通分组不受影响。"""
         return jsonify({"deleted": delete_collection(app.extensions["image_library"], collection_id)})
 
     @app.get("/api/local/directories")
-    @session_required()
+    @session_required(desktop_tool=True)
     def local_directories() -> Response:
         """浏览用户选择的本机目录，仅返回子目录和导航入口，不读取文件内容。"""
         library = app.extensions["image_library"]
@@ -2336,7 +2343,7 @@ def create_app(
                         "directories": directories, "roots": roots, "suggested_export_directory": str(suggested)})
 
     @app.post("/api/local/gallery/import")
-    @session_required(csrf=True)
+    @session_required(csrf=True, desktop_tool=True)
     def gallery_import() -> Response:
         """逐张导入上传图像，标题和提示词由图像元数据自动填写。"""
         files = request.files.getlist("files")
@@ -2355,20 +2362,20 @@ def create_app(
         return jsonify({"items": items, "errors": errors})
 
     @app.get("/api/local/gallery/<image_id>")
-    @session_required()
+    @session_required(desktop_tool=True)
     def gallery_detail(image_id: str) -> Response:
         """按需读取当前图像的提示词、画风和参数。"""
         return jsonify(app.extensions["image_library"].get_image(image_id))
 
     @app.patch("/api/local/gallery/<image_id>")
-    @session_required(csrf=True)
+    @session_required(csrf=True, desktop_tool=True)
     def gallery_update(image_id: str) -> Response:
         """编辑图库索引中的说明、画风和分组，保留图像原文件。"""
         return jsonify(app.extensions["image_library"].update_image(image_id, _request_json()))
 
     @app.get("/api/local/gallery/<image_id>/file")
     @app.get("/api/local/gallery/<image_id>/thumbnail")
-    @session_required()
+    @session_required(desktop_tool=True)
     def gallery_file(image_id: str) -> Response:
         """只通过索引 ID 提供当前图库中的图像，拒绝浏览任意系统路径。"""
         path = app.extensions["image_library"].image_path(image_id, thumbnail=request.path.endswith("/thumbnail"))
@@ -2377,20 +2384,20 @@ def create_app(
         return response
 
     @app.get("/api/local/gallery/groups")
-    @session_required()
+    @session_required(desktop_tool=True)
     def gallery_groups() -> Response:
         """读取当前图库来源的本地分组。"""
         return jsonify({"groups": app.extensions["image_library"].list_groups(request.args.get("source", "references"))})
 
     @app.post("/api/local/gallery/groups")
-    @session_required(csrf=True)
+    @session_required(csrf=True, desktop_tool=True)
     def gallery_create_group() -> Response:
         """创建一个本地虚拟分组，不移动原始图片文件。"""
         body = _request_json()
         return jsonify(app.extensions["image_library"].create_group(body.get("name", ""), source=body.get("source", "references")))
 
     @app.post("/api/local/gallery/batch")
-    @session_required(csrf=True)
+    @session_required(csrf=True, desktop_tool=True)
     def gallery_batch() -> Response:
         """逐项执行分组、回收、恢复或元数据另存，并报告部分失败。"""
         body = _request_json()
@@ -2430,13 +2437,13 @@ def create_app(
         return jsonify({"items": items, "succeeded": succeeded, "errors": errors})
 
     @app.get("/api/local/inference")
-    @session_required()
+    @session_required(desktop_tool=True)
     def inference_status() -> Response:
         """返回本机 Python 推理环境和模型缓存状态。"""
         return jsonify(app.extensions["local_inference"].status(g.local_session_id))
 
     @app.post("/api/local/inference/jobs")
-    @session_required(csrf=True)
+    @session_required(csrf=True, desktop_tool=True)
     def start_inference_job() -> tuple[Response, int]:
         """启动下载、加载或图像处理；图库输入只按受保护的图片 ID 读取。"""
         payload = _request_json()
@@ -2452,19 +2459,19 @@ def create_app(
         return jsonify(job), 202
 
     @app.get("/api/local/inference/jobs/<job_id>")
-    @session_required()
+    @session_required(desktop_tool=True)
     def get_inference_job(job_id: str) -> Response:
         """读取本会话的后台任务及结果。"""
         return jsonify(app.extensions["local_inference"].get_job(job_id, g.local_session_id))
 
     @app.post("/api/local/inference/jobs/<job_id>/cancel")
-    @session_required(csrf=True)
+    @session_required(csrf=True, desktop_tool=True)
     def cancel_inference_job(job_id: str) -> Response:
         """取消本会话任务，保存阶段已开始时等待保存完成。"""
         return jsonify(app.extensions["local_inference"].cancel(job_id, g.local_session_id))
 
     @app.post("/api/local/inference/release")
-    @session_required(csrf=True)
+    @session_required(csrf=True, desktop_tool=True)
     def release_inference_model() -> Response:
         """释放空闲模型内存，不删除已下载的模型文件。"""
         app.extensions["local_inference"].release()

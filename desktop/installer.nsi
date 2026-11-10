@@ -10,10 +10,10 @@ InstallDir "$LOCALAPPDATA\Programs\NovelAI Local"
 ShowInstDetails show
 ShowUninstDetails show
 SetCompressor /FINAL lzma
-VIProductVersion "1.0.0.0"
+VIProductVersion "1.1.0.0"
 VIAddVersionKey "ProductName" "NovelAI Local"
 VIAddVersionKey "FileDescription" "NovelAI Local Windows x64 Installer"
-VIAddVersionKey "FileVersion" "1.0.0"
+VIAddVersionKey "FileVersion" "1.1.0"
 VIAddVersionKey "LegalCopyright" "NovelAI Local contributors"
 !define MUI_ICON "${ICON}"
 !define MUI_UNICON "${ICON}"
@@ -82,7 +82,7 @@ Section
   CreateShortcut "$SMPROGRAMS\NovelAI Local.lnk" "$INSTDIR\NovelAI Local.exe"
   CreateShortcut "$DESKTOP\NovelAI Local.lnk" "$INSTDIR\NovelAI Local.exe"
   WriteRegStr HKCU "${UNKEY}" "DisplayName" "NovelAI Local"
-  WriteRegStr HKCU "${UNKEY}" "DisplayVersion" "1.0.0"
+  WriteRegStr HKCU "${UNKEY}" "DisplayVersion" "1.1.0"
   WriteRegStr HKCU "${UNKEY}" "DisplayIcon" "$INSTDIR\NovelAI Local.exe"
   WriteRegStr HKCU "${UNKEY}" "InstallLocation" "$INSTDIR"
   WriteRegStr HKCU "${UNKEY}" "UninstallString" '"$INSTDIR\Uninstall.exe"'

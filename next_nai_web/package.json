@@ -6,7 +6,8 @@
     "dev": "next dev --turbopack",
     "test": "node --test",
     "build": "next build",
-    "lint": "eslint src"
+    "lint": "eslint src studio desktop.vite.mjs",
+    "build:desktop": "vite build --config desktop.vite.mjs"
   },
   "dependencies": {
     "@emotion/cache": "^11.14.0",
@@ -38,7 +39,8 @@
     "eslint": "^9",
     "eslint-config-next": "^15.5.28",
     "postcss": "^8.5.26",
-    "tailwindcss": "^3.4.1"
+    "tailwindcss": "^3.4.1",
+    "vite": "8.3.5"
   },
   "overrides": {
     "js-yaml@4.0.0 - 4.3.0": "4.3.2",

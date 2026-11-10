@@ -10,7 +10,8 @@ import sys
 import threading
 from pathlib import Path
 
-from flask import jsonify, request
+from flask import jsonify, request, send_from_directory
+from werkzeug.exceptions import NotFound
 from waitress import create_server, wasyncore
 from werkzeug.wrappers import Response
 
@@ -71,6 +72,8 @@ class DesktopService:
             if config.get(key):
                 config[key] = str((self.profile / config[key]).resolve())
         self.key = secrets.token_urlsafe(32)
+        self.local_tools = (secrets.token_urlsafe(24), {"csrf_token": secrets.token_urlsafe(32), "login_mode": "local"})
+        self.studio_dir = Path(__file__).resolve().parent.parent / "desktop/build/ui"
         self.lock = threading.RLock()
         self.web = None
         self.urls = []
@@ -85,6 +88,7 @@ class DesktopService:
         })
         self.app.add_url_rule("/api/desktop/web-access", "desktop_web_access",
                               self._web_settings, methods=["GET", "PUT"])
+        self.app.add_url_rule("/studio/<path:asset>", "studio_asset", self._studio_asset)
         self.private = Listener(self._private_request, ["127.0.0.1"], private_port)
         if self.preference.exists():
             try:
@@ -93,6 +97,14 @@ class DesktopService:
             except (OSError, ValueError):
                 self.error = "WEB_START_FAILED"
 
+    def _studio_asset(self, asset):
+        if request.environ.get("novelai.desktop"):
+            try:
+                return send_from_directory(self.studio_dir, asset)
+            except NotFound:
+                pass
+        raise ApiError("Desktop resource not found.", 404, "DESKTOP_ASSET_NOT_FOUND")
+
     def _private_request(self, env, start_response):
         host = f"127.0.0.1:{self.private_port}"
         supplied = env.pop("HTTP_X_NAI_DESKTOP", "")
@@ -100,6 +112,7 @@ class DesktopService:
                 or not hmac.compare_digest(supplied, self.key)):
             return Response("Desktop window required.", status=403)(env, start_response)
         env["novelai.desktop"] = True
+        env["novelai.local_tools"] = self.local_tools
         env["novelai.network"] = {
             "PORT": self.private_port, "ALLOW_LAN": False, "ALLOWED_HOSTS": {"127.0.0.1"},
             "LAN_IPV4_ADDRESSES": (), "ALLOWED_ORIGINS": {f"http://{host}"},

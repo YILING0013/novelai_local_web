@@ -12,7 +12,6 @@ import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import MailOutlineRoundedIcon from '@mui/icons-material/MailOutlineRounded';
 import TextType from './ui/TextType/TextType';
 import apiClient from '@/utils/ApiClient';
-import DesktopWebAccess from '@/components/settings/DesktopWebAccess';
 import { useI18n } from '@/i18n/I18nProvider';
 import LanguageSwitcher from '@/components/i18n/LanguageSwitcher';
 
@@ -178,7 +177,6 @@ export default function LoginPage() {
     },
   };
   const languageSwitcherStyle = {
-    color: '#fff',
     bgcolor: alpha('#111827', 0.72),
     borderRadius: 2,
     backdropFilter: 'blur(10px)',
@@ -311,7 +309,6 @@ export default function LoginPage() {
                 )}
               </Box>
               <Box sx={{ mt: { xs: 2.5, md: 5 }, display: { xs: 'flex', md: 'none' }, justifyContent: 'center' }}>
-                <DesktopWebAccess sx={languageSwitcherStyle} />
                 <LanguageSwitcher sx={languageSwitcherStyle} />
               </Box>
             </Box>
@@ -320,7 +317,6 @@ export default function LoginPage() {
       </Container>
       {!isMobile && (
         <Box sx={{ position: 'fixed', right: 20, bottom: 20, zIndex: 3, display: 'flex', gap: 1 }}>
-          <DesktopWebAccess sx={languageSwitcherStyle} />
           <LanguageSwitcher sx={languageSwitcherStyle} />
         </Box>
       )}

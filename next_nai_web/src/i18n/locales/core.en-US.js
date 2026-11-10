@@ -1,5 +1,8 @@
 const messages = {
   "desktop": {
+    "application": "Desktop application",
+    "webOn": "Web access on",
+    "webOff": "Web access off",
     "webAccess": "Web access settings",
     "enable": "Enable browser access",
     "hint": "Sign in from a browser on this PC or your private network. LAN connections use HTTP. Enable this only on a trusted network. Access stops when the desktop app closes.",

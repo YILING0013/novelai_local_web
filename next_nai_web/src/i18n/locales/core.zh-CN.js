@@ -1,5 +1,8 @@
 const messages = {
   "desktop": {
+    "application": "桌面应用",
+    "webOn": "Web 访问已开启",
+    "webOff": "Web 访问已关闭",
     "webAccess": "Web 访问设置",
     "enable": "启用浏览器访问",
     "hint": "开启后，可在这台电脑或同一私人局域网的浏览器中登录。局域网连接使用 HTTP，请仅在可信网络启用。关闭桌面程序后，访问随即停止。",

@@ -19,6 +19,7 @@ const eslintConfig = [
     ],
   },
   ...compat.extends("next/core-web-vitals"),
+  { files: ["studio/**/*.jsx"], rules: { "@next/next/no-img-element": "off" } },
 ];
 
 export default eslintConfig;

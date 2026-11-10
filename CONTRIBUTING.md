@@ -17,7 +17,9 @@
 .\nai_flask\.venv\Scripts\python.exe desktop/build_windows.py --crt $crt --makensis $nsis
 ```
 
-构建器使用 npm 锁文件和带 SHA-256 的 Windows wheel 清单，校验 WebView2 SDK 哈希和微软运行时签名，再用打包后的解释器检查原生依赖。产物在 `output/`。修改 Python 运行依赖时同步更新 `desktop/requirements-win-x64.lock` 并测试实际安装包。源码桌面入口只需 `desktop/build_windows.py --host-only`。
+构建器使用 npm 锁文件和带 SHA-256 的 Windows wheel 清单，校验 WebView2 SDK 哈希和微软运行时签名，再用打包后的解释器检查原生依赖。产物在 `output/`。修改 Python 运行依赖时同步更新 `desktop/requirements-win-x64.lock` 并测试实际安装包。
+
+`next_nai_web/studio/` 是独立的桌面 React 入口。`npm run build:desktop` 将它编译到 `desktop/build/ui/`，桌面专用监听器提供该目录。浏览器入口由 `npm run build` 导出。两端共用业务组件。更改 Windows 窗口或桌面界面后，在仓库根目录运行 `desktop/build_windows.py --host-only` 并通过 `start.bat` 验证。
 
 ## 提交范围与本地数据
 
@@ -61,6 +63,7 @@ python -m pytest -q
 npm test
 npm run lint
 npm run build
+npm run build:desktop
 ```
 
 前端构建完成后，在仓库根目录执行：

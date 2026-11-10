@@ -12,18 +12,17 @@ using Microsoft.Web.WebView2.WinForms;
 
 [assembly: AssemblyTitle("NovelAI Local")]
 [assembly: AssemblyProduct("NovelAI Local")]
-[assembly: AssemblyVersion("1.0.0.0")]
+[assembly: AssemblyVersion("1.1.0.0")]
 
-internal sealed class LocalDesktop : Form
+internal sealed class LocalDesktop : ApplicationContext
 {
     private const string Title = "NovelAI Local";
-    private const string Origin = "http://127.0.0.1:47861";
+    internal const string Origin = "http://127.0.0.1:47861";
     private const string Instance = @"Local\NovelAI.Local.Desktop.1";
-    private readonly WebView2 view = new WebView2 { Dock = DockStyle.Fill };
-    private readonly Label loading = new Label {
-        Text = "正在启动本地工作台…", Dock = DockStyle.Fill,
-        TextAlign = ContentAlignment.MiddleCenter, Font = SystemFonts.MessageBoxFont
-    };
+    private DesktopWindow current;
+    private DesktopWindow switching;
+    private CoreWebView2Environment environment;
+    private Rectangle? workspaceBounds;
     private Process backend;
     private bool closing;
     private string key;
@@ -58,21 +57,59 @@ internal sealed class LocalDesktop : Form
 
     private LocalDesktop()
     {
-        Text = Title;
-        Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
-        StartPosition = FormStartPosition.CenterScreen;
-        var area = Screen.FromPoint(Cursor.Position).WorkingArea;
-        MinimumSize = new Size(640, 480);
-        Size = new Size(Math.Min(area.Width, 1440), Math.Min(area.Height, 940));
-        Controls.Add(view);
-        Controls.Add(loading);
-        Shown += async delegate {
+        current = new DesktopWindow(this, "auth");
+        current.FormClosed += WindowClosed;
+        current.Shown += async delegate {
             try { await StartWorkspace(); }
-            catch (Exception ex)
-            {
-                if (!closing) { MessageBox.Show(this, ex.Message, Title, MessageBoxButtons.OK, MessageBoxIcon.Error); Close(); }
-            }
+            catch (Exception ex) { if (!closing) { MessageBox.Show(current, ex.Message, Title, MessageBoxButtons.OK, MessageBoxIcon.Error); current.Retire(); } }
         };
+        current.Show();
+    }
+
+    private void WindowClosed(object sender, FormClosedEventArgs args)
+    {
+        if (sender != current || closing) return;
+        closing = true;
+        if (switching != null && !switching.IsDisposed) switching.Retire();
+        if (backend != null)
+        {
+            backend.StandardInput.Close();
+            if (!backend.WaitForExit(3500)) backend.Kill();
+            backend.Dispose();
+        }
+        ExitThread();
+    }
+
+    internal async void Switch(DesktopWindow source, string role, bool leaveApproved = false)
+    {
+        if (source != current || closing || switching != null || source.Role == role) return;
+        var target = new DesktopWindow(this, role);
+        switching = target;
+        try
+        {
+            if ((!leaveApproved && !await source.CanLeave()) || closing) return;
+            if (source.Role != "auth")
+                workspaceBounds = source.WindowState == FormWindowState.Normal ? source.Bounds : source.RestoreBounds;
+            if (role != "auth" && workspaceBounds.HasValue && Screen.FromRectangle(workspaceBounds.Value).WorkingArea.Contains(workspaceBounds.Value))
+                target.Bounds = workspaceBounds.Value;
+            target.Opacity = 0;
+            target.ShowInTaskbar = false;
+            target.Show();
+            await target.LoadStudio(environment);
+            if (closing) return;
+            current = target;
+            target.FormClosed += WindowClosed;
+            target.ShowInTaskbar = true;
+            target.Opacity = 1;
+            target.Activate();
+            source.Retire();
+        }
+        catch (Exception ex) { if (!closing) MessageBox.Show(source, ex.Message, Title, MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        finally
+        {
+            switching = null;
+            if (current != target && !target.IsDisposed) target.Retire();
+        }
     }
 
     private async Task StartWorkspace()
@@ -100,87 +137,71 @@ internal sealed class LocalDesktop : Form
         if (key == null || key.Length != 43)
             throw new InvalidOperationException("本地服务启动失败。请检查端口 47861 是否空闲，以及用户数据目录是否可写。");
         backend.Exited += delegate {
-            if (IsHandleCreated && !closing) BeginInvoke((Action)delegate {
-                if (!closing) { view.Visible = false; MessageBox.Show(this, "本地服务已退出，请重新启动程序。", Title); Close(); }
+            var window = current;
+            if (!closing && window.IsHandleCreated) window.BeginInvoke((Action)delegate {
+                if (!closing) { MessageBox.Show(current, "本地服务已退出，请重新启动程序。", Title); current.Retire(); }
             });
         };
         backend.EnableRaisingEvents = true;
         var profile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), Title, "WebView2");
-        var environment = await CoreWebView2Environment.CreateAsync(null, profile);
-        if (closing) return;
-        await view.EnsureCoreWebView2Async(environment);
-        if (closing) return;
-        ConfigureView(view.CoreWebView2);
-        await view.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(
-            "if(location.origin==='" + Origin + "')Object.defineProperty(window,'novelaiLocalDesktop',{value:true});");
-        view.CoreWebView2.NavigationCompleted += delegate { loading.Visible = false; };
-        view.CoreWebView2.Navigate(Origin + "/login");
+        environment = await CoreWebView2Environment.CreateAsync(null, profile);
+        if (!closing) await current.LoadStudio(environment);
     }
 
     private static bool WorkspaceUrl(string value)
     {
         Uri uri;
-        return Uri.TryCreate(value, UriKind.Absolute, out uri)
-            && uri.GetLeftPart(UriPartial.Authority) == Origin;
+        return Uri.TryCreate(value, UriKind.Absolute, out uri) && uri.GetLeftPart(UriPartial.Authority) == Origin;
     }
 
-    private void ConfigureView(CoreWebView2 core)
+    internal static bool StudioUrl(string value)
     {
-        core.Settings.IsWebMessageEnabled = false;
-        core.Settings.AreHostObjectsAllowed = false;
+        return WorkspaceUrl(value) && new Uri(value).AbsolutePath == "/studio/index.html";
+    }
+
+    internal void ConfigureRequests(CoreWebView2 core)
+    {
         core.AddWebResourceRequestedFilter(Origin + "/*", CoreWebView2WebResourceContext.All,
                                            CoreWebView2WebResourceRequestSourceKinds.All);
         core.WebResourceRequested += (sender, args) => {
             if (!closing && !backend.HasExited && WorkspaceUrl(args.Request.Uri))
                 args.Request.Headers.SetHeader("X-NAI-Desktop", key);
         };
-        core.NavigationStarting += (sender, args) => {
-            if (!WorkspaceUrl(args.Uri)) args.Cancel = true;
-        };
-        core.NewWindowRequested += async (sender, args) => {
-            args.Handled = true;
-            if (!args.IsUserInitiated) return;
-            Uri uri;
-            if (!Uri.TryCreate(args.Uri, UriKind.Absolute, out uri)) return;
-            if (uri.Scheme == "https")
-            {
-                Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
-                return;
-            }
-            if (!WorkspaceUrl(args.Uri) && !args.Uri.StartsWith("blob:" + Origin + "/")
-                && !args.Uri.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase)) return;
-            // Keep image previews in the same WebView environment so blob URLs remain usable.
-            using (var deferral = args.GetDeferral())
-            {
-                var preview = new Form { Text = "NovelAI Local · Preview", Width = 940, Height = 720, Icon = Icon };
-                var image = new WebView2 { Dock = DockStyle.Fill };
-                preview.Controls.Add(image);
-                try
-                {
-                    await image.EnsureCoreWebView2Async(core.Environment);
-                    image.CoreWebView2.Settings.IsScriptEnabled = false;
-                    image.CoreWebView2.Settings.IsWebMessageEnabled = false;
-                    image.CoreWebView2.Settings.AreHostObjectsAllowed = false;
-                    image.CoreWebView2.AddWebResourceRequestedFilter(Origin + "/*", CoreWebView2WebResourceContext.All);
-                    image.CoreWebView2.WebResourceRequested += (s, e) => {
-                        if (!closing && !backend.HasExited && WorkspaceUrl(e.Request.Uri)) e.Request.Headers.SetHeader("X-NAI-Desktop", key);
-                    };
-                    args.NewWindow = image.CoreWebView2;
-                    preview.Show(this);
-                }
-                catch { preview.Dispose(); }
-            }
-        };
     }
 
-    protected override void OnFormClosing(FormClosingEventArgs e)
+    internal async void OpenPreview(Form owner, CoreWebView2 core, CoreWebView2NewWindowRequestedEventArgs args)
     {
-        closing = true;
-        if (backend != null)
+        args.Handled = true;
+        if (!args.IsUserInitiated) return;
+        Uri uri;
+        if (!Uri.TryCreate(args.Uri, UriKind.Absolute, out uri)) return;
+        if (uri.Scheme == "https")
         {
-            backend.StandardInput.Close();
-            if (!backend.WaitForExit(3500)) backend.Kill();
+            Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+            return;
         }
-        base.OnFormClosing(e);
+        if (!WorkspaceUrl(args.Uri) && !args.Uri.StartsWith("blob:" + Origin + "/")
+            && !args.Uri.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase)) return;
+        // Keep image previews in the same WebView environment so blob URLs remain usable.
+        using (var deferral = args.GetDeferral())
+        {
+            var preview = new Form { Text = "NovelAI Local · Preview", Width = 940, Height = 720, Icon = owner.Icon };
+            var image = new WebView2 { Dock = DockStyle.Fill };
+            preview.Controls.Add(image);
+            try
+            {
+                await image.EnsureCoreWebView2Async(core.Environment);
+                image.CoreWebView2.Settings.IsScriptEnabled = false;
+                image.CoreWebView2.Settings.IsWebMessageEnabled = false;
+                image.CoreWebView2.Settings.AreHostObjectsAllowed = false;
+                image.CoreWebView2.AddWebResourceRequestedFilter(Origin + "/*", CoreWebView2WebResourceContext.All);
+                image.CoreWebView2.WebResourceRequested += (s, e) => {
+                    if (!closing && !backend.HasExited && WorkspaceUrl(e.Request.Uri)) e.Request.Headers.SetHeader("X-NAI-Desktop", key);
+                };
+                args.NewWindow = image.CoreWebView2;
+                preview.Show(owner);
+            }
+            catch { preview.Dispose(); }
+        }
     }
 }

@@ -49,6 +49,7 @@ jobs:
           npm test
           npm run lint
           npm run build
+          npm run build:desktop
           npm audit --audit-level=high
 
       - name: Verify release boundary

@@ -49,7 +49,7 @@ def build_host(dest, cache, source=False):
                     f"/win32icon:{ICON}", f"/win32manifest:{DESKTOP / 'app.manifest'}",
                     f"/out:{dest / 'NovelAI Local.exe'}",
                     *[f"/reference:{p}" for p in dest.glob("Microsoft.Web.WebView2.*.dll")],
-                    DESKTOP / "LocalDesktop.cs"], check=True)
+                    DESKTOP / "LocalDesktop.cs", DESKTOP / "DesktopWindow.cs"], check=True)
 
 
 def stage_python(dest, cache, redist):
@@ -103,6 +103,7 @@ def stage_app(payload):
         asset = rel.relative_to("next_nai_web/public")
         (target / asset).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(out / asset, target / asset)
+    shutil.copytree(DESKTOP / "build/ui", payload / "desktop/build/ui")
     shutil.copy2(ROOT / "LICENSE", payload)
 
 
@@ -129,7 +130,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--host-only", action="store_true", help="build a launcher for the source checkout")
     p.add_argument("--cache", type=Path, default=DESKTOP / "build/cache")
-    p.add_argument("--output", type=Path, default=ROOT / "output/NovelAI-Local-1.0.0-windows-x64-setup.exe")
+    p.add_argument("--output", type=Path, default=ROOT / "output/NovelAI-Local-1.1.0-windows-x64-setup.exe")
     p.add_argument("--crt", type=Path)
     p.add_argument("--makensis", default="makensis.exe")
     args = p.parse_args()
@@ -138,6 +139,7 @@ def main():
     cache = args.cache.resolve()
     cache.mkdir(parents=True, exist_ok=True)
     if args.host_only:
+        subprocess.run(["npm.cmd", "run", "build:desktop"], cwd=FRONTEND, check=True)
         build_host(DESKTOP / "build/dev", cache, source=True)
         return
     if sys.version_info[:2] != (3, 12) or args.crt is None:
@@ -145,6 +147,7 @@ def main():
     (cache / "wheels").mkdir(exist_ok=True)
     subprocess.run(["npm.cmd", "ci"], cwd=FRONTEND, check=True)
     subprocess.run(["npm.cmd", "run", "build"], cwd=FRONTEND, check=True)
+    subprocess.run(["npm.cmd", "run", "build:desktop"], cwd=FRONTEND, check=True)
     subprocess.run([sys.executable, ROOT / "scripts/verify_release.py"], check=True)
     output = args.output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
