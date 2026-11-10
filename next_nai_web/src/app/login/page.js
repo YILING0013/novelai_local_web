@@ -316,7 +316,7 @@ export default function LoginPage() {
         </Fade>
       </Container>
       {!isMobile && (
-        <Box sx={{ position: 'fixed', right: 20, bottom: 20, zIndex: 3, display: 'flex', gap: 1 }}>
+        <Box sx={{ position: 'fixed', right: 20, bottom: 20, zIndex: 3 }}>
           <LanguageSwitcher sx={languageSwitcherStyle} />
         </Box>
       )}

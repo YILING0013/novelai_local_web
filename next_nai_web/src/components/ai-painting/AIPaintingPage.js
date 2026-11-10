@@ -306,7 +306,7 @@ const getResponsiveGenerateButtonContent = ({
 // 使用GenerationContext包装的AIPaintingPage内部组件
 const ImageProcessingWorkspace = dynamic(() => import('./ImageProcessing/ImageProcessingWorkspace'), { ssr: false });
 
-const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange, renderModeTools, desktopEditor }) => {
+const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange }) => {
   const { t, formatNumber, locale } = useI18n();
   const comicText = locale === 'en-US' ? {
     title: 'Comic maker', edit: 'Panel parameters', save: 'Save task', close: 'Back to canvas',
@@ -1645,11 +1645,6 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
   };
 
   useEffect(() => {
-    if (desktopEditor) desktopEditor.share(generatedItems, () => comicWorkspaceRef.current?.getCurrentPage());
-  }, [desktopEditor, generatedItems]);
-
-  useEffect(() => {
-    if (desktopEditor) return undefined;
     const openGalleryImage = () => {
       const pending = sessionStorage.getItem('novelai:pending-image-processing');
       if (!pending) return;
@@ -2124,15 +2119,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
     };
 
     switch (action) {
-      case 'use-as-image-processing': {
-        const request = { id: createClientId(), generatedItem: currentItem };
-        if (desktopEditor) desktopEditor.open(request);
-        else {
-          setProcessingGalleryRequest(request);
-          changeWorkspaceMode('imageProcessing');
-        }
+      case 'use-as-image-processing':
+        setProcessingGalleryRequest({ id: createClientId(), generatedItem: currentItem });
+        changeWorkspaceMode('imageProcessing');
         return true;
-      }
       case 'use-as-input':
         try {
           const response = await fetch(currentItem.src);
@@ -2564,7 +2554,6 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
             overflow: 'hidden',
           }}
         >
-          {renderModeTools ? renderModeTools(leftPanelMode, changeWorkspaceMode) : (
           <Box
             sx={{
               flex: '0 0 auto',
@@ -2664,7 +2653,6 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
               {t('painting.workspace.tabs.imageProcessing')}
             </Button>
           </Box>
-          )}
 
           <Box
             sx={{
@@ -3532,10 +3520,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
 };
 
 // 包装了Context Provider的根组件
-const AIPaintingPage = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange, renderModeTools, desktopEditor }) => {
+const AIPaintingPage = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange }) => {
   return (
     <GenerationProvider>
-      <AIPaintingPageContent userId={userId} accountSnapshot={accountSnapshot} active={active} workContext={workContext} onWorkContextChange={onWorkContextChange} renderModeTools={renderModeTools} desktopEditor={desktopEditor} />
+      <AIPaintingPageContent userId={userId} accountSnapshot={accountSnapshot} active={active} workContext={workContext} onWorkContextChange={onWorkContextChange} />
     </GenerationProvider>
   );
 };

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const appDirectory = dirname(fileURLToPath(import.meta.url));
 const loginSource = readFileSync(join(appDirectory, 'login', 'page.js'), 'utf8');
-const mainSource = readFileSync(join(appDirectory, '../components/account/AccountDialog.js'), 'utf8');
+const mainSource = readFileSync(join(appDirectory, 'main', 'page.js'), 'utf8');
 const localeDirectory = join(appDirectory, '..', 'i18n', 'locales');
 const zhLocale = readFileSync(join(localeDirectory, 'core.zh-CN.js'), 'utf8');
 const enLocale = readFileSync(join(localeDirectory, 'core.en-US.js'), 'utf8');

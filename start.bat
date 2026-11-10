@@ -15,16 +15,5 @@ if not exist "next_nai_web\out\index.html" (
   exit /b 1
 )
 
-if /I "%~1"=="-Lan" (
-  powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\start-local.ps1" -Lan
-  if errorlevel 1 pause
-  exit /b
-)
-if not exist "desktop\build\dev\NovelAI Local.exe" (
-  "nai_flask\.venv\Scripts\python.exe" "desktop\build_windows.py" --host-only
-  if errorlevel 1 (
-    pause
-    exit /b 1
-  )
-)
-start "" "desktop\build\dev\NovelAI Local.exe"
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\start-local.ps1" %*
+if errorlevel 1 pause

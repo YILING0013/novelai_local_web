@@ -1,17 +1,4 @@
 const messages = {
-  "desktop": {
-    "application": "桌面应用",
-    "webOn": "Web 访问已开启",
-    "webOff": "Web 访问已关闭",
-    "webAccess": "Web 访问设置",
-    "enable": "启用浏览器访问",
-    "hint": "开启后，可在这台电脑或同一私人局域网的浏览器中登录。局域网连接使用 HTTP，请仅在可信网络启用。关闭桌面程序后，访问随即停止。",
-    "loopback": "本机浏览器",
-    "lan": "同一局域网的设备",
-    "readFailed": "无法读取访问状态，请重试。",
-    "changeFailed": "更改失败。请检查端口 {port} 是否已被占用，以及用户数据目录是否可写。",
-    "restoreFailed": "未能恢复 Web 访问。请检查端口 {port} 后重新开启。"
-  },
   "librarySettings": {
     "outputDirectory": "生成图像保存目录",
     "outputHint": "填写本机绝对路径；留空使用后端 data/generated-images。保存设置后生效，生成成功即写入本机，无需浏览器自动下载。",

@@ -6,8 +6,7 @@
     "dev": "next dev --turbopack",
     "test": "node --test",
     "build": "next build",
-    "lint": "eslint src studio desktop.vite.mjs",
-    "build:desktop": "vite build --config desktop.vite.mjs"
+    "lint": "eslint src"
   },
   "dependencies": {
     "@emotion/cache": "^11.14.0",
@@ -17,14 +16,14 @@
     "@mui/material": "^6.4.5",
     "@mui/material-nextjs": "^6.4.12",
     "@noble/hashes": "2.4.0",
-    "ag-psd": "^31.0.3",
+    "ag-psd": "^30.1.0",
     "exifreader": "^4.44.0",
     "fflate": "0.8.3",
     "file-saver": "^2.0.5",
     "gsap": "^3.13.0",
     "jszip": "^3.10.1",
     "lucide-react": "^0.525.0",
-    "next": "^15.5.28",
+    "next": "^15.5.24",
     "pako": "^2.1.0",
     "png-chunk-text": "^1.0.0",
     "png-chunks-extract": "^1.0.0",
@@ -37,16 +36,15 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "eslint": "^9",
-    "eslint-config-next": "^15.5.28",
+    "eslint-config-next": "^15.5.24",
     "postcss": "^8.5.26",
-    "tailwindcss": "^3.4.1",
-    "vite": "8.3.5"
+    "tailwindcss": "^3.4.1"
   },
   "overrides": {
+    "brace-expansion@<=1.1.17": "1.1.18",
+    "brace-expansion@2.0.0 - 2.1.3": "2.1.4",
     "js-yaml@4.0.0 - 4.3.0": "4.3.2",
     "postcss@<=8.5.22": "8.5.26",
-    "brace-expansion@<=1.1.20": "1.1.21",
-    "brace-expansion@2.0.0 - 2.1.6": "2.1.7",
-    "sharp@<0.35.5": "0.35.5"
+    "sharp@<0.35.0": "0.35.4"
   }
 }

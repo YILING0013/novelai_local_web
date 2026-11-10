@@ -62,12 +62,12 @@ function ColorField({ label, value, onChange }) {
  * @param {object} props pages 为可见页面，active 表示标签是否可见，sectionRequest 指定从画廊跳入的分区。
  * @returns {React.ReactElement} 分类导航、设置内容与始终可见的保存栏。
  */
-export default function SettingsPage({ pages = [], active = true, sectionRequest = null, chooseDirectory, desktopPreferences, onDirtyChange }) {
+export default function SettingsPage({ pages = [], active = true, sectionRequest = null }) {
   const theme = useTheme();
   const { t, locale, setLocale } = useI18n();
   const mobile = useMediaQuery(theme.breakpoints.down('sm'));
   const { savedSettings, previewTheme, reloadFromStorage } = useAppTheme();
-  const [section, setSection] = useState(desktopPreferences ? 'desktop' : 'appearance');
+  const [section, setSection] = useState('appearance');
   const [themeDraft, setThemeDraft] = useState(null);
   const themeSettings = themeDraft || savedSettings;
   const { mode, primaryColors, backgroundColors, animationEnabled, animationSpeed } = themeSettings;
@@ -134,7 +134,6 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
   const dirty = JSON.stringify(themeSettings) !== JSON.stringify(savedSettings)
     || JSON.stringify(imageSettings) !== JSON.stringify(savedImages)
     || JSON.stringify(pageColors) !== JSON.stringify(savedPageColors);
-  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
   const selectedPreset = THEME_PRESETS.find((preset) => preset.mode === mode
     && preset.primary.toLowerCase() === primaryColors[mode].toLowerCase()
     && Object.entries(preset.background).every(([key, value]) => value.toLowerCase() === backgroundColors[mode][key].toLowerCase()));
@@ -248,8 +247,6 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
               '& .MuiTab-iconWrapper': { mb: 0, mr: 0, fontSize: 20 },
             },
           }}>
-          {desktopPreferences && <Tab value="desktop" id="settings-tab-desktop" aria-controls="settings-panel-desktop"
-            icon={<TuneOutlined />} iconPosition="start" label={t('desktop.application')} />}
           {sections.map((item) => <Tab key={item.id} value={item.id} icon={item.icon} iconPosition="start"
             id={`settings-tab-${item.id}`} aria-controls={`settings-panel-${item.id}`}
             label={t(`settings.sections.${item.id}.title`)} />)}
@@ -263,7 +260,6 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
         aria-labelledby={`settings-tab-${section}`} tabIndex={0}
         sx={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: 'auto', p: { xs: 2, md: 3.5, xl: 4 } }}>
         {loadError && <Alert severity="error" sx={{ mb: 2 }} action={<Button onClick={() => setLoadAttempt((n) => n + 1)}>{t('common.retry')}</Button>}>{t('settings.loadFailed')}</Alert>}
-        {section === 'desktop' ? desktopPreferences : (
         <Box component="fieldset" disabled={!loaded || saving} sx={{ border: 0, m: 0, p: 0, minWidth: 0, maxWidth: 1080, mx: 'auto' }}>
           <Box sx={{ mb: 3 }}>
             <Typography variant="h5" sx={{ mb: 0.75 }}>{t(`settings.sections.${section}.title`)}</Typography>
@@ -371,10 +367,6 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
                 value={imageSettings.outputDirectory}
                 onChange={(event) => setImageSettings({ ...imageSettings, outputDirectory: event.target.value })}
                 helperText={t('librarySettings.outputHint')} sx={{ mb: 2 }} />
-              {chooseDirectory && <Button startIcon={<FolderOpenOutlined />} onClick={async () => {
-                const path = await chooseDirectory();
-                if (path) setImageSettings(current => ({ ...current, outputDirectory: path }));
-              }} sx={{ mb: 2 }}>{locale === 'zh-CN' ? '选择本机文件夹' : 'Choose folder on this PC'}</Button>}
               <GallerySourceSelect value={imageSettings.inspirationSource}
                 onChange={(value) => setImageSettings({ ...imageSettings, inspirationSource: value })} />
               <Alert severity="info" sx={{ mt: 2 }}>{t('librarySettings.localOnly')}</Alert>
@@ -398,13 +390,12 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
             </Paper>
           </Stack>}
         </Box>
-        )}
       </Box>
     </Box>
 
     {/* 底栏属于工作区自身，不再猜测应用侧栏宽度，也不会遮住滚动内容。 */}
     <Box component="footer" sx={{
-      flexShrink: 0, display: section === 'desktop' && !dirty ? 'none' : 'flex', alignItems: 'center', justifyContent: 'space-between',
+      flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       gap: 1.5, px: { xs: 2, sm: 3 }, py: 1.5, pb: 'max(12px, env(safe-area-inset-bottom))',
       borderTop: 1, borderColor: 'divider', bgcolor: 'background.paper',
     }}>
