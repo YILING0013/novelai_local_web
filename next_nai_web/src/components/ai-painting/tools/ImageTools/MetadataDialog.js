@@ -133,7 +133,7 @@ const MetadataDialog = ({ open, onClose, metadata, onApply }) => {
 const handleApply = () => {
   // 如果没有任何参数被选中，则提示用户
   if (Object.values(paramStatus).every(value => !value)) {
-    alert(t('painting.tools.metadata.selectAtLeastOne'));
+    void (window.novelaiDialog?.alert ?? window.alert)(t('painting.tools.metadata.selectAtLeastOne'));
     return;
   }
   

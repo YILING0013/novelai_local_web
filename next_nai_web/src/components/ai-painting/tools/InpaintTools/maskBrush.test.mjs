@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const source = readFileSync(new URL('./maskBrush.js', import.meta.url), 'utf8');
-const { createMask, createBrush, snapPoint, paintSegment, createMaskGrid } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+const { createMask, createBrush, snapPoint, paintSegment, createMaskGrid, createOutpaintMaskGrid, createInpaintMaskGrid } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 const path = (points, size = 8, mode = 'paint', shape = 'circle') => ({ type: 'path', points: points.map(([x, y]) => ({ x, y })), size, mode, shape });
 
 test('65 档圆形及方形笔刷的实际格子覆盖与光标形状、标注直径相同', () => {
@@ -67,4 +67,80 @@ test('区外矩形不会写入相邻行；没有笔迹时不分配巨大空白�
   const grid = createMaskGrid(strokes, { x: -16, y: -16, width: 32, height: 32 });
   assert.equal(grid.data.reduce((sum, value) => sum + value, 0), 16);
   assert.equal(createMaskGrid([], { x: 0, y: 0, width: 20000, height: 20000 }).data.length, 0);
+});
+
+function imageWithAlpha(width, height, alphaAt) {
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) data[(y * width + x) * 4 + 3] = alphaAt(x, y);
+  }
+  return { width, height, data };
+}
+
+test('317px 原图向右扩图时，接缝所在的整格和指定重叠区域都能重绘', () => {
+  const image = imageWithAlpha(384, 16, (x) => x < 317 ? 255 : 0);
+  for (const [radius, firstMaskedX] of [[0, 312], [3, 312], [8, 304]]) {
+    const grid = createOutpaintMaskGrid(image, radius);
+    for (let row = 0; row < grid.rows; row += 1) {
+      for (let col = 0; col < grid.cols; col += 1) {
+        assert.equal(grid.data[row * grid.cols + col], Number(col * 8 >= firstMaskedX));
+      }
+    }
+  }
+});
+
+test('纯手绘和混合扩图缩小到四分之一时，共用输出格的涂抹与擦除按最后一笔生效', () => {
+  const worldRect = { x: -72.5, y: -40.5, width: 512, height: 512 };
+  const paint = path([[-4.25, -3.5]]);
+  const erase = path([[6.75, -3.5]], 8, 'erase');
+  for (const contentWidth of [120, 128]) {
+    const image = imageWithAlpha(128, 128, (x) => x < contentWidth ? 254 : 0);
+    for (const [strokes, expectedCell] of [[[paint], 1], [[paint, erase], 0], [[paint, erase, paint], 1]]) {
+      const mask = createInpaintMaskGrid(image, 0, strokes, worldRect);
+      const expected = new Uint8Array(16 * 16);
+      if (contentWidth === 120) {
+        for (let row = 0; row < 16; row += 1) expected[row * 16 + 15] = 1;
+      }
+      // 原图第 -1 和第 0 列都映射到输出格 (2, 1)。
+      expected[16 + 2] = expectedCell;
+      assert.deepEqual(mask.data, expected);
+    }
+  }
+});
+
+test('单格笔迹随捕获原点对齐输出网格，原尺寸、偏移和大幅缩小时均覆盖完整格', () => {
+  const image = imageWithAlpha(128, 128, () => 255);
+  const cases = [
+    [{ x: 0, y: 0, width: 128, height: 128 }, [65, 65], [8 * 16 + 8]],
+    [{ x: 3.25, y: 4.75, width: 128, height: 128 }, [65, 65], [7 * 16 + 7, 7 * 16 + 8, 8 * 16 + 7, 8 * 16 + 8]],
+    [{ x: 0.25, y: 0.5, width: 2016, height: 2016 }, [1, 1], [0]],
+  ];
+  for (const [worldRect, point, selected] of cases) {
+    const grid = createInpaintMaskGrid(image, 0, [path([point])], worldRect);
+    const expected = new Uint8Array(16 * 16);
+    for (const index of selected) expected[index] = 1;
+    assert.deepEqual([grid.x, grid.y, grid.cols, grid.rows], [0, 0, 16, 16]);
+    assert.deepEqual(grid.data, expected);
+  }
+});
+
+test('四边和内部透明孔按像素圆形扩展后覆盖整格，半透明原画和越界区域不触发扩图', () => {
+  const holes = [[0, 9], [36, 26], [18, 0], [28, 34], [16, 16], [17, 16]];
+  const image = imageWithAlpha(37, 35, (x, y) => {
+    if (holes.some(([hx, hy]) => hx === x && hy === y)) return 0;
+    return x < 8 ? 1 : 255;
+  });
+  for (const radius of [0, 3, 8]) {
+    const grid = createOutpaintMaskGrid(image, radius);
+    const expected = new Uint8Array(5 * 5);
+    for (let y = 0; y < image.height; y += 1) {
+      for (let x = 0; x < image.width; x += 1) {
+        if (holes.some(([hx, hy]) => (x - hx) ** 2 + (y - hy) ** 2 <= radius ** 2)) {
+          expected[Math.floor(y / 8) * 5 + Math.floor(x / 8)] = 1;
+        }
+      }
+    }
+    assert.deepEqual([grid.cols, grid.rows], [5, 5]);
+    assert.deepEqual(grid.data, expected, `扩展半径 ${radius}px`);
+  }
 });

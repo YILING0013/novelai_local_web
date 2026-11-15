@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField, Tooltip, Typography } from '@mui/material';
 import { AccountTree, Add, ExitToApp, SaveOutlined } from '@mui/icons-material';
 import apiClient from '@/utils/ApiClient';
 import { useI18n } from '@/i18n/I18nProvider';
@@ -42,32 +42,39 @@ export default function WorkVersionBar({ context, onChange, getParameters, onCon
   };
 
   return <>
-    <Stack direction="row" alignItems="center" flexWrap="wrap" gap={0.5}
-      sx={{ px: 1, py: 0.5, borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper', flexShrink: 0 }}>
-      <Box sx={{ flex: '1 1 160px', minWidth: 0 }}>
+    <Stack direction="row" alignItems="center" flexWrap={{ xs: 'nowrap', sm: 'wrap' }} gap={0.5}
+      sx={{
+        px: 1, py: 0.5, minHeight: 48, boxSizing: 'border-box', borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper', flexShrink: 0,
+        '& > .work-action': { display: 'inline-flex', flexShrink: 0 },
+        '& > .work-action .MuiButton-root': { minWidth: { xs: 36, sm: 64 }, minHeight: 36, px: { xs: 0.5, sm: 1 }, whiteSpace: 'nowrap' },
+        '& > .work-action .MuiButton-startIcon': { ml: { xs: 0, sm: -0.5 }, mr: { xs: 0, sm: 1 } },
+      }}>
+      <Box sx={{ flex: '1 1 0%', minWidth: 0 }}>
         <Typography variant="caption" color="text.secondary" component="div" noWrap>
           {context ? context.number ? t('gallery.versionWorkspace.current', { title: context.work_title, number: context.number }) : t('gallery.versionWorkspace.waiting', { title: context.work_title }) : t('gallery.versionWorkspace.newHint')}
         </Typography>
       </Box>
-      {context?.parent_version_id && <Button size="small" startIcon={<SaveOutlined />} disabled={disabled} onClick={() => {
+      {context?.parent_version_id && <Tooltip title={t('gallery.versionWorkspace.save')}><span className="work-action"><Button size="small" aria-label={t('gallery.versionWorkspace.save')} startIcon={<SaveOutlined />} disabled={disabled} onClick={() => {
         setError(''); setMessage('');
         const parameters = getParameters();
         setDraft({ parameters, context });
-      }}>{t('gallery.versionWorkspace.save')}</Button>}
-      <Button size="small" startIcon={<AccountTree />} disabled={disabled} onClick={() => setHistoryOpen(true)}>
-        {t(context ? 'gallery.versionWorkspace.history' : 'gallery.versionWorkspace.openWork')}
-      </Button>
-      <Button size="small" startIcon={<Add />} disabled={disabled} onClick={() => {
+      }}><Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{t('gallery.versionWorkspace.save')}</Box></Button></span></Tooltip>}
+      <Tooltip title={t(context ? 'gallery.versionWorkspace.history' : 'gallery.versionWorkspace.openWork')}><span className="work-action">
+        <Button size="small" aria-label={t(context ? 'gallery.versionWorkspace.history' : 'gallery.versionWorkspace.openWork')} startIcon={<AccountTree />} disabled={disabled} onClick={() => setHistoryOpen(true)}>
+          <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{t(context ? 'gallery.versionWorkspace.history' : 'gallery.versionWorkspace.openWork')}</Box>
+        </Button>
+      </span></Tooltip>
+      <Tooltip title={t('gallery.versionWorkspace.newWork')}><span className="work-action"><Button size="small" aria-label={t('gallery.versionWorkspace.newWork')} startIcon={<Add />} disabled={disabled} onClick={() => {
         setError(''); setMessage('');
         const parameters = getParameters();
         setTitle(parameters.positivePrompt?.slice(0, 60) || t('gallery.versionWorkspace.untitled'));
         setDraft({ parameters, context: null });
       }}>
-        {t('gallery.versionWorkspace.newWork')}
-      </Button>
-      {context && <Button size="small" startIcon={<ExitToApp />} disabled={disabled} onClick={() => onChange(null)}>
-        {t('gallery.versionWorkspace.exitWork')}
-      </Button>}
+        <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{t('gallery.versionWorkspace.newWork')}</Box>
+      </Button></span></Tooltip>
+      {context && <Tooltip title={t('gallery.versionWorkspace.exitWork')}><span className="work-action"><Button size="small" aria-label={t('gallery.versionWorkspace.exitWork')} startIcon={<ExitToApp />} disabled={disabled} onClick={() => onChange(null)}>
+        <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{t('gallery.versionWorkspace.exitWork')}</Box>
+      </Button></span></Tooltip>}
     </Stack>
     <GalleryVersionsDialog open={historyOpen} onClose={() => setHistoryOpen(false)} initialWorkId={context?.work_id || null}
       activeContext={context} onContextChange={onChange}

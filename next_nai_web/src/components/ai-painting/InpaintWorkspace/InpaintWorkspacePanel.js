@@ -14,6 +14,7 @@ import {
   Slider,
   Stack,
   Typography,
+  Tooltip,
   useTheme,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
@@ -32,6 +33,11 @@ import {
   Redo as RedoIcon,
   Tune as TuneIcon,
   Undo as UndoIcon,
+  BookmarkBorder as BookmarkBorderIcon,
+  Close as CloseIcon,
+  Check as CheckIcon,
+  DoneAll as DoneAllIcon,
+  Star as StarIcon,
 } from '@mui/icons-material';
 import { saveAs } from 'file-saver';
 import InpaintControls from './InpaintControls';
@@ -492,10 +498,10 @@ const EmptyStateCard = ({ generatedItems, onOpenUpload, onOpenSourcePicker, onQu
       </Typography>
 
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-        <Button variant="contained" startIcon={<AddPhotoAlternateIcon />} onClick={onOpenUpload}>
+        <Button variant="contained" startIcon={<AddPhotoAlternateIcon />} onClick={onOpenUpload} sx={{ whiteSpace: 'nowrap' }}>
           {t('painting.workspace.inpaint.clickToUpload')}
         </Button>
-        <Button variant="outlined" startIcon={<CollectionsIcon />} onClick={onOpenSourcePicker}>
+        <Button variant="outlined" startIcon={<CollectionsIcon />} onClick={onOpenSourcePicker} sx={{ whiteSpace: 'nowrap' }}>
           {t('painting.workspace.inpaint.selectFromGalleryShort')}
         </Button>
       </Stack>
@@ -2092,10 +2098,13 @@ const InpaintWorkspacePanel = forwardRef(({
     }
 
     if (!pendingPatch && showMaskPreview && viewportRect && hasSourceImage) {
-      const worldRect = screenRectToWorldRect(viewportRect, sceneTransform);
       const sourceSnapshot = buildSourceContentSnapshot();
 
       if (sourceSnapshot?.canvas && sourceSnapshot?.bounds) {
+        const worldRect = snapWorldRectToContent(
+          screenRectToWorldRect(viewportRect, sceneTransform), sourceSnapshot.bounds, 5, sceneTransform.scale
+        );
+        const previewRect = worldRectToScreenRect(worldRect, sceneTransform);
         const maskCanvas = createInpaintMaskCanvas({
           contentCanvas: sourceSnapshot.canvas,
           contentBounds: sourceSnapshot.bounds,
@@ -2109,7 +2118,7 @@ const InpaintWorkspacePanel = forwardRef(({
 
         overlayCtx.save();
         overlayCtx.globalAlpha = MASK_PREVIEW_OPACITY;
-        overlayCtx.drawImage(maskPreviewCanvas, viewportRect.x, viewportRect.y, viewportRect.width, viewportRect.height);
+        overlayCtx.drawImage(maskPreviewCanvas, previewRect.x, previewRect.y, previewRect.width, previewRect.height);
         overlayCtx.restore();
       }
     } else {
@@ -2241,6 +2250,15 @@ const InpaintWorkspacePanel = forwardRef(({
     )
     : null;
 
+  const actionButtonSx = {
+    minWidth: isMobile ? 36 : 0,
+    minHeight: 36,
+    px: isMobile ? 0.5 : 1,
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
+    '& .MuiButton-startIcon': { ml: 0, mr: isMobile ? 0 : 0.5 },
+  };
+
   return (
     <Box
       ref={rootRef}
@@ -2275,7 +2293,7 @@ const InpaintWorkspacePanel = forwardRef(({
           borderColor: 'divider',
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mb: 1, flexWrap: 'wrap' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mb: 1, flexShrink: 0, minWidth: 0, flexWrap: isMobile ? 'nowrap' : 'wrap' }}>
           <Box sx={{ display: { xs: 'none', md: 'block' } }}>
             <Typography variant="subtitle1" fontWeight={600}>{t('painting.workspace.inpaint.title')}</Typography>
             <Typography variant="caption" color="text.secondary">
@@ -2291,19 +2309,16 @@ const InpaintWorkspacePanel = forwardRef(({
           </Box>
 
           {hasSourceImage && (
-            <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', gap: 0.5 }}>
-              <Button aria-label={t('painting.workspace.inpaint.clearContent')} size="small" color="error" variant="outlined" startIcon={<DeleteSweepIcon />} onClick={clearWorkspace}
-                sx={{ '& .MuiButton-startIcon': { mr: { xs: 0, sm: 0.5 } } }}>
-                <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{t('painting.workspace.inpaint.clearContent')}</Box>
-              </Button>
-              <Button aria-label={t('painting.workspace.inpaint.replaceSource')} size="small" variant="outlined" startIcon={<AddPhotoAlternateIcon />} onClick={startUploadFlow}
-                sx={{ '& .MuiButton-startIcon': { mr: { xs: 0, sm: 0.5 } } }}>
-                <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{t('painting.workspace.inpaint.replaceSource')}</Box>
-              </Button>
-              <Button aria-label={t('painting.workspace.inpaint.selectFromGalleryShort')} size="small" variant="outlined" startIcon={<CollectionsIcon />} onClick={() => setSourcePickerOpen(true)}
-                sx={{ '& .MuiButton-startIcon': { mr: { xs: 0, sm: 0.5 } } }}>
-                <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{t('painting.workspace.inpaint.selectFromGalleryShort')}</Box>
-              </Button>
+            <Stack direction="row" spacing={0.5} sx={{ minWidth: 0, overflowX: 'auto', touchAction: 'pan-x' }}>
+              {[
+                { key: 'clearContent', icon: <DeleteSweepIcon />, action: clearWorkspace, color: 'error' },
+                { key: 'replaceSource', icon: <AddPhotoAlternateIcon />, action: startUploadFlow },
+                { key: 'selectFromGalleryShort', icon: <CollectionsIcon />, action: () => setSourcePickerOpen(true) },
+              ].map(({ key, icon, action, color }) => <Tooltip key={key} title={t(`painting.workspace.inpaint.${key}`)}>
+                <span style={{ display: 'inline-flex' }}><Button aria-label={t(`painting.workspace.inpaint.${key}`)} size="small" color={color || 'primary'} variant="outlined" startIcon={icon} onClick={action} sx={actionButtonSx}>
+                  {!isMobile && t(`painting.workspace.inpaint.${key}`)}
+                </Button></span>
+              </Tooltip>)}
             </Stack>
           )}
         </Box>
@@ -2444,6 +2459,7 @@ const InpaintWorkspacePanel = forwardRef(({
                     color: 'text.primary',
                     fontSize: 12,
                     fontWeight: 600,
+                    whiteSpace: 'nowrap',
                   }}
                 >
                   {outputResolution.width} × {outputResolution.height}
@@ -2569,21 +2585,19 @@ const InpaintWorkspacePanel = forwardRef(({
                 borderColor: alpha(theme.palette.divider, 0.2),
                 pointerEvents: 'auto',
                 zIndex: 10,
+                maxWidth: 'calc(100% - 24px)',
               }}
             >
-              <Stack direction="row" spacing={0.5}>
-                <Button aria-label={t('painting.workspace.inpaint.transparentBackground')} size="small" variant="outlined" startIcon={<FileDownloadIcon />} onClick={() => exportWorkspace('transparent', false)}
-                  sx={{ '& .MuiButton-startIcon': { mr: { xs: 0, sm: 0.5 } }, minWidth: { xs: 32, sm: 'auto' }, px: { xs: 0.5, sm: 1 } }}>
-                  <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{t('painting.workspace.inpaint.transparentBackground')}</Box>
-                </Button>
-                <Button aria-label={t('painting.workspace.inpaint.whiteBackground')} size="small" variant="outlined" startIcon={<FileDownloadIcon />} onClick={() => exportWorkspace('white', false)}
-                  sx={{ '& .MuiButton-startIcon': { mr: { xs: 0, sm: 0.5 } }, minWidth: { xs: 32, sm: 'auto' }, px: { xs: 0.5, sm: 1 } }}>
-                  <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{t('painting.workspace.inpaint.whiteBackground')}</Box>
-                </Button>
-                <Button aria-label={t('painting.workspace.inpaint.toGallery')} size="small" variant="contained" startIcon={<ImageIcon />} onClick={() => exportWorkspace('transparent', true)}
-                  sx={{ '& .MuiButton-startIcon': { mr: { xs: 0, sm: 0.5 } }, minWidth: { xs: 32, sm: 'auto' }, px: { xs: 0.5, sm: 1 } }}>
-                  <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{t('painting.workspace.inpaint.toGallery')}</Box>
-                </Button>
+              <Stack direction="row" spacing={0.5} sx={{ overflowX: 'auto', touchAction: 'pan-x' }}>
+                {[
+                  { key: 'transparentBackground', icon: <FileDownloadIcon />, action: () => exportWorkspace('transparent', false) },
+                  { key: 'whiteBackground', icon: <FileDownloadIcon />, action: () => exportWorkspace('white', false) },
+                  { key: 'toGallery', icon: <ImageIcon />, action: () => exportWorkspace('transparent', true), variant: 'contained' },
+                ].map(({ key, icon, action, variant }) => <Tooltip key={key} title={t(`painting.workspace.inpaint.${key}`)}>
+                  <span style={{ display: 'inline-flex' }}><Button aria-label={t(`painting.workspace.inpaint.${key}`)} size="small" variant={variant || 'outlined'} startIcon={icon} onClick={action} sx={actionButtonSx}>
+                    {!isMobile && t(`painting.workspace.inpaint.${key}`)}
+                  </Button></span>
+                </Tooltip>)}
               </Stack>
             </Paper>
 
@@ -2604,31 +2618,21 @@ const InpaintWorkspacePanel = forwardRef(({
                 borderColor: alpha(theme.palette.divider, 0.2),
                 pointerEvents: 'auto',
                 zIndex: 10,
+                maxWidth: isMobile ? 'calc(100% - 16px)' : 'calc(100% - 64px)',
               }}
             >
-              <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', gap: 0.5 }}>
-                <Button aria-label={t('painting.workspace.inpaint.undo')} size="small" variant="outlined" startIcon={<UndoIcon />} onClick={handleUndo} disabled={!historyState.canUndo || Boolean(pendingPatch)}
-                  sx={{ '& .MuiButton-startIcon': { mr: { xs: 0, sm: 0.5 } }, minWidth: { xs: 32, sm: 'auto' }, px: { xs: 0.5, sm: 1 } }}>
-                  <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{t('painting.workspace.inpaint.undo')}</Box>
-                </Button>
-                <Button aria-label={t('painting.workspace.inpaint.redo')} size="small" variant="outlined" startIcon={<RedoIcon />} onClick={handleRedo} disabled={!historyState.canRedo || Boolean(pendingPatch)}
-                  sx={{ '& .MuiButton-startIcon': { mr: { xs: 0, sm: 0.5 } }, minWidth: { xs: 32, sm: 'auto' }, px: { xs: 0.5, sm: 1 } }}>
-                  <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{t('painting.workspace.inpaint.redo')}</Box>
-                </Button>
-                <Button aria-label={t('painting.workspace.inpaint.previewMask')} size="small" variant={showMaskPreview ? 'contained' : 'outlined'} startIcon={<PreviewIcon />} onClick={() => setShowMaskPreview((prev) => !prev)}
-                  disabled={Boolean(pendingPatch)}
-                  sx={{ '& .MuiButton-startIcon': { mr: { xs: 0, sm: 0.5 } }, minWidth: { xs: 32, sm: 'auto' }, px: { xs: 0.5, sm: 1 } }}>
-                  <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{t('painting.workspace.inpaint.previewMask')}</Box>
-                </Button>
-                <Button size="small" variant="outlined" startIcon={<DeleteSweepIcon />} onClick={handleClearActiveLayer}
-                  disabled={Boolean(pendingPatch) || !activeLayerHasStrokes}
-                  sx={{ '& .MuiButton-startIcon': { mr: { xs: 0, sm: 0.5 } }, minWidth: { xs: 32, sm: 'auto' }, px: { xs: 0.5, sm: 1 } }}>
-                  <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{clearActiveLayerLabel}</Box>
-                </Button>
-                <Button aria-label={t('painting.workspace.inpaint.resetView')} size="small" variant="outlined" startIcon={<FitScreenIcon />} onClick={() => fitStageToContent({ recordHistory: true })}
-                  sx={{ '& .MuiButton-startIcon': { mr: { xs: 0, sm: 0.5 } }, minWidth: { xs: 32, sm: 'auto' }, px: { xs: 0.5, sm: 1 } }}>
-                  <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{t('painting.workspace.inpaint.resetView')}</Box>
-                </Button>
+              <Stack direction="row" spacing={0.5} sx={{ overflowX: 'auto', touchAction: 'pan-x', '& > span': { display: 'inline-flex', flexShrink: 0 } }}>
+                {[
+                  { label: t('painting.workspace.inpaint.undo'), icon: <UndoIcon />, action: handleUndo, disabled: !historyState.canUndo || Boolean(pendingPatch) },
+                  { label: t('painting.workspace.inpaint.redo'), icon: <RedoIcon />, action: handleRedo, disabled: !historyState.canRedo || Boolean(pendingPatch) },
+                  { label: t('painting.workspace.inpaint.previewMask'), icon: <PreviewIcon />, action: () => setShowMaskPreview((prev) => !prev), disabled: Boolean(pendingPatch), variant: showMaskPreview ? 'contained' : 'outlined' },
+                  { label: clearActiveLayerLabel, icon: <DeleteSweepIcon />, action: handleClearActiveLayer, disabled: Boolean(pendingPatch) || !activeLayerHasStrokes },
+                  { label: t('painting.workspace.inpaint.resetView'), icon: <FitScreenIcon />, action: () => fitStageToContent({ recordHistory: true }) },
+                ].map(({ label, icon, action, disabled, variant }) => <Tooltip key={label} title={label}><span>
+                  <Button aria-label={label} size="small" variant={variant || 'outlined'} startIcon={icon} onClick={action} disabled={disabled} sx={actionButtonSx}>
+                    {!isMobile && label}
+                  </Button>
+                </span></Tooltip>)}
               </Stack>
             </Paper>
 
@@ -2637,7 +2641,7 @@ const InpaintWorkspacePanel = forwardRef(({
               onPointerDown={(e) => e.stopPropagation()}
               onWheel={(e) => e.stopPropagation()}
               sx={{
-                display: { xs: 'none', sm: 'block' },
+                display: isMobile ? 'none' : 'block',
                 position: 'absolute',
                 right: { xs: 8, sm: 12 },
                 bottom: { xs: 8, sm: 12 },
@@ -2731,9 +2735,11 @@ const InpaintWorkspacePanel = forwardRef(({
                 onWheel={(e) => e.stopPropagation()}
                 sx={{
                   position: 'absolute',
-                  left: pendingPatchBarPosition ? pendingPatchBarPosition.left : PENDING_PATCH_BAR_MARGIN,
+                  // 手机操作条固定在画布边界内，避免选框靠边时被 translate 裁掉。
+                  left: isMobile ? PENDING_PATCH_BAR_MARGIN : pendingPatchBarPosition ? pendingPatchBarPosition.left : PENDING_PATCH_BAR_MARGIN,
+                  right: isMobile ? PENDING_PATCH_BAR_MARGIN : undefined,
                   top: pendingPatchBarPosition ? pendingPatchBarPosition.top : PENDING_PATCH_BAR_MARGIN,
-                  transform: 'translateX(-50%)',
+                  transform: isMobile ? 'none' : 'translateX(-50%)',
                   maxWidth: `calc(100% - ${PENDING_PATCH_BAR_MARGIN * 2}px)`,
                   px: 1,
                   py: 0.5,
@@ -2747,7 +2753,7 @@ const InpaintWorkspacePanel = forwardRef(({
                   whiteSpace: 'nowrap',
                 }}
               >
-                <Stack direction="row" spacing={0.75} alignItems="center">
+                <Stack direction="row" spacing={0.75} alignItems="center" sx={{ overflowX: 'auto', overflowY: 'hidden', minWidth: 0, touchAction: 'pan-x' }}>
                   {isMultiPatch && (
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0, flexShrink: 0 }}>
                       <IconButton
@@ -2772,7 +2778,7 @@ const InpaintWorkspacePanel = forwardRef(({
                   {isMultiPatch && (
                     <Stack spacing={0} sx={{ flexShrink: 0, minWidth: 0 }}>
                       <Typography variant="caption" fontWeight={700} color="text.primary" sx={{ lineHeight: 1.2 }}>
-                        {t('painting.workspace.inpaint.resultProgress', {
+                        {isMobile ? `${activePendingPatchIndex + 1} / ${pendingPatchCount}` : t('painting.workspace.inpaint.resultProgress', {
                           current: activePendingPatchIndex + 1,
                           total: pendingPatchCount,
                         })}
@@ -2800,8 +2806,8 @@ const InpaintWorkspacePanel = forwardRef(({
                     size="small"
                     onClick={() => setFeatherPopoverOpen((prev) => !prev)}
                     sx={{
-                      width: 32,
-                      height: 32,
+                      width: 36,
+                      height: 36,
                       borderRadius: 1,
                       flexShrink: 0,
                       border: '1px solid',
@@ -2871,67 +2877,22 @@ const InpaintWorkspacePanel = forwardRef(({
                     </ClickAwayListener>
                   </Popper>
 
-                  {isMultiPatch ? (
-                    <Stack direction="row" spacing={0.5} sx={{ flexShrink: 0 }}>
-                      <Button
-                        size="small"
-                        variant={isCurrentKept ? 'contained' : 'outlined'}
-                        color="info"
-                        onClick={handleKeepCurrentPatch}
-                        sx={{ minWidth: 0, px: 1, borderRadius: 1.5 }}
-                      >
-                        {t('painting.workspace.inpaint.keep')}
-                      </Button>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        color="error"
-                        onClick={handleDiscardCurrentPatch}
-                        sx={{ minWidth: 0, px: 1, borderRadius: 1.5 }}
-                      >
-                        {t('painting.workspace.inpaint.discard')}
-                      </Button>
-                      <Button
-                        size="small"
-                        variant={isCurrentPrimary ? 'contained' : 'outlined'}
-                        color="success"
-                        onClick={handleSetPrimaryPatch}
-                        sx={{ minWidth: 0, px: 1, borderRadius: 1.5 }}
-                      >
-                        {t('painting.workspace.inpaint.primary')}
-                      </Button>
-                      <Button
-                        size="small"
-                        variant="contained"
-                        color="primary"
-                        onClick={handleFinishSession}
-                        sx={{ minWidth: 0, px: 1, borderRadius: 1.5 }}
-                      >
-                        {t('painting.workspace.inpaint.finish')}
-                      </Button>
-                    </Stack>
-                  ) : (
-                    <Stack direction="row" spacing={0.5} sx={{ flexShrink: 0 }}>
-                      <Button
-                        size="small"
-                        variant="contained"
-                        color="success"
-                        onClick={handleApplySinglePatch}
-                        sx={{ minWidth: 0, px: 1.5, borderRadius: 1.5 }}
-                      >
-                        {t('painting.workspace.inpaint.apply')}
-                      </Button>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        color="error"
-                        onClick={handleDiscardCurrentPatch}
-                        sx={{ minWidth: 0, px: 1.5, borderRadius: 1.5 }}
-                      >
-                        {t('painting.workspace.inpaint.discard')}
-                      </Button>
-                    </Stack>
-                  )}
+                  <Stack direction="row" spacing={0.5} sx={{ flexShrink: 0 }}>
+                    {(isMultiPatch ? [
+                      { key: 'keep', icon: <BookmarkBorderIcon />, action: handleKeepCurrentPatch, color: 'info', variant: isCurrentKept ? 'contained' : 'outlined' },
+                      { key: 'discard', icon: <CloseIcon />, action: handleDiscardCurrentPatch, color: 'error' },
+                      { key: 'primary', icon: <StarIcon />, action: handleSetPrimaryPatch, color: 'success', variant: isCurrentPrimary ? 'contained' : 'outlined' },
+                      { key: 'finish', icon: <DoneAllIcon />, action: handleFinishSession, color: 'primary', variant: 'contained' },
+                    ] : [
+                      { key: 'apply', icon: <CheckIcon />, action: handleApplySinglePatch, color: 'success', variant: 'contained' },
+                      { key: 'discard', icon: <CloseIcon />, action: handleDiscardCurrentPatch, color: 'error' },
+                    ]).map(({ key, icon, action, color, variant }) => <Tooltip key={key} title={t(`painting.workspace.inpaint.${key}`)}>
+                      <span style={{ display: 'inline-flex' }}><Button aria-label={t(`painting.workspace.inpaint.${key}`)} size="small" variant={variant || 'outlined'} color={color}
+                        startIcon={isMobile ? icon : undefined} onClick={action} sx={{ ...actionButtonSx, borderRadius: 1.5 }}>
+                        {!isMobile && t(`painting.workspace.inpaint.${key}`)}
+                      </Button></span>
+                    </Tooltip>)}
+                  </Stack>
                 </Stack>
               </Paper>
             )}

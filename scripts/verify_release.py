@@ -12,8 +12,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 FRONTEND = ROOT / "next_nai_web"
 BACKEND = ROOT / "nai_flask"
-TEXT_SUFFIXES = {".js", ".jsx", ".mjs", ".json", ".py", ".toml", ".yaml", ".yml"}
-SKIPPED_PARTS = {".git", ".next", ".venv", "node_modules", "__pycache__", ".pytest_cache", "data", "runtime_data", "models"}
+TEXT_SUFFIXES = {".js", ".jsx", ".mjs", ".json", ".py", ".toml", ".yaml", ".yml", ".rs"}
+SKIPPED_PARTS = {".git", ".next", ".venv", "node_modules", "__pycache__", ".pytest_cache", "data", "runtime_data", "models", "target", "gen", "dist", "output", "build", "runtime"}
 FRONTEND_FORBIDDEN = {
     "Redis": re.compile(r"\bredis\b", re.IGNORECASE),
     "Turnstile": re.compile(r"turnstile", re.IGNORECASE),

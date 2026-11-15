@@ -141,7 +141,7 @@ const ImageReferenceControl = ({ images, setImages, onReferenceImageChange, disa
   // 添加图片处理
   const handleFileSelect = (e) => {
     if (images.length >= 12) {
-      alert(t('painting.workspace.parameters.referenceImageLimit', { max: 12 }));
+      void (window.novelaiDialog?.alert ?? window.alert)(t('painting.workspace.parameters.referenceImageLimit', { max: 12 }));
       return;
     }
 
@@ -149,7 +149,7 @@ const ImageReferenceControl = ({ images, setImages, onReferenceImageChange, disa
     if (!file) return;
 
     if (file.size > 6 * 1024 * 1024) {
-      alert(t('painting.workspace.parameters.referenceImageSizeLimit', { size: '6 MB' }));
+      void (window.novelaiDialog?.alert ?? window.alert)(t('painting.workspace.parameters.referenceImageSizeLimit', { size: '6 MB' }));
       return;
     }
 

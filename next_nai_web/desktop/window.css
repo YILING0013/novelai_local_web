@@ -1,0 +1,2 @@
+:root { --font-geist-sans: Geist, "Segoe UI", "Microsoft YaHei UI", sans-serif; --font-geist-mono: Consolas, monospace; }
+html, body, #root { height: 100%; overflow: hidden; margin: 0; }

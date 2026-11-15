@@ -95,6 +95,66 @@ function findNode(tree, predicate) {
 
 const button = (tree, label) => findNode(tree, (node) => node.type === 'Button' && node.props.children === label);
 
+test('画廊标题切换生成和参考来源，切换后清除搜索与选中状态', async () => {
+  const requests = [];
+  const props = { source: 'outputs', onSourceChange: (source) => { props.source = source; } };
+  const gallery = renderComponent('GalleryWorkspace.js', props, {
+    getGallery: async (query) => { requests.push(query); return { items: [fixture], total: 1, has_more: false }; },
+  });
+  gallery.render(); await gallery.flush();
+  let tree = gallery.render();
+  findNode(tree, (node) => node.type === 'TextField' && node.props.placeholder === 'gallery.search').props.onChange({ target: { value: 'old query' } });
+  button(tree, 'gallery.select').props.onClick();
+  tree = gallery.render(); await gallery.flush();
+  const sourceMenu = findNode(tree, (node) => node.props?.id === 'gallery-source-menu');
+  findNode(sourceMenu, (node) => node.type === 'MenuItem' && node.props.children === 'gallery.referencesTitle').props.onClick();
+  assert.equal(props.source, 'references');
+  gallery.render(); await gallery.flush();
+  tree = gallery.render(); await gallery.flush();
+  assert.equal(findNode(tree, (node) => node.type === 'TextField' && node.props.placeholder === 'gallery.search').props.value, '');
+  assert.ok(button(tree, 'gallery.select'));
+  assert.equal(requests.at(-1).source, 'references');
+  assert.equal(requests.at(-1).q, '');
+});
+
+test('打开详情时锁定图库来源，关闭后允许切换', async () => {
+  let locked;
+  const changes = [];
+  const gallery = renderComponent('GalleryWorkspace.js', { source: 'outputs', onBusyChange: (value) => { locked = value; }, onSourceChange: (value) => changes.push(value) });
+  gallery.render(); await gallery.flush();
+  let tree = gallery.render();
+  findNode(tree, (node) => node.type === 'ButtonBase').props.onClick();
+  tree = gallery.render(); await gallery.flush();
+  assert.equal(locked, true);
+  assert.equal(findNode(tree, (node) => node.props?.id === 'gallery-source-button').props.disabled, true);
+  const sourceMenu = findNode(tree, (node) => node.props?.id === 'gallery-source-menu');
+  findNode(sourceMenu, (node) => node.type === 'MenuItem' && node.props.children === 'gallery.referencesTitle').props.onClick();
+  assert.deepEqual(changes, []);
+  findNode(tree, (node) => node.type === 'GalleryDetailDialog').props.onClose();
+  tree = gallery.render(); await gallery.flush();
+  assert.equal(locked, false);
+  assert.equal(findNode(tree, (node) => node.props?.id === 'gallery-source-button').props.disabled, false);
+});
+
+test('旧图库迟到的分页结果不会混入新来源', async () => {
+  let finishOld;
+  const props = { source: 'outputs', onSourceChange() {} };
+  const gallery = renderComponent('GalleryWorkspace.js', props, {
+    getGallery: ({ source }) => source === 'outputs'
+      ? new Promise((resolve) => { finishOld = resolve; })
+      : Promise.resolve({ items: [{ ...fixture, title: 'Reference image' }], total: 1, has_more: false }),
+  });
+  gallery.render(); await gallery.flush();
+  props.source = 'references';
+  gallery.render(); await gallery.flush();
+  gallery.render(); await gallery.flush();
+  finishOld({ items: [{ ...fixture, title: 'Old output' }], total: 1, has_more: false });
+  await gallery.flush();
+  const tree = gallery.render();
+  assert.ok(findNode(tree, (node) => node.type === 'Typography' && node.props.children === 'Reference image'));
+  assert.equal(findNode(tree, (node) => node.type === 'Typography' && node.props.children === 'Old output'), undefined);
+});
+
 test('参考图库一次上传多张图片，标题与提示词留空也会导入', async () => {
   const uploads = [];
   const gallery = renderComponent('GalleryWorkspace.js', { source: 'references' }, {

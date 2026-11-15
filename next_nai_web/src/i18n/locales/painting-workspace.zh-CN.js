@@ -159,8 +159,9 @@ const paintingWorkspacezhCN = {
         "copyAll": "复制全部"
       },
       "tabs": {
+        "comic": "漫画",
         "generation": "生成",
-        "inpaint": "局部重绘",
+        "inpaint": "重绘",
         "imageProcessing": "图像处理"
       },
       "parameters": {
@@ -440,6 +441,10 @@ const paintingWorkspacezhCN = {
         "squareBrush": "方形笔刷"
       },
       "gallery": {
+        confirmApplyTitle: '应用这张灵感图的参数？',
+        confirmApplyDescription: '将替换当前提示词及相关生成参数。',
+        confirmApply: '应用参数',
+
         "resultEmptyTitle": "生成结果会显示在这里",
         "resultEmptyDescription": "设置提示词和参数后点击生成；参考图库已移动到左侧“图片参考”。",
         "officialUpscale": "官方 Upscale",

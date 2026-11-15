@@ -159,6 +159,7 @@ const paintingWorkspaceenUS = {
         "copyAll": "Copy all"
       },
       "tabs": {
+        "comic": "Comic",
         "generation": "Generate",
         "inpaint": "Inpaint",
         "imageProcessing": "Image editor"
@@ -440,6 +441,10 @@ const paintingWorkspaceenUS = {
         "squareBrush": "Square brush"
       },
       "gallery": {
+        confirmApplyTitle: 'Apply this image’s parameters?',
+        confirmApplyDescription: 'This will replace your current prompts and related generation settings.',
+        confirmApply: 'Apply parameters',
+
         "resultEmptyTitle": "Generated images will appear here",
         "resultEmptyDescription": "Set your prompt and parameters, then generate. The inspiration gallery is now under Image References.",
         "officialUpscale": "Official Upscale",

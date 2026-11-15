@@ -149,6 +149,12 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
   useEffect(() => () => cancelAnimationFrame(dragFrame.current), []);
 
   useEffect(() => {
+    const flush = (event) => { if (pageRef.current) event.detail.waitUntil(saveComicDraft(pageRef.current)); };
+    window.addEventListener('desktop-flush-before-update', flush);
+    return () => window.removeEventListener('desktop-flush-before-update', flush);
+  }, []);
+
+  useEffect(() => {
     let mounted = true;
     loadComicLibrary().then((library) => {
       if (!mounted) return;

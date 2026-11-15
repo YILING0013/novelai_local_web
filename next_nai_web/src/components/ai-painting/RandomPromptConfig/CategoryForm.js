@@ -170,7 +170,7 @@ const CategoryForm = ({ categories = [], onChange, onInsert, generateExample }) 
   // 保存类别
   const handleSaveCategory = () => {
     if (!categoryName.trim()) {
-      alert(t('painting.tools.randomPrompt.category.errors.nameRequired'));
+      void (window.novelaiDialog?.alert ?? window.alert)(t('painting.tools.randomPrompt.category.errors.nameRequired'));
       return;
     }
     
@@ -215,9 +215,9 @@ const CategoryForm = ({ categories = [], onChange, onInsert, generateExample }) 
   };
 
   // 删除类别
-  const handleDeleteCategory = (categoryId) => {
+  const handleDeleteCategory = async (categoryId) => {
     // 考虑使用更友好的确认对话框替代 window.confirm
-    if (window.confirm(t('painting.tools.randomPrompt.category.confirmDelete'))) {
+    if (await (window.novelaiDialog?.confirm ?? window.confirm)(t('painting.tools.randomPrompt.category.confirmDelete'))) {
       const updatedCategories = categories.filter(cat => cat.id !== categoryId);
       onChange(updatedCategories);
     }

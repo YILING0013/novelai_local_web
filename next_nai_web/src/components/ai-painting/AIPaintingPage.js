@@ -1,5 +1,7 @@
-﻿// AIPaintingPage.js
+// AIPaintingPage.js
 "use client";
+
+import AnlasIcon from './AnlasIcon';
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
@@ -45,7 +47,6 @@ import {
   Image as ImageIcon,
   ViewQuilt as ComicIcon,
   Warning as WarningIcon,
-  MonetizationOn as MonetizationOnIcon,
   PhotoFilter as ImageProcessingIcon,
 } from '@mui/icons-material';
 import ItemDisplay from './ItemDisplay';
@@ -250,11 +251,12 @@ const estimateButtonTextWidth = (text, fontSize) => {
 const getResponsiveGenerateButtonContent = ({
   availableWidth,
   buttonState,
-  isMobile
+  isMobile,
+  formatNumber
 }) => {
   const compactText = buttonState.shortText || buttonState.text;
   const hasCost = isDisplayableNovelAICost(buttonState.cost);
-  const costLabel = buttonState.costLabel || String(buttonState.cost);
+  const costLabel = formatNumber(buttonState.costTotal ?? buttonState.cost);
   const costTextWidth = hasCost
     ? estimateButtonTextWidth(costLabel, isMobile ? 10 : 10)
     : 0;
@@ -306,7 +308,7 @@ const getResponsiveGenerateButtonContent = ({
 // 使用GenerationContext包装的AIPaintingPage内部组件
 const ImageProcessingWorkspace = dynamic(() => import('./ImageProcessing/ImageProcessingWorkspace'), { ssr: false });
 
-const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange }) => {
+const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange, renderModeTools, desktopEditor }) => {
   const { t, formatNumber, locale } = useI18n();
   const comicText = locale === 'en-US' ? {
     title: 'Comic maker', edit: 'Panel parameters', save: 'Save task', close: 'Back to canvas',
@@ -1645,6 +1647,11 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
   };
 
   useEffect(() => {
+    if (desktopEditor) desktopEditor.share(generatedItems, () => comicWorkspaceRef.current?.getCurrentPage());
+  }, [desktopEditor, generatedItems]);
+
+  useEffect(() => {
+    if (desktopEditor) return undefined;
     const openGalleryImage = () => {
       const pending = sessionStorage.getItem('novelai:pending-image-processing');
       if (!pending) return;
@@ -2119,10 +2126,15 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
     };
 
     switch (action) {
-      case 'use-as-image-processing':
-        setProcessingGalleryRequest({ id: createClientId(), generatedItem: currentItem });
-        changeWorkspaceMode('imageProcessing');
+      case 'use-as-image-processing': {
+        const request = { id: createClientId(), generatedItem: currentItem };
+        if (desktopEditor) desktopEditor.open(request);
+        else {
+          setProcessingGalleryRequest(request);
+          changeWorkspaceMode('imageProcessing');
+        }
         return true;
+      }
       case 'use-as-input':
         try {
           const response = await fetch(currentItem.src);
@@ -2260,7 +2272,20 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
     && currentItemMetadata?.seed !== '';
 
 
-  const renderAnlasStatus = () => {
+  useEffect(() => {
+    if (!(isGenerating || imageToolBusy || comicGenerationBusy || comicAIBusy || batchStatus.active || inpaintPreviewBatch.active)) return;
+    const block = (event) => event.preventDefault();
+    window.addEventListener('desktop-before-update', block);
+    return () => window.removeEventListener('desktop-before-update', block);
+  }, [isGenerating, imageToolBusy, comicGenerationBusy, comicAIBusy, batchStatus.active, inpaintPreviewBatch.active]);
+
+  const renderAnlasStatus = (compact = false) => {
+    const subscription = liveAccountSnapshot?.subscription;
+    const tier = subscription?.tier;
+    const tierName = [t('main.local.notSubscribed'), 'Tablet', 'Scroll', 'Opus'][tier]
+      || (tier == null ? t('painting.workspace.anlas.unavailable') : t('main.local.tierValue', { tier }));
+    const subscriptionLabel = subscription?.active === false && tier > 0
+      ? `${tierName} · ${t('main.local.notSubscribed')}` : tierName;
     const total = liveAccountSnapshot?.anlas?.total;
     const displayTotal = total === null || total === undefined
       ? t('painting.workspace.anlas.unavailable')
@@ -2270,13 +2295,13 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
         <Button
           size="small"
           onClick={() => setAnlasDialogOpen(true)}
-          aria-label={`${t('painting.workspace.anlas.balance')}: ${displayTotal}`}
+          aria-label={`${t('main.local.subscription')}: ${subscriptionLabel}; ${t('painting.workspace.anlas.balance')}: ${displayTotal}`}
           sx={{
             minWidth: 0,
-            minHeight: 36,
-            px: 0.75,
+            minHeight: compact ? 44 : 36,
+            px: compact ? 0.5 : 0.75,
             py: 0.5,
-            gap: 0.65,
+            gap: compact ? 0.5 : 0.65,
             borderRadius: 1.5,
             border: `1px solid ${alpha(theme.palette.divider, 0.24)}`,
             bgcolor: alpha(theme.palette.primary.main, 0.055),
@@ -2290,37 +2315,24 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
             },
           }}
         >
-          <Box
-            component="span"
-            sx={{
-              width: 24,
-              height: 24,
-              borderRadius: '50%',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-              bgcolor: alpha(theme.palette.primary.main, 0.12),
-              color: 'primary.main',
-              lineHeight: 0,
-            }}
-          >
-            <MonetizationOnIcon sx={{ display: 'block', fontSize: 17 }} />
-          </Box>
-          <Typography
+          <Typography component="span" variant="caption" sx={{ fontWeight: 600, color: subscription?.active ? 'primary.main' : 'text.secondary' }}>
+            {subscriptionLabel}
+          </Typography>
+          {!compact && <Typography
             component="span"
             variant="caption"
             sx={{ color: 'text.secondary', fontWeight: 500, lineHeight: 1 }}
           >
             {t('painting.workspace.anlas.balance')}
-          </Typography>
+          </Typography>}
           <Typography
             component="span"
             variant="body2"
-            sx={{ fontWeight: 700, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}
+            sx={{ fontWeight: 700, fontSize: compact ? 12 : undefined, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}
           >
             {displayTotal}
           </Typography>
+          <AnlasIcon sx={{ fontSize: compact ? 16 : 18, flexShrink: 0, color: 'primary.main' }} />
         </Button>
       </Tooltip>
     );
@@ -2350,9 +2362,6 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
             whiteSpace: 'nowrap',
           }}
         >
-          <MonetizationOnIcon
-            sx={{ display: 'block', flexShrink: 0, fontSize: compact ? 13 : 14, color: '#FFE082' }}
-          />
           <Typography
             component="span"
             variant="caption"
@@ -2364,8 +2373,9 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
               fontVariantNumeric: 'tabular-nums',
             }}
           >
-            {buttonState.costLabel}
+            {formatNumber(buttonState.costTotal ?? buttonState.cost)}
           </Typography>
+          <AnlasIcon sx={{ flexShrink: 0, fontSize: compact ? 13 : 14, color: '#FFE082' }} />
         </Box>
       </Tooltip>
     );
@@ -2554,6 +2564,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
             overflow: 'hidden',
           }}
         >
+          {renderModeTools ? renderModeTools(leftPanelMode, changeWorkspaceMode) : (
           <Box
             sx={{
               flex: '0 0 auto',
@@ -2653,6 +2664,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
               {t('painting.workspace.tabs.imageProcessing')}
             </Button>
           </Box>
+          )}
 
           <Box
             sx={{
@@ -2923,10 +2935,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
               }}
             >
               <Box ref={setParameterToolbarContainer} />
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1, minWidth: 0 }}>
-                {/* 点数、批量状态和错误入口在空间不足时共同留在第一行。 */}
+              <Box sx={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                {/* 紧凑账号状态与生成按钮始终保持同一行。 */}
                 <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-                  {renderAnlasStatus()}
+                  {renderAnlasStatus(true)}
                   {batchStatus.active && (
                     <Tooltip title={t('painting.workspace.actions.viewBatchDetails')} placement="top">
                       <IconButton
@@ -2981,8 +2993,8 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
                   </Tooltip>
                 </Box>
 
-                {/* 生成按钮至少保留 220px；不足时自动换到完整的第二行。 */}
-                <Box sx={{ flex: '1 1 220px', minWidth: 0, maxWidth: '100%', display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
+                {/* 生成按钮使用剩余宽度，文字按可用空间缩短，保留预计消耗。 */}
+                <Box sx={{ flex: '1 1 0', minWidth: 0, maxWidth: '100%', display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
                   <Box ref={setDesktopGenerateButtonContainer} sx={{ flex: 1, minWidth: 0, maxWidth: '100%' }}>
                     {/* 主操作保持稳定尺寸，窄宽度时继续沿用现有文字与点数显示规则。 */}
                     {(() => {
@@ -2991,6 +3003,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
                         availableWidth: desktopGenerateButtonWidth,
                         buttonState,
                         isMobile: false,
+                        formatNumber,
                       });
                       const isError = buttonState.color === 'error';
                       const mainColor = isError ? theme.palette.error.main : theme.palette.primary.main;
@@ -3232,10 +3245,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
               alignItems: 'stretch',
             }}
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+            <Box sx={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'center', gap: 1, minWidth: 0 }}>
             {/* 验证状态小组件 - 使用统一的 renderVerificationIcon */}
             <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-              {renderAnlasStatus()}
+              {renderAnlasStatus(true)}
 
               {/* 批量生成状态指示器 - 移动端 */}
               {batchStatus.active && (
@@ -3290,6 +3303,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
                 availableWidth: mobileGenerateButtonWidth,
                 buttonState,
                 isMobile: true,
+                formatNumber,
               });
               const currentIcon = buttonState.icon || <ImageIcon />;
               
@@ -3299,7 +3313,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
               const darkColor = isError ? theme.palette.error.dark : theme.palette.primary.dark;
 
               return (
-                <Box sx={{ display: 'flex', flex: '1 1 220px', minWidth: 0, alignItems: 'center', maxWidth: '100%' }}>
+                <Box sx={{ display: 'flex', flex: '1 1 0', minWidth: 0, alignItems: 'center', maxWidth: '100%' }}>
                   <Button
                     ref={setMobileGenerateButtonContainer}
                     variant="contained"
@@ -3520,10 +3534,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
 };
 
 // 包装了Context Provider的根组件
-const AIPaintingPage = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange }) => {
+const AIPaintingPage = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange, renderModeTools, desktopEditor }) => {
   return (
     <GenerationProvider>
-      <AIPaintingPageContent userId={userId} accountSnapshot={accountSnapshot} active={active} workContext={workContext} onWorkContextChange={onWorkContextChange} />
+      <AIPaintingPageContent userId={userId} accountSnapshot={accountSnapshot} active={active} workContext={workContext} onWorkContextChange={onWorkContextChange} renderModeTools={renderModeTools} desktopEditor={desktopEditor} />
     </GenerationProvider>
   );
 };

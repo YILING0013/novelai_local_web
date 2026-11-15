@@ -18,6 +18,7 @@ const eslintConfig = [
       "public/wasm/*.d.ts",
     ],
   },
+  { files: ['desktop/**/*.jsx', 'src/**/*.jsx'] },
   ...compat.extends("next/core-web-vitals"),
 ];
 

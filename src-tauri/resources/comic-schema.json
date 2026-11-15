@@ -1,0 +1,175 @@
+{
+  "extract": {
+    "type": "object",
+    "properties": {
+      "visualStyle": {
+        "type": "string"
+      },
+      "characters": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "appearance": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "appearance"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "visualStyle",
+      "characters"
+    ],
+    "additionalProperties": false
+  },
+  "format": {
+    "type": "object",
+    "properties": {
+      "summary": {
+        "type": "string"
+      },
+      "sections": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "globalPrompt": {
+              "type": "string"
+            },
+            "negativePrompt": {
+              "type": "string"
+            },
+            "panels": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  },
+                  "instances": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "characterId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "prompt": {
+                          "type": "string"
+                        },
+                        "center": {
+                          "type": "object",
+                          "properties": {
+                            "x": {
+                              "type": "number"
+                            },
+                            "y": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "characterId",
+                        "prompt",
+                        "center"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "dialogues": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "type": "string",
+                          "description": "台词原文；使用 sourceId 引用已有台词时可为空字符串。"
+                        },
+                        "sourceId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "引用输入中的台词编号；直接填写 text 时为 null。"
+                        },
+                        "speakerId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "speech",
+                            "narration",
+                            "sfx"
+                          ]
+                        },
+                        "direction": {
+                          "type": "string",
+                          "enum": [
+                            "horizontal",
+                            "vertical"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "text",
+                        "sourceId",
+                        "speakerId",
+                        "type",
+                        "direction"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "summary",
+                  "instances",
+                  "dialogues"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "globalPrompt",
+            "negativePrompt",
+            "panels"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "summary",
+      "sections"
+    ],
+    "additionalProperties": false
+  }
+}

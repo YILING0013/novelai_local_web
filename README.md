@@ -1,3 +1,5 @@
+> **Windows 桌面测试版（2.0.0）**：安装本地交付的 x64 `setup.exe`，从开始菜单启动 NovelAI Local。首次运行不开端口。启用 Web：进入工作区 → 标题栏齿轮 → 桌面应用。无需 Python、Node 或 Redis。构建、数据目录与测试说明见 [桌面版](docs/desktop.md)。下文中的 Flask 和 Next.js 开发命令属于保留的 Web 版行为基线。
+>
 <p align="center">
   <img src="./next_nai_web/public/logo.png" width="104" alt="NovelAI Local Web Logo">
 </p>
@@ -14,9 +16,9 @@
   <a href="./LICENSE">AGPL-3.0 许可证</a>
 </p>
 
-NovelAI Local Web 是面向 Windows 个人用户的本地 Web 客户端。提示词、模型参数、角色控制、参考图片和生成结果集中在一个响应式工作台中；图片与创作资料保存在自己的电脑上。
+NovelAI Local 桌面版是面向 Windows 个人用户的本地客户端。提示词、模型参数、角色控制、参考图片和生成结果集中在一个响应式工作台中；图片与创作资料保存在自己的电脑上。
 
-前端使用 Next.js / React / MUI，后端使用 Flask / Waitress。构建后的页面与 `/api` 由同一个本地服务提供，默认地址为 `http://127.0.0.1:5000`；登录、账户查询和图像生成通过后端访问 NovelAI 官方服务。
+桌面版使用 Tauri 2、Vite / React 和 Rust。默认不开端口；仅在设置中启用 Web 访问后，浏览器才通过 HTTP 加载独立的移动版界面。登录、账户查询和图像生成通过 Rust 后端访问 NovelAI 官方服务。
 
 本项目为非官方社区项目，与 NovelAI / Anlatan 无隶属关系。需要自行准备可用的 NovelAI 账户；账户权限和实际费用以官方返回为准。默认仅允许本机访问，也可主动开启局域网模式供同一 Wi-Fi 的手机使用。
 

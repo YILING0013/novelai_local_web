@@ -1,5 +1,6 @@
 const gallery = {
   "gallery": {
+    "switchSource": "切换图库：{title}",
     "versionWorkspace": {
       "current": "{title} · 从 v{number} 继续",
       "newHint": "普通生成 · 未启用作品历史",

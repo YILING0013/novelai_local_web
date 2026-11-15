@@ -1,5 +1,6 @@
 const gallery = {
   "gallery": {
+    "switchSource": "Switch gallery: {title}",
     "versionWorkspace": {
       "current": "{title} · Continue from v{number}",
       "newHint": "Standard generation · Work history is off",

@@ -132,12 +132,12 @@ const CollectionForm = ({ collections = [], categories = [], onChange, onInsert,
   // 保存集合
   const handleSaveCollection = () => {
     if (!collectionName.trim()) {
-      alert(t('painting.tools.randomPrompt.collection.errors.nameRequired'));
+      void (window.novelaiDialog?.alert ?? window.alert)(t('painting.tools.randomPrompt.collection.errors.nameRequired'));
       return;
     }
     
     if (selectedCategories.length === 0) {
-      alert(t('painting.tools.randomPrompt.collection.errors.categoryRequired'));
+      void (window.novelaiDialog?.alert ?? window.alert)(t('painting.tools.randomPrompt.collection.errors.categoryRequired'));
       return;
     }
     
@@ -192,8 +192,8 @@ const CollectionForm = ({ collections = [], categories = [], onChange, onInsert,
   };
 
   // 删除集合
-  const handleDeleteCollection = (collectionId) => {
-    if (window.confirm(t('painting.tools.randomPrompt.collection.confirmDelete'))) {
+  const handleDeleteCollection = async (collectionId) => {
+    if (await (window.novelaiDialog?.confirm ?? window.confirm)(t('painting.tools.randomPrompt.collection.confirmDelete'))) {
       const updatedCollections = collections.filter(coll => coll.id !== collectionId);
       onChange(updatedCollections);
     }

@@ -5,6 +5,8 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   Box,
+  ButtonBase,
+  Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions,
   IconButton,
   Tooltip,
   Paper,
@@ -198,10 +200,12 @@ const GalleryItem = React.memo(({ item, onImageClick, isSelected, isLoadingParam
   };
 
   return (
-    <Box
+    <ButtonBase
+      aria-label={t('painting.workspace.gallery.clickForParameters')}
+      disabled={isLoadingParams}
       onClick={handleClick}
       sx={{
-        cursor: 'pointer',
+        width: '100%', display: 'block', textAlign: 'left', cursor: 'pointer',
         borderRadius: 1,
         overflow: 'hidden',
         position: 'relative',
@@ -283,7 +287,7 @@ const GalleryItem = React.memo(({ item, onImageClick, isSelected, isLoadingParam
           </Box>
         </Box>
       )}
-    </Box>
+    </ButtonBase>
   );
 });
 GalleryItem.displayName = 'GalleryItem';
@@ -436,6 +440,18 @@ const ItemDisplay = ({
   const [sourceReady, setSourceReady] = useState(false);
   const [hasMoreReferences, setHasMoreReferences] = useState(false);
   const referenceRequest = useRef(0);
+  const parameterRequest = useRef(0);
+  const referenceActionRef = useRef(null);
+  const [pendingReferenceImage, setPendingReferenceImage] = useState(null);
+  const clearReferenceSelection = useCallback(() => {
+    parameterRequest.current += 1;
+    referenceActionRef.current = null;
+    setPendingReferenceImage(null);
+    setSelectedReferenceImage(null);
+    setLoadingImageParams(false);
+  }, []);
+  useEffect(() => { clearReferenceSelection(); }, [active, item?.id, inspirationSource, clearReferenceSelection]);
+  useEffect(() => () => { parameterRequest.current += 1; referenceActionRef.current = null; }, []);
 
 
   const sourcePixels = Number(item?.width) * Number(item?.height);
@@ -474,6 +490,7 @@ const ItemDisplay = ({
 
   const fetchReferenceImages = useCallback(async (offset = 0) => {
     const requestId = ++referenceRequest.current;
+    clearReferenceSelection();
     setLoadingReferenceImages(true);
     try {
       if (inspirationSource === 'default') {
@@ -496,7 +513,7 @@ const ItemDisplay = ({
     } finally {
       if (requestId === referenceRequest.current) setLoadingReferenceImages(false);
     }
-  }, [inspirationSource, showNotification, t]);
+  }, [inspirationSource, showNotification, t, clearReferenceSelection]);
 
   useEffect(() => {
     let active = true;
@@ -505,12 +522,13 @@ const ItemDisplay = ({
     }).catch(() => {
       if (active) showNotification(t('librarySettings.sourceFailed'), 'error');
     }).finally(() => { if (active) setSourceReady(true); });
-    const onSource = (event) => setInspirationSource(event.detail);
+    const onSource = (event) => { clearReferenceSelection(); setInspirationSource(event.detail); };
     window.addEventListener('novelai:gallery-source', onSource);
     return () => { active = false; window.removeEventListener('novelai:gallery-source', onSource); };
-  }, [showNotification, t]);
+  }, [showNotification, t, clearReferenceSelection]);
 
   const changeInspirationSource = async (source) => {
+    clearReferenceSelection();
     try {
       await apiClient.saveLocalSettings({ inspirationSource: source });
       setInspirationSource(source);
@@ -519,10 +537,12 @@ const ItemDisplay = ({
   };
 
   const fetchImageParameters = useCallback(async (imageItem) => {
+    const requestId = ++parameterRequest.current;
     setLoadingImageParams(true);
     try {
       if (inspirationSource !== 'default') {
         const entry = await apiClient.getGalleryEntry(imageItem.id);
+        if (requestId !== parameterRequest.current) return;
         onApplyImageParameters?.({ ...entry.parameters, characterTabs: entry.parameters.characterTabs || [], positivePrompt: entry.prompt, negativePrompt: entry.negative_prompt });
         return;
       }
@@ -558,6 +578,7 @@ const ItemDisplay = ({
         showNotification(t('painting.workspace.notifications.imageParametersApplied'), 'success');
       }
     } catch (error) {
+      if (requestId !== parameterRequest.current) return;
       console.error('获取图像参数失败:', error);
       forwardPaintingPanelError(onError, error, {
         source: 'reference-parameters',
@@ -565,13 +586,24 @@ const ItemDisplay = ({
       });
       showNotification(t('painting.workspace.errors.fetchImageParametersFailed'), 'error');
     } finally {
-      setLoadingImageParams(false);
+      if (requestId === parameterRequest.current) setLoadingImageParams(false);
     }
   }, [inspirationSource, onApplyImageParameters, onError, referenceMetadata, showNotification, t]);
 
   const handleReferenceImageClick = useCallback((imageItem) => {
-    setSelectedReferenceImage(imageItem);
-    fetchImageParameters(imageItem);
+    if (referenceActionRef.current) return;
+    referenceActionRef.current = { image: imageItem, applying: false };
+    setPendingReferenceImage(imageItem);
+  }, []);
+
+  const confirmReferenceImage = useCallback(async () => {
+    const action = referenceActionRef.current;
+    if (!action || action.applying) return;
+    action.applying = true;
+    setPendingReferenceImage(null);
+    setSelectedReferenceImage(action.image);
+    try { await fetchImageParameters(action.image); }
+    finally { if (referenceActionRef.current === action) referenceActionRef.current = null; }
   }, [fetchImageParameters]);
 
   useEffect(() => {
@@ -859,6 +891,17 @@ const ItemDisplay = ({
           onLoadMore={() => fetchReferenceImages(referenceImages.length)}
         />
       )}
+      <Dialog open={Boolean(pendingReferenceImage)} onClose={clearReferenceSelection} maxWidth="xs" fullWidth
+        aria-labelledby="inspiration-parameters-title" aria-describedby="inspiration-parameters-description">
+        <DialogTitle id="inspiration-parameters-title">{t('painting.workspace.gallery.confirmApplyTitle')}</DialogTitle>
+        <DialogContent>
+          <DialogContentText id="inspiration-parameters-description">{t('painting.workspace.gallery.confirmApplyDescription')}</DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={clearReferenceSelection} autoFocus>{t('painting.workspace.actions.cancel')}</Button>
+          <Button onClick={confirmReferenceImage} variant="contained">{t('painting.workspace.gallery.confirmApply')}</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

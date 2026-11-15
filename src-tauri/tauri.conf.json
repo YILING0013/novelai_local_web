@@ -1,0 +1,110 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "NovelAI Local",
+  "version": "2.0.0",
+  "identifier": "cc.idlecloud.novelai.local",
+  "build": {
+    "beforeDevCommand": "npm.cmd --prefix next_nai_web run dev:desktop",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm.cmd --prefix next_nai_web run build:bundle",
+    "frontendDist": "../next_nai_web/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "auth",
+        "create": false,
+        "title": "NovelAI Local",
+        "url": "index.html#/login",
+        "width": 960,
+        "height": 720,
+        "minWidth": 820,
+        "minHeight": 600,
+        "decorations": false,
+        "visible": false,
+        "resizable": true,
+        "maximizable": false,
+        "center": true,
+        "dragDropEnabled": false
+      },
+      {
+        "label": "main",
+        "create": false,
+        "title": "NovelAI Local",
+        "width": 1440,
+        "height": 940,
+        "minWidth": 960,
+        "minHeight": 640,
+        "dragDropEnabled": false,
+        "decorations": false,
+        "visible": false,
+        "url": "index.html#/main"
+      }
+    ],
+    "security": {
+      "dangerousDisableAssetCspModification": [
+        "style-src"
+      ],
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' http://naiasset.localhost asset: http://asset.localhost blob: data: https:; media-src 'self' asset: http://asset.localhost blob: data: https:; connect-src 'self' http://naiasset.localhost http://asset.localhost asset: ipc: http://ipc.localhost blob: data:; worker-src 'self' blob:; font-src 'self' data:; frame-src 'self'; object-src 'none'; base-uri 'self'",
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$APPLOCALDATA/assets/**"
+        ]
+      },
+      "capabilities": [
+        "main"
+      ]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "resources/cacert.pem": "cacert.pem",
+      "resources/CA-LICENSE": "CA-LICENSE",
+      "resources/runtime/": "resources/runtime/",
+      "icons/icon.ico": "icons/icon.ico",
+      "../next_nai_web/out/": "web/",
+      "../nai_flask/prompt_tags/": "prompt_tags/",
+      "../LICENSE": "licenses/AGPL-3.0.txt",
+      "../DESKTOP-NOTICES.md": "licenses/Desktop.md",
+      "resources/third-party/": "licenses/third-party/"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "SimpChinese",
+          "English"
+        ],
+        "displayLanguageSelector": true,
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "installerHooks": "installer-hooks.nsh"
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/YILING0013/novelai_local_web/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      },
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc5MDRDRTAzQkZCMEFFQTEKUldTaHJyQy9BODRFZVF0c091UWZlbkFrN25uVVBCRVVnT2ZRM2tDRTMyd21INDIzRXBKWVJaWVMK",
+      "requireSignedVersion": true
+    }
+  }
+}

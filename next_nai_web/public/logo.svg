@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1280" viewBox="0 0 1280 1280" fill="none">
+  <title>蓝叶笔尖</title>
+  <desc>层叠的蓝色叶片与象牙白笔尖组成紧凑、饱满的桌面应用标志，背景、笔孔和笔缝完全透明。</desc>
+  <defs>
+    <linearGradient id="blue" x1="250" y1="290" x2="776" y2="891" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2C73B3"/>
+      <stop offset="1" stop-color="#2865A5"/>
+    </linearGradient>
+    <linearGradient id="sky" x1="182" y1="313" x2="777" y2="783" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6EB5D5"/>
+      <stop offset="1" stop-color="#62A8CE"/>
+    </linearGradient>
+    <linearGradient id="mint" x1="180" y1="224" x2="662" y2="633" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B9E0D9"/>
+      <stop offset="1" stop-color="#A8D6D3"/>
+    </linearGradient>
+    <linearGradient id="ivory" x1="1075" y1="240" x2="660" y2="1090" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8F4EC"/>
+      <stop offset="1" stop-color="#F3EEE5"/>
+    </linearGradient>
+    <linearGradient id="nibMint" x1="538" y1="863" x2="684" y2="1080" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B8DFD8"/>
+      <stop offset="1" stop-color="#C5E6DF"/>
+    </linearGradient>
+    <linearGradient id="dot" x1="1118" y1="163" x2="1187" y2="244" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#327BB9"/>
+      <stop offset="1" stop-color="#2868AA"/>
+    </linearGradient>
+    <!-- 笔孔和笔缝使用真正的透明镂空，放在深浅背景上都不会出现白色残边。 -->
+    <mask id="nibCutout" x="0" y="0" width="1280" height="1280" maskUnits="userSpaceOnUse">
+      <rect width="1280" height="1280" fill="white"/>
+      <circle cx="670" cy="865" r="38" fill="black"/>
+      <path d="M653 891H687L670 1208Z" fill="black"/>
+    </mask>
+    <!-- 外轮廓从右叶一路过渡到笔尖；左右连接段的控制柄沿共同切线延伸。 -->
+    <clipPath id="emblemOutline">
+      <path d="M72 150C220 145 335 140 440 195C560 258 616 364 674 505C702 352 827 185 980 138C1073 108 1122 144 1120 213C1118 282 1050 363 960 419C852 486.2 807 545 806 617C805 689 905 758 909 852C913 946 830 1009 756 1087C719 1126 692 1161 670 1204C640 1158 602 1119 560 1082C476 1008 415 946 425 858C433 787.6 506 739 530 679C554 619 534 583 453 552C345 510.667 291 418 230 325C175 241 127 178 72 150Z"/>
+    </clipPath>
+    <!-- 此区域只划分叶片色层，不参与裁切外轮廓。 -->
+    <clipPath id="leftColors">
+      <path d="M0 0H550L674 505C729 626 824 728 928 851L1000 1000H0Z"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#emblemOutline)" mask="url(#nibCutout)">
+    <rect width="1280" height="1280" fill="url(#blue)"/>
+    <path d="M674 505L620 280L960 60H1200V240C1150 310 1086 356 1011 398C892 465 825 523 788 592C762 642 776 700 845 787L540 850Z" fill="url(#sky)"/>
+    <path d="M833 778C770 671 737 601 753 519C771 427 849 352 952 297C1011 266 1056 240 1080 207C1098 182 1096 153 1072 139L1280 0H0V1280Z" fill="url(#ivory)"/>
+    <g clip-path="url(#leftColors)">
+      <rect width="1280" height="1280" fill="url(#blue)"/>
+      <path d="M72 150C121 193 170 265 233 321C313 392 402 413 490 459C648 542 785 697 928 851H1280V0H0Z" fill="url(#sky)"/>
+      <path d="M72 150C148 183 201 227 298 255C393 283 475 304 544 354C603 397 643 445 674 505H1280V0H0Z" fill="url(#mint)"/>
+    </g>
+    <!-- 笔尖加宽、叶脉上提，小尺寸下仍保留清晰的笔孔与笔缝。 -->
+    <path d="M0 577H510C576 592 642 634 700 683C784 753 842 810 930 877L1280 1280H0Z" fill="url(#ivory)"/>
+    <path d="M510 577C611 646 668 741 670 827V1280H0V577Z" fill="url(#nibMint)"/>
+  </g>
+  <circle cx="1160" cy="100" r="62" fill="url(#dot)"/>
+</svg>

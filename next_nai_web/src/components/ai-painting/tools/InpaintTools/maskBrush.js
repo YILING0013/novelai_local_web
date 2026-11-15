@@ -13,6 +13,42 @@ export function createMask(width, height) {
 }
 
 /**
+ * 按捕获区的输出像素生成扩图蒙版，包含空白和指定扩展距离触及的每个完整笔刷格。
+ * @param {ImageData} image 捕获区按请求尺寸裁剪后的底图。
+ * @param {number} expandPixels 从透明像素向外扩展的半径，以输出像素为单位。
+ * @returns {object} 原点在请求左上角的 8px 网格。
+ */
+export function createOutpaintMaskGrid(image, expandPixels) {
+  const { width, height, data } = image;
+  const grid = createMask(width, height);
+  const radius = Math.max(0, Math.round(expandPixels));
+  for (let y = 0; y < height; y += 1) {
+    let x = 0;
+    while (x < width) {
+      if (data[(y * width + x) * 4 + 3] !== 0) {
+        x += 1;
+        continue;
+      }
+      const start = x;
+      while (x < width && data[(y * width + x) * 4 + 3] === 0) x += 1;
+
+      // 同一段透明像素一起扩展，按到目标格的最近距离保留原有的圆形扩展半径。
+      const firstRow = Math.max(0, Math.floor((y - radius) / MASK_CELL_SIZE));
+      const lastRow = Math.min(grid.rows - 1, Math.floor((y + radius) / MASK_CELL_SIZE));
+      for (let row = firstRow; row <= lastRow; row += 1) {
+        const top = row * MASK_CELL_SIZE;
+        const dy = Math.max(0, top - y, y - (top + MASK_CELL_SIZE - 1));
+        const dx = Math.floor(Math.sqrt(radius * radius - dy * dy));
+        const firstCol = Math.max(0, Math.floor((start - dx) / MASK_CELL_SIZE));
+        const endCol = Math.min(grid.cols, Math.ceil((x + dx) / MASK_CELL_SIZE));
+        grid.data.fill(1, row * grid.cols + firstCol, row * grid.cols + endCol);
+      }
+    }
+  }
+  return grid;
+}
+
+/**
  * 生成实际绘制与光标共用的笔刷形状。
  * @param {number} diameter 以格为单位的直径，范围 1～65。
  * @param {boolean} square 是否使用方形笔刷。
@@ -136,6 +172,39 @@ export function createMaskGrid(strokes, worldRect) {
       const current = { x: snapped.x - originX, y: snapped.y - originY };
       paintSegment(mask, previous || current, current, brush, value);
       previous = current;
+    }
+  }
+  return mask;
+}
+
+/**
+ * 在同一张输出网格上先填充扩图区，再按顺序涂抹或擦除笔迹。
+ * @param {ImageData} image 捕获区按请求尺寸裁剪后的底图。
+ * @param {number} expandPixels 从透明像素向外扩展的输出像素数。
+ * @param {Array} strokes 按绘制顺序保存的原图笔迹。
+ * @param {object} worldRect 捕获区的原图坐标。
+ * @returns {object} 笔迹触及的输出格子均完整覆盖，缩小后不足一格的笔迹也能保留。
+ */
+export function createInpaintMaskGrid(image, expandPixels, strokes, worldRect) {
+  const mask = createOutpaintMaskGrid(image, expandPixels);
+  const colsPerPixel = image.width / (worldRect.width * MASK_CELL_SIZE);
+  const rowsPerPixel = image.height / (worldRect.height * MASK_CELL_SIZE);
+  for (const stroke of strokes) {
+    const brush = createMaskGrid([stroke], worldRect);
+    const value = stroke.mode === 'erase' ? 0 : 1;
+    for (let row = 0; row < brush.rows; row += 1) {
+      const y = brush.y + row * MASK_CELL_SIZE - worldRect.y;
+      const firstRow = Math.max(0, Math.floor(y * rowsPerPixel));
+      const endRow = Math.min(mask.rows, Math.ceil((y + MASK_CELL_SIZE) * rowsPerPixel));
+      for (let col = 0; col < brush.cols; col += 1) {
+        if (!brush.touched[row * brush.cols + col]) continue;
+        const x = brush.x + col * MASK_CELL_SIZE - worldRect.x;
+        const firstCol = Math.max(0, Math.floor(x * colsPerPixel));
+        const endCol = Math.min(mask.cols, Math.ceil((x + MASK_CELL_SIZE) * colsPerPixel));
+        for (let targetRow = firstRow; targetRow < endRow; targetRow += 1) {
+          mask.data.fill(value, targetRow * mask.cols + firstCol, targetRow * mask.cols + endCol);
+        }
+      }
     }
   }
   return mask;

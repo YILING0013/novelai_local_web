@@ -60,3 +60,8 @@ Thumbs.db
 **/public/reference_img/
 **/artist-thread-images/
 **/image-reference-images/
+
+/src-tauri/target/
+/src-tauri/gen/
+/src-tauri/resources/runtime/
+/next_nai_web/dist/

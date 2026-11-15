@@ -49,7 +49,7 @@ function find(tree, predicate) {
   return find(tree.props?.children, predicate);
 }
 
-const button = (tree, text) => find(tree, (node) => node.type === 'Button' && node.props.children === text);
+const button = (tree, text) => find(tree, (node) => node.type === 'Button' && (node.props['aria-label'] || node.props.children) === text);
 
 test('默认普通模式；取消新建不启用，创建后才显示版本功能，退出保留编辑内容', async () => {
   const bar = createBar();

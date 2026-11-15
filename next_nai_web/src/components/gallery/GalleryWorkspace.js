@@ -4,7 +4,7 @@ import { createClientId } from '@/utils/browserCapabilities.mjs';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Box, Button, ButtonBase, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, InputAdornment, LinearProgress, Menu, MenuItem, Snackbar, Stack, TextField, Tooltip, Typography, useMediaQuery, useTheme } from '@mui/material';
-import { AddPhotoAlternateOutlined, CheckBoxOutlined, Close, CreateNewFolderOutlined, DeleteOutline, DeleteForeverOutlined, ArrowBack, DescriptionOutlined, DriveFileMoveOutlined, ImageOutlined, PaletteOutlined, Refresh, RestoreFromTrashOutlined, Search, FilterAltOutlined, History, BookmarkAddOutlined } from '@mui/icons-material';
+import { AddPhotoAlternateOutlined, CheckBoxOutlined, Close, CreateNewFolderOutlined, DeleteOutline, DeleteForeverOutlined, ArrowBack, DescriptionOutlined, DriveFileMoveOutlined, ImageOutlined, PaletteOutlined, Refresh, RestoreFromTrashOutlined, Search, FilterAltOutlined, History, BookmarkAddOutlined, ExpandMore } from '@mui/icons-material';
 import apiClient from '@/utils/ApiClient';
 import { useI18n } from '@/i18n/I18nProvider';
 import GalleryDetailDialog from './GalleryDetailDialog';
@@ -16,10 +16,10 @@ const EMPTY_FILTERS = { model: '', orientation: '', tags: '', negative_tags: '',
 
 /**
  * 参考图库与生成目录共用分页瀑布流，文件操作由本地后端完成。
- * @param {object} props source 为 references 或 outputs；分组只整理索引，不移动原图。
+ * @param {object} props source 为 references 或 outputs；onSourceChange 切换来源，onBusyChange 让外部导航等当前操作结束。分组不移动原图。
  * @returns {React.ReactElement} 图片浏览、分组、批量操作和详情工作区。
  */
-export default function GalleryWorkspace({ source = 'references', workContext, onWorkContextChange }) {
+export default function GalleryWorkspace({ source = 'outputs', onSourceChange, onBusyChange, workContext, onWorkContextChange }) {
   const { t } = useI18n();
   const theme = useTheme();
   const tablet = useMediaQuery(theme.breakpoints.up('sm'));
@@ -59,14 +59,28 @@ export default function GalleryWorkspace({ source = 'references', workContext, o
   const [collectionName, setCollectionName] = useState('');
   const [collectionDialog, setCollectionDialog] = useState(false);
   const [deleteCollection, setDeleteCollection] = useState(null);
+  const [sourceMenu, setSourceMenu] = useState(null);
   const fileInputRef = useRef(null);
   const scrollRef = useRef(null);
   const moreRef = useRef(null);
   const requestVersionRef = useRef(0);
   const loadingMoreRef = useRef(false);
   const dragDepthRef = useRef(0);
+  const currentSource = useRef(source);
+  currentSource.current = source;
+  const sourceLocked = busy || Boolean(detailId || versionTarget || metadataTarget || trashIds || deleteIds || newGroupOpen || collectionDialog || deleteCollection);
+  const sourceTitle = t(source === 'references' ? 'gallery.referencesTitle' : 'gallery.outputsTitle');
+
+  useEffect(() => { onBusyChange?.(sourceLocked); }, [onBusyChange, sourceLocked]);
+  useEffect(() => () => onBusyChange?.(false), [onBusyChange]);
 
   useEffect(() => {
+    // 切换来源时清空选中项、筛选和弹窗，保留后端文件与分组。
+    setItems([]); setGroups([]); setTotal(0); setLoading(true); setHasMore(false);
+    setError(''); setNotice(''); setSelecting(false); setSelected(new Set());
+    setGroupMenu(null); setNewGroupOpen(false); setNewGroupName(''); setTrashIds(null); setDeleteIds(null);
+    setMetadataTarget(null); setCollectionDialog(false); setDeleteCollection(null); setSourceMenu(null);
+    setShowFilters(false); setDragging(false); dragDepthRef.current = 0;
     setFilters(EMPTY_FILTERS); setFilterDraft(EMPTY_FILTERS); setGroup(''); setQuery(''); setSearch(''); setTrash(false); setDetailId(null); setVersionTarget(null); setCollections([]);
   }, [source]);
 
@@ -96,7 +110,7 @@ export default function GalleryWorkspace({ source = 'references', workContext, o
       apiClient.getGalleryGroups(source),
       apiClient.getGalleryCollections(source),
     ]).then(([result, groupResult, collectionResult]) => {
-      if (requestVersionRef.current !== version) return;
+      if (requestVersionRef.current !== version || currentSource.current !== source) return;
       setItems(result.items);
       setTotal(result.total);
       setHasMore(result.has_more);
@@ -104,8 +118,8 @@ export default function GalleryWorkspace({ source = 'references', workContext, o
       setCollections(collectionResult.collections);
       if (result.errors?.length) setError(t('gallery.scanErrors', { count: result.errors.length }));
     }).catch((requestError) => {
-      if (requestVersionRef.current === version) setError(requestError.data?.error || requestError.message);
-    }).finally(() => { if (requestVersionRef.current === version) setLoading(false); });
+      if (requestVersionRef.current === version && currentSource.current === source) setError(requestError.data?.error || requestError.message);
+    }).finally(() => { if (requestVersionRef.current === version && currentSource.current === source) setLoading(false); });
     return () => { requestVersionRef.current += 1; };
   }, [source, group, search, trash, revision, t, filters]);
 
@@ -117,19 +131,19 @@ export default function GalleryWorkspace({ source = 'references', workContext, o
     setLoadMoreFailed(false);
     try {
       const result = await apiClient.getGallery({ source, offset: items.length, limit: PAGE_SIZE, group, q: search, trash, ...filters });
-      if (version !== requestVersionRef.current) return;
+      if (version !== requestVersionRef.current || currentSource.current !== source) return;
       setItems((current) => [...current, ...result.items]);
       setTotal(result.total);
       setHasMore(result.has_more);
     } catch (requestError) {
-      if (version === requestVersionRef.current) {
+      if (version === requestVersionRef.current && currentSource.current === source) {
         setError(requestError.data?.error || requestError.message);
         // 同一页请求失败后保留手动重试，避免滚动观察器连续重复失败请求。
         setLoadMoreFailed(true);
       }
     }
     finally {
-      if (version === requestVersionRef.current) { setLoadingMore(false); loadingMoreRef.current = false; }
+      if (version === requestVersionRef.current && currentSource.current === source) { setLoadingMore(false); loadingMoreRef.current = false; }
     }
   }, [group, hasMore, items.length, loading, search, source, trash, filters]);
 
@@ -266,8 +280,15 @@ export default function GalleryWorkspace({ source = 'references', workContext, o
       event.preventDefault(); dragDepthRef.current = 0; setDragging(false); void importImages(Array.from(event.dataTransfer.files));
     }}>
     <Stack spacing={1.5} sx={{ mb: 2 }}>
-      <Box><Typography variant="h5" sx={{ fontSize: { xs: 21, md: 24 } }}>{t(source === 'references' ? 'gallery.referencesTitle' : 'gallery.outputsTitle')}</Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{t(source === 'references' ? 'gallery.referencesHint' : 'gallery.outputsHint')}</Typography></Box>
+      <Typography component="h1" variant="h5" sx={{ fontSize: { xs: 20, sm: 24 }, minWidth: 0 }}>
+        <Button id="gallery-source-button" color="inherit" disabled={sourceLocked} endIcon={<ExpandMore />}
+          aria-label={t('gallery.switchSource', { title: sourceTitle })} aria-haspopup="menu"
+          aria-controls={sourceMenu ? 'gallery-source-menu' : undefined} aria-expanded={Boolean(sourceMenu)}
+          onClick={(event) => setSourceMenu(event.currentTarget)}
+          sx={{ font: 'inherit', textTransform: 'none', minWidth: 0, maxWidth: '100%', px: 0.5, justifyContent: 'flex-start' }}>
+          <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sourceTitle}</Box>
+        </Button>
+      </Typography>
       <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
         <TextField size="small" value={query} placeholder={t('gallery.search')} onChange={(event) => { setQuery(event.target.value); if (filters.collection_id) setFilters({ ...filters, collection_id: '' }); }}
           inputProps={{ 'aria-label': t('gallery.search') }} sx={{ flex: '1 1 230px', maxWidth: { sm: 400 }, minWidth: 0, '& .MuiInputBase-root': { height: 36 } }}
@@ -349,6 +370,15 @@ export default function GalleryWorkspace({ source = 'references', workContext, o
       {hasMore && <Box ref={moreRef} sx={{ display: 'flex', justifyContent: 'center', py: 3 }}><Button size="small" disabled={loadingMore} onClick={loadMore} startIcon={loadingMore ? <CircularProgress size={15} /> : null}>{t(loadingMore ? 'gallery.loading' : 'gallery.loadMore')}</Button></Box>}
     </>}
     {dragging && <Box sx={{ position: 'sticky', bottom: 12, p: 4, textAlign: 'center', bgcolor: 'background.paper', border: '2px dashed', borderColor: 'primary.main', borderRadius: 2, pointerEvents: 'none', boxShadow: 3, zIndex: 10 }}><Typography color="primary">{t('gallery.dropImages')}</Typography></Box>}
+    <Menu id="gallery-source-menu" anchorEl={sourceMenu} open={Boolean(sourceMenu)} onClose={() => setSourceMenu(null)}
+      MenuListProps={{ 'aria-labelledby': 'gallery-source-button' }}>
+      {['outputs', 'references'].map((value) => <MenuItem key={value} selected={source === value} disabled={sourceLocked}
+        onClick={() => {
+          if (sourceLocked) return;
+          setSourceMenu(null);
+          if (value !== source) onSourceChange(value);
+        }}>{t(value === 'references' ? 'gallery.referencesTitle' : 'gallery.outputsTitle')}</MenuItem>)}
+    </Menu>
     <Menu anchorEl={groupMenu} open={Boolean(groupMenu)} onClose={() => setGroupMenu(null)}>
       <MenuItem onClick={() => { setGroupMenu(null); void batch('group', selectedIds, { group_id: '' }); }}>{t('gallery.ungrouped')}</MenuItem>
       {groups.map((item) => <MenuItem key={item.id} onClick={() => { setGroupMenu(null); void batch('group', selectedIds, { group_id: item.id }); }}>{item.name}</MenuItem>)}
