@@ -4,9 +4,9 @@
   "version": "2.0.0",
   "identifier": "cc.idlecloud.novelai.local",
   "build": {
-    "beforeDevCommand": "npm.cmd --prefix next_nai_web run dev:desktop",
+    "beforeDevCommand": "npm.cmd run dev:desktop",
     "devUrl": "http://127.0.0.1:1420",
-    "beforeBuildCommand": "npm.cmd --prefix next_nai_web run build:bundle",
+    "beforeBuildCommand": "npm.cmd run build:bundle",
     "frontendDist": "../next_nai_web/dist"
   },
   "app": {
