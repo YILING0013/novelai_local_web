@@ -29,6 +29,16 @@ def _build(values):
     )["data"]
 
 
+@pytest.mark.parametrize("model", sorted(ALL_MODELS))
+def test_cfg_through_twenty_is_preserved_and_invalid_values_are_rejected(model):
+    for scale in (0, 10, 10.1, 20):
+        assert _build({"model": model, "scale": scale})["parameters"]["scale"] == scale
+    for scale in (-0.1, 20.1, float("inf"), float("nan"), True, "20", None):
+        with pytest.raises(ExposableError) as error:
+            _build({"model": model, "scale": scale})
+        assert error.value.code == "NOVELAI_GUIDANCE_SCALE_INVALID"
+
+
 @pytest.mark.parametrize("model", sorted(INPAINTING_MODELS))
 def test_supported_models_derive_official_inpaint_model_and_one_sample(model):
     official = _build({

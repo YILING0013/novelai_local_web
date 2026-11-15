@@ -52,11 +52,12 @@ export default function Workspace({local,onLogin}){
     const goto=e=>{if(e.detail===ID.AI_PAINTING&&sessionStorage.getItem('novelai:pending-image-processing')){
       try{setIncoming(JSON.parse(sessionStorage.getItem('novelai:pending-image-processing')));sessionStorage.removeItem('novelai:pending-image-processing');select(ID.IMAGE_PROCESSING)}catch(err){setError(err.message)}
     }else if(!local||e.detail!==ID.AI_PAINTING)select(e.detail)};
-    const warn=e=>{if(dirty||generated.length>0)e.preventDefault()};
+    // 与服务版一致：打开过绘画工作区就确认离开，生成中和未保存的画布也需要保护。
+    const warn=e=>{if(dirty||visited.includes(ID.AI_PAINTING)||generated.length>0)e.preventDefault()};
     const hot=e=>{if(e.ctrlKey&&e.key===','){e.preventDefault();select(ID.SETTINGS)}};
     window.addEventListener('novelai:open-page',goto);window.addEventListener('beforeunload',warn);window.addEventListener('keydown',hot);
     return ()=>{window.removeEventListener('novelai:open-page',goto);window.removeEventListener('beforeunload',warn);window.removeEventListener('keydown',hot)};
-  },[select,generated.length,dirty,local]);
+  },[select,generated.length,dirty,local,visited]);
   const nav=pages.filter(([id])=>!local||id!==ID.AI_PAINTING).map(([id,labelKey,Icon])=>({id,labelKey,title:t(labelKey),Icon,color:readPageColor(localStorage,id)}));
   const action=(label,click,icon,current)=><Tooltip title={label}><IconButton size="small" aria-label={label} aria-current={current?'page':undefined} onClick={click}>{icon}</IconButton></Tooltip>;
   const modes=(selected,onChange)=>paintHost&&createPortal(<PaintingModeNavigation selected={selected} onChange={onChange}/>,paintHost);

@@ -45,11 +45,22 @@ function Window() {
   }, [auth, switching, pathname, restored, navigate]);
   useEffect(() => {
     let leaving = false;
-    const stop = nativeWindow.onCloseRequested(async event => {
+    let disposed = false;
+    const closingWindow = getCurrentWindow();
+    const stop = closingWindow.onCloseRequested(async event => {
       event.preventDefault(); if (leaving) return; leaving = true;
-      try { if (await confirmWorkspaceLeave(t('main.unsavedWarning'))) await nativeWindow.destroy(); }
+      try {
+        if (!await confirmWorkspaceLeave(t('main.unsavedWarning'))) return;
+        const pending = [];
+        window.dispatchEvent(new CustomEvent('desktop-flush-before-update', { detail: { waitUntil: promise => pending.push(Promise.resolve(promise)) } }));
+        await Promise.all(pending);
+        await closingWindow.destroy();
+      } catch (failure) {
+        if (!disposed) setError(failure.message || String(failure));
+      }
       finally { leaving = false; }
     });
+    const windowFailure = event => setError(event.detail?.message || String(event.detail));
     const external = e => {
       const link = e.target.closest?.('a[href]');
       if (link && /^https?:/.test(link.href) && new URL(link.href).origin !== location.origin && !link.hasAttribute('download')) {
@@ -57,8 +68,9 @@ function Window() {
       }
     };
     document.addEventListener('click',external);
-    return () => { void stop.then(fn=>fn()); document.removeEventListener('click',external); };
-  }, [t, nativeWindow.label]);
+    window.addEventListener('desktop-window-error', windowFailure);
+    return () => { disposed = true; void stop.then(fn=>fn()); document.removeEventListener('click',external); window.removeEventListener('desktop-window-error', windowFailure); };
+  }, [t]);
   return <Box height="100dvh" display="flex" flexDirection="column" overflow="hidden">
     <UpdateNotice />
     {error && <Alert severity="error" action={<Button onClick={()=>location.reload()}>{t('common.retry')}</Button>}>{error}</Alert>}

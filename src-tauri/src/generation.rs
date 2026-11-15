@@ -257,6 +257,18 @@ pub fn payload(b: &V) -> Res<V> {
         return Err(Fault::bad("Invalid step count."));
     }
     let steps = steps.min(max_steps);
+    let scale = match b.get("scale") {
+        None => Some(if v5 { 7. } else { 10. }),
+        Some(value) => value.as_f64(),
+    }
+    .filter(|value| (0. ..=20.).contains(value))
+    .ok_or_else(|| {
+        Fault(
+            400,
+            "NOVELAI_GUIDANCE_SCALE_INVALID".into(),
+            "CFG scale must be between 0 and 20.".into(),
+        )
+    })?;
     if large {
         cost(
             w,
@@ -272,7 +284,7 @@ pub fn payload(b: &V) -> Res<V> {
     let seed = b["seed"]
         .as_u64()
         .unwrap_or_else(|| rand::random::<u32>() as u64);
-    let mut par = json!({"width":w,"height":h,"steps":steps,"n_samples":1,"scale":b["scale"].as_f64().unwrap_or(if v5{7.}else{10.}).min(10.),"seed":seed,"sampler":b["sampler"].as_str().unwrap_or(if v5{"k_euler_ancestral"}else{"k_euler"}),"noise_schedule":b.get("noise_schedule").cloned().unwrap_or_else(||if v5{json!("karras")}else{json!(0)}),"cfg_rescale":b["promptGuidanceRescale"].as_f64().unwrap_or(0.),"negative_prompt":neg,"params_version":if v5{4}else{3},"legacy":false,"legacy_uc":false,"legacy_v3_extend":false,"autoSmea":false,"dynamic_thresholding":false,"controlnet_strength":1,"add_original_image":true,"normalize_reference_strength_multiple":true,"inpaintImg2ImgStrength":1});
+    let mut par = json!({"width":w,"height":h,"steps":steps,"n_samples":1,"scale":scale,"seed":seed,"sampler":b["sampler"].as_str().unwrap_or(if v5{"k_euler_ancestral"}else{"k_euler"}),"noise_schedule":b.get("noise_schedule").cloned().unwrap_or_else(||if v5{json!("karras")}else{json!(0)}),"cfg_rescale":b["promptGuidanceRescale"].as_f64().unwrap_or(0.),"negative_prompt":neg,"params_version":if v5{4}else{3},"legacy":false,"legacy_uc":false,"legacy_v3_extend":false,"autoSmea":false,"dynamic_thresholding":false,"controlnet_strength":1,"add_original_image":true,"normalize_reference_strength_multiple":true,"inpaintImg2ImgStrength":1});
     let mut upstream_model = m.to_owned();
     let mut action = "generate";
     if !s(b, "image").is_empty() {

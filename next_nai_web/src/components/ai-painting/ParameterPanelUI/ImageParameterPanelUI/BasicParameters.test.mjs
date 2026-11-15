@@ -228,3 +228,19 @@ test('LockableSlider 的数值标签与圆点共同跟随外部值，桌面拖�
   control.props.onChange({}, 17);
   assert.deepEqual(changes, [17]);
 });
+
+test('CFG 输入和滑块保留 10 以上的参数，并限制到界面上限 20', () => {
+  const controls = createPanel({ guidanceScale: 10.1 });
+  const tree = controls.openParameter('cfgScale');
+  const input = findNode(tree, node => node.type === 'TextField' && node.props.label === 'painting.workspace.parameters.cfgScale');
+  const cfgSlider = slider(tree, 'cfgScale');
+  assert.equal(input.props.value, 10.1);
+  assert.equal(input.props.slotProps.htmlInput.max, 20);
+  assert.equal(cfgSlider.props.max, 20);
+  cfgSlider.props.onChange({}, 18.5);
+  assert.equal(controls.getParams().guidanceScale, 18.5);
+  input.props.onChange({ target: { value: '20' } });
+  assert.equal(controls.getParams().guidanceScale, 20);
+  input.props.onChange({ target: { value: '21' } });
+  assert.equal(controls.getParams().guidanceScale, 20);
+});

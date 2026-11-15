@@ -2,6 +2,7 @@ const paintingWorkspaceenUS = {
   "painting": {
     "workspace": {
       "errors": {
+        "guidanceScaleInvalid": "CFG must be a number between 0 and 20.",
         "pollingFailed": "Could not retrieve the generation result.",
         "inpaintSourceRequired": "Choose an inpaint source image first.",
         "inpaintViewportEmpty": "The current viewport has no content to inpaint.",
@@ -217,7 +218,7 @@ const paintingWorkspaceenUS = {
         "samplingSteps": "Sampling steps",
         "samplingStepsHelp": "More steps can add detail but increase generation time.",
         "cfgScale": "Prompt guidance (CFG Scale)",
-        "cfgScaleCreativityHelp": "Higher values follow the prompt more closely; lower values allow more freedom.",
+        "cfgScaleCreativityHelp": "Maximum 20. Higher values follow the prompt more closely; lower values allow more freedom.",
         "promptGuidanceRescale": "Prompt Guidance Rescale",
         "promptGuidanceRescaleHelp": "Reduce overexposure and color shift at high CFG values.",
         "noiseSchedule": "Noise schedule",

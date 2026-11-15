@@ -13,6 +13,26 @@ use std::{
 };
 
 #[test]
+fn cfg_through_twenty_is_preserved_and_invalid_values_are_rejected() {
+    for model in [
+        "nai-diffusion-3",
+        "nai-diffusion-4-5-full",
+        "nai-diffusion-5-full",
+        "nai-diffusion-5-full-medium",
+    ] {
+        for scale in [0., 10., 10.1, 20.] {
+            let request = generation::payload(&json!({"model":model,"scale":scale})).unwrap();
+            assert_eq!(request["parameters"]["scale"], json!(scale));
+        }
+        for scale in [json!(-0.1), json!(20.1), json!(true), json!("20"), V::Null] {
+            let error = generation::payload(&json!({"model":model,"scale":scale})).unwrap_err();
+            assert_eq!(error.0, 400);
+            assert_eq!(error.1, "NOVELAI_GUIDANCE_SCALE_INVALID");
+        }
+    }
+}
+
+#[test]
 fn medium_uses_fixed_sampler_and_only_enabled_characters() {
     let req=generation::payload(&json!({"model":"nai-diffusion-5-full-medium","steps":50,"sampler":"ddim","negativePrompt":"unused","characterPrompts":[{"prompt":"absent","enabled":false},{"prompt":"active","uc":"unused"}],"v4_prompt_char_captions":[{"char_caption":"absent"},{"char_caption":"active"}],"v4_negative_prompt_char_captions":[{"char_caption":"x"},{"char_caption":"y"}]})).unwrap();
     let p = &req["parameters"];

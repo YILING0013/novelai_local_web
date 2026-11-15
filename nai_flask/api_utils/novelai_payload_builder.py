@@ -723,7 +723,10 @@ def build_novelai_payload(
         data["height"] = max(64, min(data["height"], max_dimension))
 
     data["steps"] = min(data.get("steps", 28), max_steps)
-    data["scale"] = min(data.get("scale", 10.0), 10.0)
+    scale = data.get("scale", 10.0)
+    if type(scale) not in (int, float) or not 0 <= scale <= 20:
+        raise ExposableError("CFG scale must be between 0 and 20.", code="NOVELAI_GUIDANCE_SCALE_INVALID")
+    data["scale"] = scale
     is_sm = data.get("sm", False)
     is_sm_dyn = data.get("sm_dyn", False)
 

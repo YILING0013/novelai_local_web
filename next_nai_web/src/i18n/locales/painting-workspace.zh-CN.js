@@ -2,6 +2,7 @@ const paintingWorkspacezhCN = {
   "painting": {
     "workspace": {
       "errors": {
+        "guidanceScaleInvalid": "CFG 必须为 0–20 之间的数值。",
         "pollingFailed": "获取生成结果失败。",
         "inpaintSourceRequired": "请先选择局部重绘源图。",
         "inpaintViewportEmpty": "当前视口没有可用于局部重绘的内容。",
@@ -217,7 +218,7 @@ const paintingWorkspacezhCN = {
         "samplingSteps": "采样步数",
         "samplingStepsHelp": "更多步数通常能增加细节，但会延长生成时间。",
         "cfgScale": "提示词引导（CFG Scale）",
-        "cfgScaleCreativityHelp": "数值越高越遵循提示词，数值越低越自由。",
+        "cfgScaleCreativityHelp": "最高 20。数值越高越遵循提示词，数值越低越自由。",
         "promptGuidanceRescale": "提示词引导重缩放",
         "promptGuidanceRescaleHelp": "降低高 CFG 下的过曝和色彩偏移。",
         "noiseSchedule": "噪声计划",
