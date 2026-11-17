@@ -1,3 +1,4 @@
+import * as generationOptions from './utils/generationOptions.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -41,6 +42,7 @@ function createPanel(overrides = {}, cached = {}) {
   const editorStateRef = { current: null };
   const getAllParametersRef = { current: null };
   const dependencies = {
+    './utils/generationOptions': generationOptions,
     react: {
       ...React,
       useState(initial) {

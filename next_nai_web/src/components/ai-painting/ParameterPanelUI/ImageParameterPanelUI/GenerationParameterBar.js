@@ -11,24 +11,8 @@ import {
 } from '@mui/icons-material';
 import LockableSlider from '@/components/muiWrappers/LockableSlider';
 import ExtraConfiguration from './ExtraConfiguration';
+import { SAMPLER_OPTIONS as samplerOptions, NOISE_SCHEDULE_OPTIONS as noiseScheduleOptions, NOVELAI_PARAMETER_RANGES } from '../../utils/generationOptions';
 import { useI18n } from '@/i18n/I18nProvider';
-
-const samplerOptions = [
-  { value: 'k_euler', label: 'Euler' },
-  { value: 'k_euler_ancestral', label: 'Euler Ancestral' },
-  { value: 'k_dpmpp_2s_ancestral', label: 'DPM++ 2S Ancestral' },
-  { value: 'k_dpmpp_2m_sde', label: 'DPM++ 2M SDE' },
-  { value: 'k_dpmpp_2m', label: 'DPM++ 2M' },
-  { value: 'k_dpmpp_sde', label: 'DPM++ SDE' },
-  { value: 'ddim_v3', label: 'DDIM' },
-];
-
-const noiseScheduleOptions = [
-  { value: 'native', label: 'noiseNative' },
-  { value: 'karras', label: 'noiseKarras' },
-  { value: 'exponential', label: 'noiseExponential' },
-  { value: 'polyexponential', label: 'noisePolyexponential' },
-];
 
 /**
  * 显示生成按钮上方的参数摘要，在对应项上方编辑同一份生成参数。
@@ -67,7 +51,7 @@ export default function GenerationParameterBar({ params, maxSteps, isV5Medium, h
     help: isV5Medium ? 'modelV5MediumSettings' : 'samplingStepsHelp',
     readOnly: isV5Medium,
   } : editor?.key === 'guidanceScale' ? {
-    key: 'guidanceScale', min: 1, max: 20, step: 0.1,
+    key: 'guidanceScale', ...NOVELAI_PARAMETER_RANGES.guidanceScale,
     help: 'cfgScaleCreativityHelp', readOnly: false,
   } : null;
 
@@ -184,7 +168,7 @@ export default function GenerationParameterBar({ params, maxSteps, isV5Medium, h
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {!isV5Medium && <LockableSlider
               label={t('painting.workspace.parameters.promptGuidanceRescale')} value={params.promptGuidanceRescale}
-              min={0} max={1} step={0.02} onChange={value => handleParamChange('promptGuidanceRescale', value)}
+              min={NOVELAI_PARAMETER_RANGES.promptGuidanceRescale.min} max={NOVELAI_PARAMETER_RANGES.promptGuidanceRescale.max} step={NOVELAI_PARAMETER_RANGES.promptGuidanceRescale.step} onChange={value => handleParamChange('promptGuidanceRescale', value)}
               tooltip={t('painting.workspace.parameters.promptGuidanceRescaleHelp')} valueLabelFormat={value => value.toFixed(2)}
             />}
             {!isV5Medium && <FormControl fullWidth size="small">

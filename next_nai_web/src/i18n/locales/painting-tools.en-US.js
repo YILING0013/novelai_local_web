@@ -467,6 +467,8 @@ const paintingToolsenUS = {
         }
       },
       "metadata": {
+        "model": "Generation model",
+        "sourceModel": "Source model: {name} (select the matching model)",
         "width": "Width",
         "height": "Height",
         "deselectAll": "Deselect all",

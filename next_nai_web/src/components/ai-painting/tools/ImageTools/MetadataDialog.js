@@ -1,11 +1,17 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
-import { Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, Stack, Switch, TextField, Typography } from '@mui/material';
+import { Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, Stack, Switch, Slider, TextField, MenuItem, Typography } from '@mui/material';
 import { AutoAwesome, Brush, Close, ImageOutlined, PaletteOutlined, PersonOutline } from '@mui/icons-material';
+import { alpha } from '@mui/material/styles';
+import InlinePromptInput from '../../PromptEditor/InlinePromptInput';
+import { MODEL_OPTIONS, SAMPLER_OPTIONS, NOISE_SCHEDULE_OPTIONS, resolveMetadataModel } from '../../utils/generationOptions';
+import { DEFAULT_PAINTING_MODEL_ID } from '../../utils/modelUtils';
+import { getImageImportOptions, normalizeImageImportParameters } from '../../utils/parameterMapping';
 import { useI18n } from '@/i18n/I18nProvider';
 
-const parameterKeys = ['width', 'height', 'steps', 'guidanceScale', 'seed', 'sampler', 'noiseSchedule', 'smea', 'dyn', 'promptGuidanceRescale'];
+const defaultParams = { model: DEFAULT_PAINTING_MODEL_ID, width: 1024, height: 1024, use_upscale_credits: false };
+const parameterKeys = ['model', 'width', 'height', 'steps', 'guidanceScale', 'seed', 'sampler', 'noiseSchedule', 'smea', 'dyn', 'promptGuidanceRescale'];
 const actionIcons = { img2img: ImageOutlined, vibe: AutoAwesome, reference: PersonOutline, inpaint: Brush, editor: PaletteOutlined };
 const defaultSelection = { positivePrompt: true, negativePrompt: true, characterTabs: true };
 
@@ -14,19 +20,20 @@ const defaultSelection = { positivePrompt: true, negativePrompt: true, character
  * @param {object} props 图片文件、可用用途、元数据及导入和使用图片的回调。
  * @returns {React.ReactElement} 高度固定、元数据区域独立滚动的图像导入面板。
  */
-export default function MetadataDialog({ open, onClose, metadata, onApply, imageFile = null, imageActions = [], onUseImage, reading = false }) {
+export default function MetadataDialog({ open, onClose, metadata, onApply, imageFile = null, imageActions = [], onUseImage, reading = false, params = defaultParams, allowedModels = null, restrictedAccount = false }) {
   const { t } = useI18n();
   const [preview, setPreview] = useState('');
   const [draft, setDraft] = useState(metadata || {});
   const [selected, setSelected] = useState(defaultSelection);
 
   useEffect(() => {
-    if (open) setSelected(defaultSelection);
-  }, [open, imageFile]);
-
-  useEffect(() => {
-    if (open) setDraft(metadata || {});
-  }, [open, imageFile, metadata]);
+    if (!open) return;
+    const detectedModel = resolveMetadataModel(metadata?.model);
+    const permittedModel = detectedModel && (!allowedModels || allowedModels.includes(detectedModel)) ? detectedModel : undefined;
+    setSelected({ ...defaultSelection, model: Boolean(permittedModel) });
+    setDraft(metadata ? normalizeImageImportParameters({ ...metadata, model: permittedModel || params.model },
+      { ...params, model: permittedModel || params.model }, restrictedAccount) : {});
+  }, [open, imageFile, metadata, params, restrictedAccount, allowedModels]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -36,20 +43,42 @@ export default function MetadataDialog({ open, onClose, metadata, onApply, image
     return () => URL.revokeObjectURL(url);
   }, [open, imageFile]);
 
+  const effectiveParams = { ...params, model: selected.model ? draft.model : params.model };
+  const options = getImageImportOptions(effectiveParams, restrictedAccount);
+  const modelOptions = MODEL_OPTIONS.filter(option => option.category !== 'video' && (!allowedModels || allowedModels.includes(option.value)));
+  const allowedKeys = new Set(['model', ...Object.keys(options.ranges),
+    ...(options.resolutions.length ? ['width', 'height'] : []),
+    ...(options.novelAI ? ['sampler', 'smea', 'dyn', ...(options.medium ? [] : ['noiseSchedule'])] : [])]);
   const importKeys = ['positivePrompt', 'negativePrompt', 'characterTabs', ...parameterKeys]
-    .filter(key => draft[key] !== undefined && (key !== 'characterTabs' || draft[key].length > 0));
+    .filter(key => draft[key] !== undefined && (key !== 'characterTabs' || draft[key].length > 0)
+      && (!parameterKeys.includes(key) || allowedKeys.has(key)) && !(options.medium && key === 'negativePrompt'));
   const hasSelection = importKeys.some(key => selected[key]
     && (key !== 'characterTabs' || draft.characterTabs.some((_, index) => selected[`character_${index}`] !== false)));
   const allSelected = importKeys.every(key => selected[key]
     && (key !== 'characterTabs' || draft.characterTabs.every((_, index) => selected[`character_${index}`] !== false)));
+  const toggleParameter = (key, checked) => {
+    setSelected(current => ({ ...current, [key]: checked,
+      ...(['width', 'height'].includes(key) ? { width: checked, height: checked } : {}),
+    }));
+    if (key === 'model') setDraft(current => normalizeImageImportParameters(current,
+      { ...params, model: checked ? current.model : params.model }, restrictedAccount));
+  };
+  const updateParameter = (key, value) => {
+    const model = key === 'model' ? value : effectiveParams.model;
+    setDraft(current => normalizeImageImportParameters({ ...current, [key]: value }, { ...params, model }, restrictedAccount,
+      ['width', 'height'].includes(key) ? key : undefined));
+    if (key === 'model') setSelected(current => ({ ...current, model: true }));
+  };
   const apply = () => {
+    const normalized = normalizeImageImportParameters(draft, effectiveParams, restrictedAccount);
     const filtered = {};
     for (const key of importKeys) {
       if (!selected[key]) continue;
       if (key === 'characterTabs') {
-        const characters = draft.characterTabs.filter((_, index) => selected[`character_${index}`] !== false);
+        const characters = normalized.characterTabs.filter((_, index) => selected[`character_${index}`] !== false)
+          .map(character => options.medium ? { ...character, uc: '' } : character);
         if (characters.length) filtered[key] = characters;
-      } else filtered[key] = draft[key];
+      } else filtered[key] = normalized[key];
     }
     onApply(filtered);
   };
@@ -94,7 +123,7 @@ export default function MetadataDialog({ open, onClose, metadata, onApply, image
           })}
         </Box>}
       </Box>}
-      <Box data-metadata-scroll sx={{ minHeight: 0, minWidth: 0, overflowY: 'auto', overscrollBehavior: 'contain', pr: 0.75, pb: 0.5, scrollbarGutter: 'stable' }}>
+      <Box data-metadata-scroll sx={{ minHeight: 0, minWidth: 0, overflowY: 'auto', overscrollBehavior: 'contain', pr: 0.75, pb: 0.5, scrollbarGutter: 'stable', '& .MuiCheckbox-root.Mui-checked': { color: theme => alpha(theme.palette.primary.main, 0.65) } }}>
         <Stack spacing={1.5}>
           <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
             <Typography variant="subtitle2">{t('painting.tools.metadata.informationToImport')}</Typography>
@@ -106,13 +135,15 @@ export default function MetadataDialog({ open, onClose, metadata, onApply, image
           {reading && <Typography role="status" variant="body2" color="text.secondary">{t('painting.tools.metadata.readingInformation')}</Typography>}
           {!reading && !importKeys.length && <Typography color="text.secondary" variant="body2" sx={{ py: 3 }}>{t('painting.tools.metadata.noMetadata')}</Typography>}
           {['positivePrompt', 'negativePrompt'].filter(key => draft[key] !== undefined).map(key => <Box key={key}
-            data-metadata-field={key} onClick={() => setSelected(current => ({ ...current, [key]: !current[key] }))}
-            sx={{ p: 1.25, border: 1, borderColor: selected[key] ? 'primary.main' : 'divider', bgcolor: selected[key] ? 'action.selected' : 'transparent', borderRadius: 2, cursor: 'pointer' }}>
+            data-metadata-field={key} onClick={() => { if (!(options.medium && key === 'negativePrompt')) toggleParameter(key, !selected[key]); }}
+            sx={{ p: 1.25, border: 1, borderColor: theme => selected[key] ? alpha(theme.palette.primary.main, 0.35) : theme.palette.divider, bgcolor: 'transparent', borderRadius: 2, cursor: 'pointer' }}>
             <FormControlLabel sx={{ m: 0, mb: 0.5 }} label={t(`painting.tools.notebook.${key}`)} onClick={event => event.stopPropagation()}
-              control={<Checkbox size="small" checked={Boolean(selected[key])} onChange={(_, checked) => setSelected(current => ({ ...current, [key]: checked }))} />} />
-            <TextField fullWidth multiline minRows={2} maxRows={5} size="small" value={draft[key]}
-              inputProps={{ 'aria-label': t(`painting.tools.notebook.${key}`) }} onClick={event => event.stopPropagation()}
-              onChange={event => setDraft(current => ({ ...current, [key]: event.target.value }))} />
+              control={<Checkbox size="small" disabled={options.medium && key === 'negativePrompt'} checked={Boolean(selected[key]) && !(options.medium && key === 'negativePrompt')} onChange={(_, checked) => toggleParameter(key, checked)} />} />
+            <Box onClick={event => event.stopPropagation()}>
+              <InlinePromptInput value={draft[key]} previewEnabled expandToContent minRows={2}
+                placeholder={t(`painting.tools.notebook.${key}`)} inputProps={{ readOnly: options.medium && key === 'negativePrompt' }}
+                onChange={event => { const value = event.target.value; setDraft(current => ({ ...current, [key]: value })); }} />
+            </Box>
           </Box>)}
           {draft.characterTabs?.length > 0 && <Box>
             <Typography variant="subtitle2" sx={{ mb: 1 }}>{t('painting.tools.metadata.characterInfo')}</Typography>
@@ -120,15 +151,18 @@ export default function MetadataDialog({ open, onClose, metadata, onApply, image
               {draft.characterTabs.map((character, index) => {
                 const checked = Boolean(selected.characterTabs) && selected[`character_${index}`] !== false;
                 return <Box key={index} data-metadata-field={`character_${index}`} onClick={() => setSelected(current => ({ ...current, characterTabs: true, [`character_${index}`]: !checked }))}
-                  sx={{ p: 1.25, border: 1, borderColor: checked ? 'primary.main' : 'divider', bgcolor: checked ? 'action.selected' : 'transparent', borderRadius: 2, cursor: 'pointer' }}>
+                  sx={{ p: 1.25, border: 1, borderColor: theme => checked ? alpha(theme.palette.primary.main, 0.35) : theme.palette.divider, bgcolor: 'transparent', borderRadius: 2, cursor: 'pointer' }}>
                   <FormControlLabel sx={{ m: 0, mb: 1 }} label={character.name || `${t('painting.tools.metadata.importCharacters')} ${index + 1}`} onClick={event => event.stopPropagation()}
                     control={<Checkbox size="small" checked={checked} onChange={(_, nextChecked) => setSelected(current => ({ ...current, characterTabs: true, [`character_${index}`]: nextChecked }))} />} />
                   <Stack spacing={1.25}>
-                    {['prompt', 'uc'].map(key => <TextField key={key} fullWidth multiline minRows={2} maxRows={5} size="small" value={character[key] || ''}
-                      label={t(key === 'prompt' ? 'painting.tools.metadata.characterDescription' : 'painting.tools.metadata.characterNegative')}
-                      onClick={event => event.stopPropagation()} onChange={event => setDraft(current => ({ ...current,
-                        characterTabs: current.characterTabs.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: event.target.value } : item),
-                      }))} />)}
+                    {['prompt', 'uc'].map(key => <Box key={key} onClick={event => event.stopPropagation()}>
+                      <Typography variant="caption" color="text.secondary">{t(key === 'prompt' ? 'painting.tools.metadata.characterDescription' : 'painting.tools.metadata.characterNegative')}</Typography>
+                      <InlinePromptInput value={character[key] || ''} previewEnabled expandToContent minRows={2}
+                        placeholder={t(key === 'prompt' ? 'painting.tools.metadata.characterDescription' : 'painting.tools.metadata.characterNegative')}
+                        inputProps={{ readOnly: options.medium && key === 'uc' }} onChange={event => { const value = event.target.value; setDraft(current => ({ ...current,
+                          characterTabs: current.characterTabs.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item),
+                        })); }} />
+                    </Box>)}
                     <Typography variant="caption" color="text.secondary">
                       {character.position ? (/^[A-E][1-5]$/.test(character.position) ? t(`painting.tools.metadata.positions.${character.position}`) : character.position) : t('painting.tools.metadata.positionNotSet')}
                       {character.center && ` · X: ${character.center.x} · Y: ${character.center.y}`}
@@ -138,23 +172,48 @@ export default function MetadataDialog({ open, onClose, metadata, onApply, image
               })}
             </Stack>
           </Box>}
-          {parameterKeys.some(key => draft[key] !== undefined) && <Box>
+          {parameterKeys.some(key => importKeys.includes(key)) && <Box>
             <Typography variant="subtitle2" sx={{ mb: 1 }}>{t('painting.tools.metadata.basicParameters')}</Typography>
             <Stack spacing={0.75}>
-              {parameterKeys.filter(key => draft[key] !== undefined).map(key => <Box key={key} data-metadata-field={key}
-                onClick={() => setSelected(current => ({ ...current, [key]: !current[key] }))}
-                sx={{ display: 'flex', gap: 1, alignItems: 'center', py: 0.75, pr: 1, border: 1, borderColor: selected[key] ? 'primary.main' : 'divider', bgcolor: selected[key] ? 'action.selected' : 'transparent', borderRadius: 1.5, cursor: 'pointer' }}>
-                <Checkbox size="small" checked={Boolean(selected[key])} inputProps={{ 'aria-label': t('painting.tools.metadata.selectParameter', { name: t(`painting.tools.metadata.${key}`) }) }}
-                  onClick={event => event.stopPropagation()} onChange={(_, checked) => setSelected(current => ({ ...current, [key]: checked }))} />
-                <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }}>{t(`painting.tools.metadata.${key}`)}</Typography>
-                {typeof draft[key] === 'boolean'
-                  ? <Switch size="small" checked={draft[key]} inputProps={{ 'aria-label': t(`painting.tools.metadata.${key}`) }}
-                    onClick={event => event.stopPropagation()} onChange={(_, checked) => setDraft(current => ({ ...current, [key]: checked }))} />
-                  : <TextField size="small" value={draft[key]} type={typeof draft[key] === 'number' ? 'number' : 'text'} sx={{ width: '48%' }}
-                    inputProps={{ 'aria-label': t(`painting.tools.metadata.${key}`), step: 'any' }} onClick={event => event.stopPropagation()}
-                    onChange={event => { const value = typeof draft[key] === 'number' ? Number(event.target.value) : event.target.value; setDraft(current => ({ ...current, [key]: value })); }} />}
-              </Box>)}
+              {parameterKeys.filter(key => importKeys.includes(key) && key !== 'height').map(key => {
+                const size = key === 'width';
+                const choices = key === 'model' ? modelOptions : key === 'sampler' ? SAMPLER_OPTIONS : key === 'noiseSchedule' ? NOISE_SCHEDULE_OPTIONS : null;
+                const label = t(`painting.tools.metadata.${size ? 'size' : key}`);
+                const fixed = Object.hasOwn(options.fixed, key);
+                return <Box key={key} data-metadata-field={size ? 'size' : key}
+                  onClick={() => toggleParameter(key, !selected[key])}
+                  sx={{ display: 'flex', gap: 1, alignItems: 'center', py: 1, pr: 1, border: 1,
+                    borderColor: theme => selected[key] ? alpha(theme.palette.primary.main, 0.35) : theme.palette.divider, borderRadius: 1.5, cursor: 'pointer' }}>
+                  <Checkbox size="small" checked={Boolean(selected[key])} inputProps={{ 'aria-label': t('painting.tools.metadata.selectParameter', { name: label }) }}
+                    onClick={event => event.stopPropagation()} onChange={(_, checked) => toggleParameter(key, checked)} />
+                  <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }}>{label}</Typography>
+                  <Box sx={{ width: '58%', minWidth: 0 }} onClick={event => event.stopPropagation()}>
+                    {size ? <Stack direction="row" spacing={1}>
+                      {['width', 'height'].map(dimension => <TextField key={dimension} select size="small" fullWidth value={draft[dimension]}
+                        label={t(`painting.tools.metadata.${dimension}`)} onChange={event => updateParameter(dimension, Number(event.target.value))}>
+                        {[...new Set(options.resolutions.map(resolution => resolution[dimension === 'width' ? 0 : 1]))].sort((a, b) => a - b)
+                          .map(value => <MenuItem key={value} value={value}>{value}</MenuItem>)}
+                      </TextField>)}
+                    </Stack> : choices ? <TextField select fullWidth size="small" value={draft[key]} disabled={fixed}
+                      label={label} onChange={event => updateParameter(key, event.target.value)}>
+                      {choices.map(option => <MenuItem key={option.value} value={option.value}>{key === 'noiseSchedule' ? t(`painting.workspace.parameters.${option.label}`) : option.label}</MenuItem>)}
+                    </TextField> : typeof draft[key] === 'boolean' ? <Switch size="small" checked={draft[key]} disabled={fixed}
+                      inputProps={{ 'aria-label': label }} onChange={(_, checked) => updateParameter(key, checked)} />
+                    : key === 'seed' ? <TextField size="small" fullWidth value={draft[key]} type="number" label={label}
+                      inputProps={{ min: options.ranges.seed.min, max: options.ranges.seed.max, step: 1 }}
+                      onChange={event => updateParameter(key, event.target.value === '' ? '' : Number(event.target.value))} />
+                    : <Stack direction="row" spacing={1} alignItems="center">
+                      <Slider size="small" value={draft[key]} {...options.ranges[key]} disabled={fixed} aria-label={label}
+                        onChange={(_, value) => updateParameter(key, value)} />
+                      <Typography variant="caption" sx={{ minWidth: 28, textAlign: 'right' }}>{draft[key]}</Typography>
+                    </Stack>}
+                  </Box>
+                </Box>;
+              })}
             </Stack>
+            {metadata?.model && !modelOptions.some(option => option.value === resolveMetadataModel(metadata.model)) && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+              {t('painting.tools.metadata.sourceModel', { name: metadata.model })}
+            </Typography>}
           </Box>}
         </Stack>
       </Box>

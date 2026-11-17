@@ -1,5 +1,8 @@
 "use client";
 
+import { MODEL_OPTIONS } from './utils/generationOptions';
+
+
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { resizeImage, checkResolutionLimit } from './tools/ImageTools/ImageResizer';
 import MetadataDialog from './tools/ImageTools/MetadataDialog';
@@ -70,18 +73,7 @@ import { getPublicToolErrorMessageKey } from '@/utils/publicToolErrors.mjs';
 import { createVersionEditorSnapshot } from './utils/versionWorkspace.mjs';
 
 
-// 模型选项
-const modelOptions = [
-  { value: 'nai-diffusion-5-full', label: 'NAI Diffusion V5 Full (High)', descriptionKey: 'painting.workspace.parameters.modelV5Full', icon: <ImageIcon /> },
-  { value: NOVELAI_V5_MEDIUM_MODEL_ID, label: 'NAI Diffusion V5 Full (Medium)', descriptionKey: 'painting.workspace.parameters.modelV5Medium', icon: <ImageIcon /> },
-  { value: 'nai-diffusion-5-curated', label: 'NAI Diffusion V5 Curated', descriptionKey: 'painting.workspace.parameters.modelV5Curated', icon: <ImageIcon /> },
-  { value: 'nai-diffusion-4-5-full', label: 'NAI Diffusion V4.5', descriptionKey: 'painting.workspace.parameters.modelV45Full', icon: <ImageIcon /> },
-  { value: 'nai-diffusion-4-5-curated', label: 'NAI Diffusion V4.5 Curated', descriptionKey: 'painting.workspace.parameters.modelV45Curated', icon: <ImageIcon /> },
-  { value: 'nai-diffusion-4-full', label: 'NAI Diffusion 4', descriptionKey: 'painting.workspace.parameters.modelV4Full', icon: <ImageIcon /> },
-  { value: 'nai-diffusion-4-curated-preview', label: 'NAI Diffusion 4 Curated', descriptionKey: 'painting.workspace.parameters.modelV4CuratedPreview', icon: <ImageIcon /> },
-  { value: 'nai-diffusion-3', label: 'NAI Diffusion 3', descriptionKey: 'painting.workspace.parameters.modelNaiV3', icon: <ImageIcon /> },
-  { value: 'nai-diffusion-furry-3', label: 'NAI Diffusion Furry 3', descriptionKey: 'painting.workspace.parameters.modelNaiFurryV3', icon: <ImageIcon /> },
-];
+const modelOptions = MODEL_OPTIONS.map(option => ({ ...option, icon: <ImageIcon /> }));
 
 const getV4ModelType = (modelName) => {
   if (modelName === 'nai-diffusion-4-full') return 'v4full';
@@ -1785,7 +1777,7 @@ const ParameterPanel = ({
           <Button onClick={handleResetParams} color="error" autoFocus>{t('painting.workspace.parameters.confirmReset')}</Button>
         </DialogActions>
       </Dialog>
-      <MetadataDialog open={metadataDialogOpen} onClose={() => setMetadataDialogOpen(false)} metadata={extractedMetadata} onApply={handleApplyMetadata} />
+      <MetadataDialog params={params} open={metadataDialogOpen} onClose={() => setMetadataDialogOpen(false)} metadata={extractedMetadata} onApply={handleApplyMetadata} />
       <Dialog open={resolutionCheckDialogOpen} onClose={() => handleResolutionChoice(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{t('painting.workspace.parameters.resolutionAdjustmentTitle')}</DialogTitle>
         <DialogContent>

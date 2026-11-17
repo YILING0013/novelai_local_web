@@ -34,6 +34,8 @@ try {
 
 const PNG_TEXT_KEYWORDS = new Set([
   'Comment',
+  'Source',
+  'Software',
   'parameters',
   'UserComment',
   'ImageDescription',
@@ -261,7 +263,8 @@ const collectGroupCandidates = (group, source, baseWeight) => {
 
     extractTextsFromTag(tag).forEach((text) => {
       candidates.push({
-        keyword: keyword.replace(/\s*\(.+\)\s*$/, ''),
+        // NovelAI 的 JPEG 使用 EXIF Software 保存 PNG Source 中的模型名称。
+        keyword: source === 'exif' && keyword === 'Software' ? 'Source' : keyword.replace(/\s*\(.+\)\s*$/, ''),
         text,
         source: `${source}:${keyword}`,
         weight: baseWeight,

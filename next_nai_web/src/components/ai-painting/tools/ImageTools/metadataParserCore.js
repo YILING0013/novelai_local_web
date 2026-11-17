@@ -254,6 +254,8 @@ const parseNovelAIMetadata = (jsonData) => {
   if (source.seed !== undefined && source.seed !== null && source.seed !== '') {
     parameters.seed = source.seed;
   }
+  const model = source.model ?? source.Source ?? source.__outerMetadata?.Source;
+  if (model) parameters.model = String(model);
   if (source.sampler !== undefined) parameters.sampler = source.sampler;
   if (source.noise_schedule !== undefined) parameters.noiseSchedule = source.noise_schedule;
   if (source.noiseSchedule !== undefined) parameters.noiseSchedule = source.noiseSchedule;
@@ -359,6 +361,7 @@ const parseMetadataCandidates = (candidates) => {
   let best = null;
 
   candidates.forEach((candidate, index) => {
+    if (['Source', 'Software'].includes(candidate.keyword)) return;
     const parsed = parseMetadataCandidate(candidate);
     const metadataScore = scoreMetadata(parsed);
     if (!parsed || metadataScore === 0) {
@@ -374,7 +377,10 @@ const parseMetadataCandidates = (candidates) => {
     }
   });
 
-  return best?.parsed || null;
+  if (!best) return null;
+  const modelSource = candidates.find(candidate => candidate.keyword === 'Source');
+  if (!best.parsed.model && modelSource) best.parsed.model = normalizeExifText(modelSource.text ?? modelSource.value);
+  return best.parsed;
 };
 
 module.exports = {

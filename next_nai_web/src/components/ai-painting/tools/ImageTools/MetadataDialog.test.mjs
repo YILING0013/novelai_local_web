@@ -33,6 +33,9 @@ function mount(initialProps) {
   runInNewContext(code, { exports, React: hooks,
     URL: { createObjectURL: file => 'blob:' + file.name, revokeObjectURL: url => revoked.push(url) },
     require: name => name === 'react' ? hooks : ['@mui/material', '@mui/icons-material'].includes(name) ? new Proxy({}, { get: (_, key) => key })
+      : name === '@mui/material/styles' ? { alpha: value => value }
+      : name.includes('InlinePromptInput') ? { __esModule: true, default: 'InlinePromptInput' }
+      : name.includes('/utils/') ? require(name + '.js')
       : { useI18n: () => ({ t: key => key }) },
   });
   return {
@@ -64,8 +67,8 @@ test('直接展示元数据，提示词和角色在前，生成参数和 Seed �
   const tree = page.render();
   assert.equal(nodes(tree).filter(node => node.type === 'Dialog').length, 1);
   assert.doesNotMatch(JSON.stringify(tree), /viewMetadata|backToImageActions/);
-  assert.deepEqual(nodes(tree).filter(node => node.props?.['data-metadata-field']).slice(0, 4).map(node => node.props['data-metadata-field']), ['positivePrompt', 'negativePrompt', 'character_0', 'width']);
-  assert.equal(nodes(field(tree, 'positivePrompt')).find(node => node.type === 'TextField').props.value, fixture.positivePrompt);
+  assert.deepEqual(nodes(tree).filter(node => node.props?.['data-metadata-field']).slice(0, 4).map(node => node.props['data-metadata-field']), ['positivePrompt', 'negativePrompt', 'character_0', 'model']);
+  assert.equal(nodes(field(tree, 'positivePrompt')).find(node => node.type === 'InlinePromptInput').props.value, fixture.positivePrompt);
   applyButton(tree).props.onClick();
   assert.deepEqual(Object.keys(result).sort(), ['characterTabs', 'negativePrompt', 'positivePrompt']);
 });
@@ -74,9 +77,9 @@ test('编辑提示词和角色后导入修改值，原始元数据保持不变',
   let result;
   const page = mount({ metadata: fixture, onApply: data => { result = data; } });
   let tree = page.render();
-  nodes(field(tree, 'positivePrompt')).find(node => node.type === 'TextField').props.onChange({ target: { value: 'edited positive' } });
+  nodes(field(tree, 'positivePrompt')).find(node => node.type === 'InlinePromptInput').props.onChange({ target: { value: 'edited positive' } });
   tree = page.render();
-  nodes(field(tree, 'character_0')).find(node => node.type === 'TextField').props.onChange({ target: { value: 'edited character' } });
+  nodes(field(tree, 'character_0')).find(node => node.type === 'InlinePromptInput').props.onChange({ target: { value: 'edited character' } });
   applyButton(page.render()).props.onClick();
   assert.equal(result.positivePrompt, 'edited positive');
   assert.equal(result.characterTabs[0].prompt, 'edited character');
@@ -88,12 +91,12 @@ test('点击参数卡片取消导入，单独激活并编辑一个数字参数',
   let result;
   const page = mount({ metadata: fixture, onApply: data => { result = data; } });
   field(page.render(), 'negativePrompt').props.onClick();
-  field(page.render(), 'width').props.onClick();
-  nodes(field(page.render(), 'width')).find(node => node.type === 'TextField').props.onChange({ target: { value: '1216' } });
+  field(page.render(), 'size').props.onClick();
+  nodes(field(page.render(), 'size')).find(node => node.type === 'TextField').props.onChange({ target: { value: '1216' } });
   applyButton(page.render()).props.onClick();
   assert.equal(result.width, 1216);
   assert.equal(Object.hasOwn(result, 'negativePrompt'), false);
-  assert.equal(Object.hasOwn(result, 'height'), false);
+  assert.equal(result.height, 832);
   assert.equal(Object.hasOwn(result, 'seed'), false);
 });
 
@@ -127,7 +130,7 @@ test('只导入选中的角色，并支持把已有提示词编辑为空', () =>
   let result;
   const page = mount({ metadata: { ...fixture, characterTabs: [...fixture.characterTabs, { prompt: 'second' }] }, onApply: data => { result = data; } });
   field(page.render(), 'character_1').props.onClick();
-  nodes(field(page.render(), 'positivePrompt')).find(node => node.type === 'TextField').props.onChange({ target: { value: '' } });
+  nodes(field(page.render(), 'positivePrompt')).find(node => node.type === 'InlinePromptInput').props.onChange({ target: { value: '' } });
   applyButton(page.render()).props.onClick();
   assert.equal(result.characterTabs.length, 1);
   assert.equal(result.positivePrompt, '');
@@ -138,8 +141,8 @@ test('读取完成后呈现元数据，重新打开时恢复原始内容与默�
   const page = mount({ imageFile: file, metadata: null, reading: true });
   assert.match(JSON.stringify(page.render()), /readingInformation/);
   page.setProps({ metadata: fixture, reading: false });
-  nodes(field(page.render(), 'positivePrompt')).find(node => node.type === 'TextField').props.onChange({ target: { value: 'edited' } });
+  nodes(field(page.render(), 'positivePrompt')).find(node => node.type === 'InlinePromptInput').props.onChange({ target: { value: 'edited' } });
   page.setProps({ open: false }); page.render();
   page.setProps({ open: true });
-  assert.equal(nodes(field(page.render(), 'positivePrompt')).find(node => node.type === 'TextField').props.value, fixture.positivePrompt);
+  assert.equal(nodes(field(page.render(), 'positivePrompt')).find(node => node.type === 'InlinePromptInput').props.value, fixture.positivePrompt);
 });

@@ -3563,6 +3563,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
         </DialogActions>
       </Dialog>
       <MetadataDialog
+        params={generationParams}
         open={pageMetadataDialog.open}
         onClose={() => setPageMetadataDialog({ open: false, metadata: null })}
         metadata={pageMetadataDialog.metadata}

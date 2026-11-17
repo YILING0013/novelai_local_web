@@ -10,17 +10,19 @@ import usePromptWeightShortcuts from './usePromptWeightShortcuts';
 const INLINE_TEXT_STYLE = { fontSize: '1rem', lineHeight: 1.65 };
 
 /**
- * 为外部正向、负向输入框叠加提示词预览，保留原生输入和 5–8 行自动高度。
+ * 为外部正向、负向输入框叠加提示词预览，保留原生输入，并可按全文自动展开高度。
  * @param {object} props 文本、输入事件、原生输入引用、预览开关及随机词配置。
  * @returns {React.ReactElement} 可编辑的提示词输入框。
  */
-export default function InlinePromptInput({ value, onChange, inputRef, inputProps, placeholder, previewEnabled, randomPromptConfig, className }) {
+export default function InlinePromptInput({ value, onChange, inputRef, inputProps = {}, placeholder, previewEnabled, randomPromptConfig, className, minRows = 5, expandToContent = false }) {
+  const localInputRef = useRef(null);
+  const editorRef = inputRef || localInputRef;
   const previewRef = useRef(null);
   const [isComposing, setIsComposing] = useState(false);
   const translationPreview = usePromptTranslationPreview({ text: value, previewRef, overlay: previewEnabled && !isComposing, enabled: !isComposing });
   const { defaultWeightMode } = usePromptEditorSettings();
   const weightShortcuts = usePromptWeightShortcuts({
-    inputRef, value, defaultWeightMode, enabled: !isComposing,
+    inputRef: editorRef, value, defaultWeightMode, enabled: !isComposing,
     onChange: (text, selection) => {
       const input = { value: text, selectionStart: selection.start, selectionEnd: selection.end };
       onChange({ target: input, currentTarget: input,
@@ -30,8 +32,8 @@ export default function InlinePromptInput({ value, onChange, inputRef, inputProp
   });
 
   useLayoutEffect(() => {
-    if (previewRef.current) previewRef.current.scrollTop = inputRef.current.scrollTop;
-  }, [value, previewEnabled, inputRef]);
+    if (previewRef.current) previewRef.current.scrollTop = editorRef.current.scrollTop;
+  }, [value, previewEnabled, editorRef]);
 
   return (
     <Box className={className} sx={{
@@ -51,13 +53,13 @@ export default function InlinePromptInput({ value, onChange, inputRef, inputProp
         component={TextareaAutosize}
         {...inputProps}
         {...translationPreview.inputProps}
-        ref={inputRef}
+        ref={editorRef}
         value={value}
         onChange={(event) => { translationPreview.inputProps.onChange(event); onChange(event); }}
         placeholder={placeholder}
         aria-label={placeholder}
-        minRows={5}
-        maxRows={8}
+        minRows={minRows}
+        maxRows={expandToContent ? undefined : 8}
         spellCheck={false}
         onScroll={(event) => {
           if (previewRef.current) previewRef.current.scrollTop = event.currentTarget.scrollTop;

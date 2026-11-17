@@ -1,7 +1,9 @@
+import { NOVELAI_V5_MEDIUM_DEFAULT_PARAMS, NOVELAI_V5_STANDARD_MAX_STEPS, NOVELAI_V5_LARGE_MAX_STEPS } from './novelAIV5Params.mjs';
+import { SAMPLER_OPTIONS, NOISE_SCHEDULE_OPTIONS, NOVELAI_PARAMETER_RANGES } from './generationOptions.js';
 /**
  * 参数映射及处理工具函数
  */
-import { isPaintingModelAllowed } from './modelUtils.js';
+import { isPaintingModelAllowed, DEFAULT_PAINTING_MODEL_ID } from './modelUtils.js';
 
 // 定义分辨率限制变量，默认为普通模式
 let MAX_PRODUCT = 1048576; // 1024 * 1024
@@ -197,6 +199,7 @@ export const findAllowedResolutionWithFixedHeight = (currentWidth, height) => {
  */
 export const mapImageParametersToUI = (parsedParams) => {
   const uiParams = {};
+  if (isPaintingModelAllowed(parsedParams.model)) uiParams.model = parsedParams.model;
 
   if (isPaintingModelAllowed(parsedParams.model)) {
     uiParams.model = parsedParams.model;
@@ -479,4 +482,61 @@ export const applyImageParametersToUI = (parsedParams, {
     console.error('应用参数时发生错误:', error);
     return false;
   }
+};
+
+
+/**
+ * 返回当前模型与当前大图开关允许导入的控件范围；不更改页面的计费模式。
+ * @param {object} params 当前模型、尺寸与大图模式。
+ * @param {boolean} restrictedAccount 是否禁止大图模式。
+ * @returns {object} 合法尺寸组合、数字范围和模型固定参数。
+ */
+export const getImageImportOptions = (params = {}, restrictedAccount = false) => {
+  const model = params.model || DEFAULT_PAINTING_MODEL_ID;
+  const novelAI = model.startsWith('nai-diffusion-');
+  const large = Boolean(params.use_upscale_credits) && !restrictedAccount;
+  const medium = model === 'nai-diffusion-5-full-medium';
+  const limits = novelAI ? { maxProduct: large ? 3145728 : 1048576, maxDimension: large ? 4096 : 2048, minDimension: 512, step: 64 } : null;
+  const ranges = novelAI ? { ...NOVELAI_PARAMETER_RANGES,
+    steps: { min: 1, max: large ? NOVELAI_V5_LARGE_MAX_STEPS : NOVELAI_V5_STANDARD_MAX_STEPS, step: 1 } } : {};
+  const fixed = novelAI && !['nai-diffusion-3', 'nai-diffusion-furry-3'].includes(model) ? { smea: false, dyn: false } : {};
+  if (medium) Object.assign(fixed, NOVELAI_V5_MEDIUM_DEFAULT_PARAMS);
+  let resolutions = limits ? generateAllowedResolutions(limits) : [];
+  return { resolutions, ranges, fixed, medium, novelAI };
+};
+
+/**
+ * 将外部图像参数对齐到页面允许的范围，尺寸修改时优先保留用户刚选的一边。
+ * @param {object} metadata 可编辑的图像参数。
+ * @param {object} params 实际将要使用的模型和大图开关。
+ * @param {boolean} restrictedAccount 是否禁止大图模式。
+ * @param {'width'|'height'|undefined} editedField 刚修改的尺寸方向。
+ * @returns {object} 可供选择与导入的合法参数副本。
+ */
+export const normalizeImageImportParameters = (metadata, params = {}, restrictedAccount = false, editedField) => {
+  const result = { ...metadata };
+  const { resolutions, ranges, fixed, novelAI } = getImageImportOptions(params, restrictedAccount);
+  if (resolutions.length && (result.width !== undefined || result.height !== undefined)) {
+    const width = Number(result.width ?? params.width ?? 1024), height = Number(result.height ?? params.height ?? 1024);
+    const candidates = editedField ? resolutions.filter(([w, h]) => (editedField === 'width' ? w === width : h === height)) : resolutions;
+    let closest, difference = Infinity;
+    for (const [w, h] of candidates) {
+      const nextDifference = Math.abs(w - width) + Math.abs(h - height);
+      if (nextDifference < difference) { closest = [w, h]; difference = nextDifference; }
+    }
+    [result.width, result.height] = closest;
+  }
+  for (const [key, { min, max, step }] of Object.entries(ranges)) {
+    if (result[key] === undefined || (key === 'seed' && result[key] === '')) continue;
+    const value = Number(result[key]);
+    if (!Number.isFinite(value)) { delete result[key]; continue; }
+    result[key] = key === 'seed' && value === -1 ? '' : Number((Math.min(max, Math.max(min, Math.round(value / step) * step))).toFixed(2));
+  }
+  if (novelAI && result.sampler !== undefined) {
+    const sampler = mapImageParametersToUI({ sampler: result.sampler }).sampler;
+    result.sampler = SAMPLER_OPTIONS.some(option => option.value === sampler) ? sampler : 'k_euler';
+  }
+  if (novelAI && result.noiseSchedule !== undefined && !NOISE_SCHEDULE_OPTIONS.some(option => option.value === result.noiseSchedule)) result.noiseSchedule = 'native';
+  for (const [key, value] of Object.entries(fixed)) if (result[key] !== undefined) result[key] = value;
+  return result;
 };

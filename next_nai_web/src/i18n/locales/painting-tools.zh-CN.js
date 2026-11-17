@@ -467,6 +467,8 @@ const paintingToolszhCN = {
         }
       },
       "metadata": {
+        "model": "生成模型",
+        "sourceModel": "原图模型：{name}（请手动选择对应模型）",
         "width": "宽度",
         "height": "高度",
         "deselectAll": "取消全选",
