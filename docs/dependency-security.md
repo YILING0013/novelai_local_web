@@ -1,6 +1,6 @@
 # 依赖安全维护（2026-11-16）
 
-本次修复开源本地版前端、兼容 Flask 后端与 Rust 桌面端已发现的高危、严重依赖漏洞。
+本次修复开源本地版前端、兼容 Flask 后端与 Windows Rust 桌面端已发现的依赖漏洞，包括开发工具的中危问题。
 
 | 依赖 | 本次版本或约束 |
 | --- | --- |
@@ -9,14 +9,19 @@
 | brace-expansion | 1.x 使用 1.1.21；2.x 使用 2.1.7 |
 | Pillow | >=13.0.0,<14 |
 | Zip | 最低 9.0.5，Cargo.lock 锁定 9.5.1 |
+| rusqlite / libsqlite3-sys | 0.41.1 / 0.39.1，内置 SQLite 3.54.1 |
+
+前端锁文件同时升级 typescript-eslint 工具链与 sucrase，并更新 postcss-selector-parser 的兼容补丁版本。
 
 修复依据：[Next.js 公告](https://github.com/advisories/GHSA-2464-fhr4-w9xw)、[Sharp 公告](https://github.com/advisories/GHSA-wq5f-xc86-pv6w)、[brace-expansion 公告](https://github.com/advisories/GHSA-qhr7-859c-m2p7)、[Pillow 13 发布说明](https://pillow.readthedocs.io/en/stable/releasenotes/13.0.0.html)、[Zip 公告](https://github.com/advisories/GHSA-m665-v7pm-7grj)。
 
 ## 扫描范围与保留问题
 
-- npm audit：高危、严重均为 0；开发依赖仍有 9 项中危，生产依赖扫描无已知漏洞。
+- npm audit：全部依赖及生产依赖均无已知漏洞。
 - pip-audit：扫描本仓库 Flask 虚拟环境的全部已安装包，无已知漏洞。
-- OSV：按 Cargo.lock 查询全部 639 个注册表依赖，包括非 Windows 目标；有 CVSS 评分的高危、严重均为 0。仍有 glib、libsqlite3-sys 两项中危，以及 proc-macro-error、zbus_names、zvariant、zvariant_derive 停止维护提示。
+- OSV：按 Windows x64 实际依赖图查询，无已知漏洞。完整 Cargo.lock 仍包含 Linux GTK3 使用的 glib 0.18.5 公告，以及非 Windows 依赖的停止维护提示；这些包不进入 Windows 安装包。Tauri 2 尚无兼容的 glib 修复版本，未通过忽略公告或删除锁文件条目掩盖提示。本次不发布 Linux 安装包，也不宣称全平台依赖没有告警。
+
+SQLite 修复依据：[RUSTSEC-2026-0459](https://rustsec.org/advisories/RUSTSEC-2026-0459.html)。glib 上游状态：[Tauri 跟踪问题](https://github.com/tauri-apps/tauri/issues/12564)。
 
 扫描是该日期的公开漏洞库结果，不能保证以后没有新公告。原始扫描输出保存在仓库外的本机工作目录，不随源码或安装包分发。
 
