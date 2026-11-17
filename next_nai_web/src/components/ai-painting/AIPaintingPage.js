@@ -422,6 +422,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
   const [vibeImages, setVibeImages] = useState([]);
   const [vibeCacheHydrated, setVibeCacheHydrated] = useState(false);
   const [pageMetadataDialog, setPageMetadataDialog] = useState({ open: false, metadata: null });
+  const [imageImportRequest, setImageImportRequest] = useState(null);
   const [liveAccountSnapshot, setLiveAccountSnapshot] = useState(accountSnapshot);
   const [anlasDialogOpen, setAnlasDialogOpen] = useState(false);
   const [generationParams, setGenerationParams] = useState(() => {
@@ -1305,11 +1306,47 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
       return;
     }
 
-    const metadata = await extractMetadataFromFile(imageFile);
-    if (metadata) {
-      setPageMetadataDialog({ open: true, metadata });
+    // 先显示图片用途；没有元数据的普通图片也能发送到工具。
+    setPageMetadataDialog({ open: true, file: imageFile, metadata: null, reading: true });
+    try {
+      const metadata = await extractMetadataFromFile(imageFile);
+      setPageMetadataDialog(current => current.open && current.file === imageFile ? { ...current, metadata } : current);
+    } catch {
+      showNotification(t('painting.workspace.errors.applyImageMetadataFailed'), 'warning');
+    } finally {
+      setPageMetadataDialog(current => current.file === imageFile ? { ...current, reading: false } : current);
     }
-  }, []);
+  }, [showNotification, t]);
+
+  const handleUseDroppedImage = async (target) => {
+    const file = pageMetadataDialog.file;
+    setPageMetadataDialog({ open: false, metadata: null });
+    if (target === 'editor') {
+      const request = { id: crypto.randomUUID(), generatedItem: { id: crypto.randomUUID(), cachedBlob: file, type: 'image' } };
+      if (desktopEditor) desktopEditor.open(request);
+      else { setProcessingGalleryRequest(request); changeWorkspaceMode('imageProcessing'); }
+      return;
+    }
+    if (target === 'inpaint') {
+      if (!inpaintWorkspaceRef.current) {
+        showNotification(t('painting.workspace.errors.inpaintNotReady'), 'warning');
+        return;
+      }
+      const src = URL.createObjectURL(file);
+      try {
+        await inpaintWorkspaceRef.current.importImageSource({ src, name: file.name });
+        changeWorkspaceMode('inpaint');
+      } catch {
+        showNotification(t('painting.workspace.errors.imageProcessingFailed'), 'error');
+      } finally {
+        URL.revokeObjectURL(src);
+      }
+      return;
+    }
+    changeWorkspaceMode('generation');
+    setExpandedPanels(current => ({ ...current, [target]: true }));
+    setImageImportRequest({ id: crypto.randomUUID(), target, file });
+  };
 
   const handleSeedCopyAndApply = useCallback(async (seed) => {
     if (seed === undefined || seed === null || seed === '') {
@@ -2433,6 +2470,8 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
           vibeImages={vibeImages}
           setVibeImages={handleEditorVibeImagesChange}
           externalImageData={externalImageData}
+          imageImportRequest={imageImportRequest}
+          onImageImportHandled={() => setImageImportRequest(null)}
           onImageToImageCostParametersChange={setImageToImageCostParameters}
           onCharacterTabsChange={setCharacterTabsForPromptTokens}
           onApplyMetadata={handleApplyMetadata}
@@ -3527,6 +3566,15 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
         open={pageMetadataDialog.open}
         onClose={() => setPageMetadataDialog({ open: false, metadata: null })}
         metadata={pageMetadataDialog.metadata}
+        imageFile={pageMetadataDialog.file}
+        reading={pageMetadataDialog.reading}
+        imageActions={[
+          ...(generationParams.model.startsWith('nai-diffusion') ? ['img2img', 'inpaint'] : []),
+          ...(!generationParams.director_reference_images_cached?.length && isNovelAIVibeModel(generationParams.model) ? ['vibe'] : []),
+          ...(!vibeImages.some(image => !image.isTemporarilyDisabled) && isNovelAIDirectorReferenceModel(generationParams.model) ? ['reference'] : []),
+          'editor',
+        ]}
+        onUseImage={handleUseDroppedImage}
         onApply={handleApplyPageMetadata}
       />
     </>

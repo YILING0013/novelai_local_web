@@ -467,6 +467,22 @@ const paintingToolszhCN = {
         }
       },
       "metadata": {
+        "chooseImageAction": "如何使用这张图像？",
+        "imagePreview": "待导入图像",
+        "readingInformation": "正在读取图像信息…",
+        "importInformation": "导入选中信息",
+        "importPrompt": "正向提示词",
+        "importNegativePrompt": "负向提示词",
+        "importCharacters": "角色",
+        "importSettings": "生成设置",
+        "importSeed": "Seed",
+        "useImage": {
+          "img2img": "图生图",
+          "vibe": "Vibe Transfer",
+          "reference": "角色参考",
+          "inpaint": "局部重绘",
+          "editor": "图像处理"
+        },
         "none": "（无）",
         "unknown": "未知",
         "selectAtLeastOne": "请至少选择一个参数来应用。",

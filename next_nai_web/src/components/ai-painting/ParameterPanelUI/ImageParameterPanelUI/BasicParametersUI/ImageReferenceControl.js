@@ -47,7 +47,7 @@ const referenceActionSx = {
   '&:hover': { bgcolor: 'action.focus' },
 };
 
-const ImageReferenceControl = ({ images, setImages, onReferenceImageChange, disabled = false, expanded, onExpandedChange }) => {
+const ImageReferenceControl = ({ images, setImages, onReferenceImageChange, disabled = false, expanded, onExpandedChange, imageImportRequest, onImageImportHandled }) => {
   const { t } = useI18n();
   // 多图状态: { id, data: base64, displayUrl, type, strength, fidelity, disabled, cache_secret_key }
   const [masterKey, setMasterKey] = useState('');
@@ -225,6 +225,14 @@ const ImageReferenceControl = ({ images, setImages, onReferenceImageChange, disa
     reader.readAsDataURL(file);
     if (e.target) e.target.value = null;
   };
+
+  const handledImageImport = useRef(null);
+  useEffect(() => {
+    if (!imageImportRequest || imageImportRequest.target !== 'reference' || handledImageImport.current === imageImportRequest.id) return;
+    handledImageImport.current = imageImportRequest.id;
+    handleFileSelect({ target: { files: [imageImportRequest.file] } });
+    onImageImportHandled();
+  });
 
   // 更新单个图片属性
   const updateImage = (id, field, value) => {

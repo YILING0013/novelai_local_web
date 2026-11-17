@@ -467,6 +467,22 @@ const paintingToolsenUS = {
         }
       },
       "metadata": {
+        "chooseImageAction": "What would you like to do with this image?",
+        "imagePreview": "Image to import",
+        "readingInformation": "Reading image information…",
+        "importInformation": "Import selected information",
+        "importPrompt": "Prompt",
+        "importNegativePrompt": "Undesired content",
+        "importCharacters": "Characters",
+        "importSettings": "Generation settings",
+        "importSeed": "Seed",
+        "useImage": {
+          "img2img": "Image to image",
+          "vibe": "Vibe Transfer",
+          "reference": "Character reference",
+          "inpaint": "Inpainting",
+          "editor": "Image editor"
+        },
         "none": "(none)",
         "unknown": "Unknown",
         "selectAtLeastOne": "Select at least one parameter to apply.",

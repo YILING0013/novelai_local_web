@@ -52,6 +52,8 @@ const ImageParameterPanel = ({
     onDownloadZip,
     onReferenceImageChange,
     referenceImages,
+    imageImportRequest,
+    onImageImportHandled,
     setReferenceImages,
     renderEditSummary,
     editorKey,
@@ -120,6 +122,8 @@ const ImageParameterPanel = ({
         <ImageReferenceControl
           onReferenceImageChange={onReferenceImageChange}
           images={referenceImages}
+          imageImportRequest={imageImportRequest}
+          onImageImportHandled={onImageImportHandled}
           setImages={setReferenceImages}
           disabled={imageReferenceDisabled}
           expanded={Boolean(expandedPanels.reference)}

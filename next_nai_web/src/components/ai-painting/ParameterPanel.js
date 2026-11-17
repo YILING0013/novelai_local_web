@@ -121,6 +121,8 @@ const ParameterPanel = ({
   vibeImages = [],
   setVibeImages = () => { },
   externalImageData = null,
+  imageImportRequest = null,
+  onImageImportHandled,
   onImageToImageCostParametersChange = null,
   onCharacterTabsChange = null,
   onApplyMetadata = null,
@@ -167,6 +169,7 @@ const ParameterPanel = ({
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [metadataDialogOpen, setMetadataDialogOpen] = useState(false);
   const [extractedMetadata, setExtractedMetadata] = useState(null);
+  const handledImageImport = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isVibeDragging, setIsVibeDragging] = useState(false);
   const [imagePreview, setImagePreview] = useState(initialEditorState?.imagePreview || null);
@@ -606,7 +609,7 @@ const ParameterPanel = ({
     }
   };
 
-  const handleImageUpload = async (e) => {
+  const handleImageUpload = async (e, { readMetadata = true } = {}) => {
     const file = e.target.files[0];
     if (!file) return;
     try {
@@ -628,11 +631,11 @@ const ParameterPanel = ({
       });
       const resolutionCheck = checkResolutionLimit(img.width, img.height);
       if (resolutionCheck.isOverLimit) {
-        setPendingImageFile(file);
+        setPendingImageFile({ file, readMetadata });
         setResolutionCheckData(resolutionCheck);
         setResolutionCheckDialogOpen(true);
       } else {
-        await processImageUpload(file);
+        await processImageUpload(file, readMetadata);
       }
     } catch (error) {
       console.error('处理图像失败:', error);
@@ -644,7 +647,7 @@ const ParameterPanel = ({
     }
   };
 
-  const processImageUpload = async (file) => {
+  const processImageUpload = async (file, readMetadata = true) => {
     try {
       const resizeResult = await resizeImage(file);
       const finalWidth = resizeResult.width;
@@ -657,8 +660,8 @@ const ParameterPanel = ({
       setEditorKey(prev => prev + 1);
 
       try {
-        const metadata = await extractMetadataFromFile(file);
-        if (metadata) {
+        const metadata = readMetadata ? await extractMetadataFromFile(file) : null;
+        if (readMetadata && metadata) {
           setExtractedMetadata(metadata);
           setMetadataDialogOpen(true);
         }
@@ -684,7 +687,7 @@ const ParameterPanel = ({
   const handleResolutionChoice = async (shouldContinue) => {
     setResolutionCheckDialogOpen(false);
     if (shouldContinue && pendingImageFile) {
-      await processImageUpload(pendingImageFile);
+      await processImageUpload(pendingImageFile.file, pendingImageFile.readMetadata);
     } else if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -1073,6 +1076,22 @@ const ParameterPanel = ({
       if (vibeFileInputRef.current) vibeFileInputRef.current.value = '';
     }
   };
+
+  // 用途面板复用已有上传逻辑，明确选择图生图时不再重复弹出信息导入。
+  useEffect(() => {
+    if (!imageImportRequest || imageImportRequest.target === 'reference' || handledImageImport.current === imageImportRequest.id) return;
+    handledImageImport.current = imageImportRequest.id;
+    const upload = { target: { files: [imageImportRequest.file] } };
+    void (async () => {
+      try {
+        if (imageImportRequest.target === 'img2img') await handleImageUpload(upload, { readMetadata: false });
+        else if (isV4Model(params.model)) await handleVibeV4FileUpload(upload);
+        else await handleVibeImageUpload(upload);
+      } finally {
+        onImageImportHandled();
+      }
+    })();
+  });
 
   const handleVibeImageDelete = (index) => setVibeImages(prev => prev.filter((_, i) => i !== index));
 
@@ -1738,6 +1757,8 @@ const ParameterPanel = ({
           handleVibeV4FileUpload={handleVibeV4FileUpload}
           onReferenceImageChange={handleReferenceImageChange}
           referenceImages={referenceImages}
+          imageImportRequest={imageImportRequest}
+          onImageImportHandled={onImageImportHandled}
           setReferenceImages={setReferenceImages}
           renderEditSummary={renderEditSummary}
           editorKey={editorKey} editorOpen={editorOpen} handleCloseEditor={handleCloseEditor}

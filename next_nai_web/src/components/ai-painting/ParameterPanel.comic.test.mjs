@@ -70,7 +70,7 @@ function createPanel(overrides = {}, cached = {}) {
       useCallback(callback) { return callback; },
       useEffect(effect, deps) {
         const index = cursor++;
-        if (!slots[index] || deps.some((value, offset) => !Object.is(value, slots[index].deps[offset]))) {
+        if (!slots[index] || !deps || deps.some((value, offset) => !Object.is(value, slots[index].deps?.[offset]))) {
           const previous = slots[index];
           slots[index] = { deps };
           effects.push(() => {

@@ -11,7 +11,7 @@
 .panelHeader > button { width: 21px; height: 24px; padding: 0; flex-shrink: 0; color: var(--muted); border-radius: 3px; }
 .panelHeader > button:hover { background: color-mix(in srgb, var(--text) 7%, transparent); color: var(--text); }
 .panelHeader > .dragHandle { flex: 1; width: 0; min-width: 35px; justify-content: flex-start; gap: 3px; cursor: grab; touch-action: none; font-size: 10px; }
-.dragHandle > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dragHandle > span { display: block; min-width: 0; line-height: 18px; padding-block: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dragHandle > svg { flex-shrink: 0; color: var(--muted); }
 .tabs { display: flex; flex-shrink: 0; min-height: 31px; overflow-x: auto; scrollbar-width: thin; background: var(--panel); border-bottom: 1px solid var(--border); }
 .tabs > button { flex: 1 0 auto; padding: 6px 12px; border-radius: 0; border: 0; border-bottom: 2px solid transparent; font-size: 11px; color: var(--muted); cursor: grab; touch-action: none; }

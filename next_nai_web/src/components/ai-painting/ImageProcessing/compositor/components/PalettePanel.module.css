@@ -27,10 +27,11 @@
   display: flex;
   gap: 4px;
 }
-.controls select {
+.panel .controls select {
   font-size: 10px;
-  padding: 4px;
-  height: 26px;
+  padding: 4px 6px;
+  min-height: 30px;
+  line-height: 1.5;
 }
 .controls select:first-child {
   flex: 1;

@@ -161,7 +161,7 @@ export default function ImageProcessingWorkspace({ active, generatedItems, galle
   const visibleEntries = source === 'session' ? sourceEntries.filter((entry) => `${entry.title || ''} ${entry.filename || ''} ${entry.prompt || ''} ${entry.id}`.toLowerCase().includes(query.toLowerCase())) : sourceEntries;
   const toggleSelected = (id) => setSelected((previous) => previous.includes(id) ? previous.filter((value) => value !== id) : [...previous, id]);
 
-  return <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+  return <Box sx={{ height: '100%', flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
     {error && !picker && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
     <Box className="image-processing-editor" data-drop-zone style={{
       colorScheme: theme.palette.mode,
