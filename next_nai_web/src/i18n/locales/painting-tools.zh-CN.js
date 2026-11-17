@@ -469,8 +469,8 @@ const paintingToolszhCN = {
       "metadata": {
         "width": "宽度",
         "height": "高度",
-        "viewMetadata": "查看图像元数据",
-        "backToImageActions": "返回图像用途",
+        "deselectAll": "取消全选",
+        "selectParameter": "导入{name}",
         "informationToImport": "选择导入信息",
         "noMetadata": "未检测到可读取的生成元数据",
         "close": "关闭",
