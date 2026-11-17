@@ -467,6 +467,13 @@ const paintingToolsenUS = {
         }
       },
       "metadata": {
+        "width": "Width",
+        "height": "Height",
+        "viewMetadata": "View image metadata",
+        "backToImageActions": "Back to image actions",
+        "informationToImport": "Choose information to import",
+        "noMetadata": "No readable generation metadata found",
+        "close": "Close",
         "chooseImageAction": "What would you like to do with this image?",
         "imagePreview": "Image to import",
         "readingInformation": "Reading image information…",

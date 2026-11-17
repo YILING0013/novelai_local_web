@@ -32,7 +32,7 @@ function mount(initialProps) {
   const exports = {};
   runInNewContext(code, { exports, React: hooks,
     URL: { createObjectURL: file => 'blob:' + file.name, revokeObjectURL: url => revoked.push(url) },
-    require: name => name === 'react' ? hooks : name === '@mui/material' ? new Proxy({}, { get: (_, key) => key })
+    require: name => name === 'react' ? hooks : ['@mui/material', '@mui/icons-material'].includes(name) ? new Proxy({}, { get: (_, key) => key })
       : { useI18n: () => ({ t: key => key }) },
   });
   return {
@@ -53,7 +53,7 @@ function nodes(tree) {
   if (Array.isArray(tree)) return tree.flatMap(nodes);
   return [tree, ...nodes(tree.props?.children)];
 }
-const checkbox = (tree, name) => nodes(tree).find(node => node.type === 'FormControlLabel' && node.props.label.endsWith(name)).props.control;
+const checkbox = (tree, name) => nodes(tree).find(node => node.type === 'FormControlLabel' && (typeof node.props.label === 'string' ? node.props.label : (node.props.label.props.children ?? '')).endsWith(name)).props.control;
 const applyButton = tree => nodes(tree).find(node => node.type === 'Button' && node.props.variant === 'contained');
 const fixture = { width: 1024, height: 1024, steps: 14, guidanceScale: 7, seed: 0, smea: false, promptGuidanceRescale: 0,
   positivePrompt: 'PRIVATE_PROMPT_CONTENT', negativePrompt: 'PRIVATE_NEGATIVE_CONTENT', characterTabs: [{ prompt: 'PRIVATE_CHARACTER_CONTENT' }] };
@@ -98,4 +98,84 @@ test('普通图片没有元数据时仍能选择用途，关闭后释放预览�
   assert.deepEqual(actions, ['vibe']);
   page.setProps({ open: false }); page.render();
   assert.deepEqual(page.revoked, ['blob:ordinary.png']);
+});
+
+
+test('主动查看才展示完整元数据，返回时保留导入选择且不自动应用', () => {
+  const results = [], page = mount({ metadata: fixture, onApply: data => results.push(data) });
+  checkbox(page.render(), 'importSeed').props.onChange(null, true);
+  nodes(page.render()).find(node => node.type === 'Button' && node.props.children.endsWith('viewMetadata')).props.onClick();
+  let tree = page.render();
+  assert.match(JSON.stringify(tree), /PRIVATE_PROMPT_CONTENT/);
+  assert.match(JSON.stringify(tree), /PRIVATE_NEGATIVE_CONTENT/);
+  assert.match(JSON.stringify(tree), /PRIVATE_CHARACTER_CONTENT/);
+  assert.ok(nodes(tree).some(node => node.type === 'TableCell' && node.props.children === '0'));
+  assert.match(JSON.stringify(tree), /painting.tools.common.off/);
+  assert.equal(results.length, 0);
+  nodes(tree).find(node => node.type === 'IconButton' && node.props['aria-label'].endsWith('backToImageActions')).props.onClick();
+  tree = page.render();
+  assert.doesNotMatch(JSON.stringify(tree), /PRIVATE_/);
+  assert.equal(checkbox(tree, 'importSeed').props.checked, true);
+});
+
+test('无元数据时显示明确空状态，读取中暂不能查看', () => {
+  const page = mount({ metadata: null, reading: true });
+  let button = nodes(page.render()).find(node => node.type === 'Button' && node.props.children.endsWith('viewMetadata'));
+  assert.equal(button.props.disabled, true);
+  page.setProps({ reading: false });
+  button = nodes(page.render()).find(node => node.type === 'Button' && node.props.children.endsWith('viewMetadata'));
+  button.props.onClick();
+  assert.match(JSON.stringify(page.render()), /painting.tools.metadata.noMetadata/);
+});
+
+test('读取结果到达时不重置用户选择或预览地址，重新打开才恢复默认', () => {
+  const file = { name: 'incoming.png' };
+  const page = mount({ imageFile: file, metadata: fixture });
+  checkbox(page.render(), 'importSeed').props.onChange(null, true);
+  page.setProps({ metadata: { ...fixture, steps: 28 } });
+  assert.equal(checkbox(page.render(), 'importSeed').props.checked, true);
+  assert.equal(page.revoked.length, 0);
+  page.setProps({ open: false }); page.render();
+  page.setProps({ open: true });
+  assert.equal(checkbox(page.render(), 'importSeed').props.checked, false);
+});
+
+
+test('详情中可只选择单个生成参数，返回后显示部分选择状态', () => {
+  let result;
+  const page = mount({ metadata: fixture, onApply: data => { result = data; } });
+  nodes(page.render()).find(node => node.type === 'Button' && node.props.children.endsWith('viewMetadata')).props.onClick();
+  let tree = page.render();
+  nodes(tree).find(node => node.type === 'Checkbox' && node.props.inputProps?.['aria-label'].endsWith('.width')).props.onChange(null, true);
+  tree = page.render();
+  assert.equal(checkbox(tree, 'importSettings').props.indeterminate, true);
+  applyButton(tree).props.onClick();
+  assert.equal(result.width, 1024);
+  assert.equal(Object.hasOwn(result, 'height'), false);
+  assert.equal(Object.hasOwn(result, 'seed'), false);
+});
+
+test('详情关闭直接退出一次，返回用途后复用同一张图片', () => {
+  let closes = 0;
+  const actions = [], file = { name: 'reuse.png' };
+  const page = mount({ imageFile: file, imageActions: ['img2img'], metadata: fixture, onClose: () => closes++, onUseImage: target => actions.push(target) });
+  nodes(page.render()).find(node => node.type === 'Button' && node.props.children.endsWith('viewMetadata')).props.onClick();
+  nodes(page.render()).find(node => node.type === 'IconButton' && node.props['aria-label'].endsWith('.close')).props.onClick();
+  assert.equal(closes, 1);
+  nodes(page.render()).find(node => node.type === 'IconButton' && node.props['aria-label'].endsWith('backToImageActions')).props.onClick();
+  nodes(page.render()).find(node => node.type === 'Button' && node.props.children.endsWith('useImage.img2img')).props.onClick();
+  assert.deepEqual(actions, ['img2img']);
+  assert.equal(page.revoked.length, 0);
+});
+
+
+test('详情中排除单个角色时只导入仍被选中的角色', () => {
+  let result;
+  const characters = [{ name: 'first', prompt: 'one' }, { name: 'second', prompt: 'two' }];
+  const page = mount({ metadata: { ...fixture, characterTabs: characters }, onApply: data => { result = data; } });
+  nodes(page.render()).find(node => node.type === 'Button' && node.props.children.endsWith('viewMetadata')).props.onClick();
+  nodes(page.render()).find(node => node.type === 'Checkbox' && node.props.inputProps?.['aria-label'].endsWith('importCharacters 2')).props.onChange(null, false);
+  applyButton(page.render()).props.onClick();
+  assert.equal(result.characterTabs.length, 1);
+  assert.equal(result.characterTabs[0].name, 'first');
 });

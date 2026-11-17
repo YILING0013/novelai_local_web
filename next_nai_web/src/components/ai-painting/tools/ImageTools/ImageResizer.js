@@ -78,53 +78,35 @@ function gcd(a, b) {
     };
   }
   
-  // 根据原图尺寸和允许分辨率，挑选最合适的目标尺寸
+  // 比例误差控制在最接近比例的 3% 范围内，再兼顾像素面积，避免精确比例只剩很小的尺寸。
   function pickTargetResolution(origWidth, origHeight, allowedResolutions) {
+    // 已符合允许尺寸的图片保持原样，避免上传确认与实际缩放不一致。
+    const exactMatch = allowedResolutions.find(([width, height]) => width === origWidth && height === origHeight);
+    if (exactMatch) return exactMatch;
     const inputRatio = origWidth / origHeight;
-    
-    // 找出比例最接近的分辨率
-    let bestDiff = Infinity;
-    allowedResolutions.forEach(([w, h]) => {
-      const diff = Math.abs(w / h - inputRatio);
-      if (diff < bestDiff) {
-        bestDiff = diff;
+    const candidates = allowedResolutions.map(([width, height]) => ({
+      width, height, area: width * height,
+      // 横图与竖图使用相同的相对比例误差。
+      ratioError: Math.abs(Math.log((width / height) / inputRatio)),
+    }));
+    const bestRatioError = Math.min(...candidates.map(candidate => candidate.ratioError));
+    const maxArea = Math.max(...candidates.map(candidate => candidate.area));
+    const ratioTolerance = Math.log(1.03);
+    let bestScore = Infinity;
+    let bestCandidate;
+    for (const candidate of candidates) {
+      if (candidate.ratioError > bestRatioError + ratioTolerance + 1e-10) continue;
+      // 面积权重为 0.1：在比例接近时，保留更多像素比极小的比例优势更重要。
+      const score = candidate.ratioError + 0.1 * (1 - candidate.area / maxArea);
+      if (score < bestScore - 1e-10
+        || (Math.abs(score - bestScore) <= 1e-10 && candidate.area > bestCandidate.area)) {
+        bestScore = score;
+        bestCandidate = candidate;
       }
-    });
-
-    // 获取比例差异在可接受范围内的候选项
-    const diffThreshold = bestDiff * 1.1; // 允许10%的比例差异
-    const ratioCandidates = allowedResolutions.filter(
-      ([w, h]) => Math.abs(w / h - inputRatio) <= diffThreshold
-    );
-
-    // 按面积（像素总数）从大到小排序
-    ratioCandidates.sort((a, b) => (b[0] * b[1]) - (a[0] * a[1]));
-    
-    // 尝试找到比原图大但不超过2048的最小候选
-    const biggerCandidates = ratioCandidates.filter(
-      ([w, h]) => w >= origWidth && h >= origHeight && w <= 2048 && h <= 2048
-    );
-    
-    if (biggerCandidates.length > 0) {
-      // 返回面积最小的那个大分辨率（更接近原图）
-      return biggerCandidates.reduce((acc, cur) => 
-        cur[0] * cur[1] < acc[0] * acc[1] ? cur : acc
-      );
     }
-
-    // 如果没有更大的合适尺寸，尝试找到比例接近且尽量不损失太多分辨率的
-    const smallerCandidates = ratioCandidates.filter(
-      ([w, h]) => (w * h) >= (origWidth * origHeight * 0.7) // 至少保留70%的像素
-    );
-    
-    if (smallerCandidates.length > 0) {
-      return smallerCandidates[0]; // 已经按面积排序，取最大的
-    }
-    
-    // 如果没有合适的候选，返回面积最大的那个比例接近的分辨率
-    return ratioCandidates[0] || allowedResolutions[0];
+    return [bestCandidate.width, bestCandidate.height];
   }
-  
+
   // 使用 Canvas 进行彩色图像缩放 - 优化视觉质量
   function resizeImageCanvas(img, targetWidth, targetHeight) {
     const canvas = document.createElement("canvas");
@@ -186,7 +168,13 @@ function gcd(a, b) {
     return error;
   }
 
+  /**
+   * 将图片缩放到比例接近且像素较多的允许尺寸，与上传前显示的建议尺寸保持一致。
+   * @param {File|string} input 图片文件、DataURL、base64 或 URL。
+   * @returns {Promise<{dataURL: string, width: number, height: number}>} 缩放后的 PNG 与宽高。
+   */
   export async function resizeImage(input) {
+
     const allowedResolutions = generateOptimizedAllowedResolutions();
     const dataURL = await convertToDataURL(input);
     const img = await loadImage(dataURL);
