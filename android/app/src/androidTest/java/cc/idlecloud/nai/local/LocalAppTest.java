@@ -89,9 +89,11 @@ public class LocalAppTest {
                 Thread.sleep(250);
             }
             assertEquals("true", evaluate(activity, "Boolean(document.querySelector('form input[type=password]'))"));
+            evaluate(activity, "document.querySelector('[data-mobile-titlebar] button[aria-haspopup=menu]').click()");
+            waitFor(activity, "Boolean(document.querySelector('[role=menuitem]'))");
             assertEquals("true", evaluate(activity, """
                     (() => {
-                      const link = [...document.querySelectorAll('button')].find(x => /本机工具|Local tools/.test(x.innerText));
+                      const link = [...document.querySelectorAll('[role=menuitem]')].find(x => /本机工具|Local tools/.test(x.innerText));
                       link?.click();
                       return Boolean(link);
                     })()
@@ -103,6 +105,7 @@ public class LocalAppTest {
             }
             assertEquals("\"CPUExecutionProvider\"", evaluate(activity, "window.androidSmoke"));
             assertEquals("\"#/local\"", evaluate(activity, "location.hash"));
+            waitFor(activity, "document.querySelectorAll('[role=tab]').length >= 6");
             evaluate(activity, """
                     window.androidSave = null;
                     window.novelaiSaveFile(new Blob(['fixture'], { type: 'text/plain' }), 'android-fixture.txt')
@@ -128,6 +131,125 @@ public class LocalAppTest {
                 Thread.sleep(250);
             }
             assertEquals("false", evaluate(activity, "window.androidSave"));
+        }
+    }
+
+    private static void waitFor(ActivityScenario<MainActivity> activity, String expression) throws Exception {
+        for (int i = 0; i < 50; i++) {
+            if ("true".equals(evaluate(activity, expression))) return;
+            Thread.sleep(250);
+        }
+        fail("Expected UI condition: " + expression);
+    }
+
+    private static void capture(ActivityScenario<MainActivity> activity, String name) throws Exception {
+        // DOM 状态和屏幕合成分属两个线程，等待 WebView 提交画面后再拍摄。
+        CountDownLatch visualState = new CountDownLatch(1);
+        activity.onActivity(main -> main.getBridge().getWebView().postVisualStateCallback(0, new WebView.VisualStateCallback() {
+            @Override public void onComplete(long requestId) { visualState.countDown(); }
+        }));
+        assertTrue("WebView did not render", visualState.await(5, TimeUnit.SECONDS));
+        Thread.sleep(400);
+        UiAutomation system = InstrumentationRegistry.getInstrumentation().getUiAutomation();
+        system.waitForIdle(400, 5000);
+        android.graphics.Bitmap picture = system.takeScreenshot();
+        assertNotNull(picture);
+        java.io.File path = new java.io.File(InstrumentationRegistry.getInstrumentation().getTargetContext().getCacheDir(), name + ".png");
+        try (java.io.FileOutputStream output = new java.io.FileOutputStream(path)) {
+            assertTrue(picture.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output));
+        }
+    }
+
+    private static void pressBack() throws Exception {
+        UiAutomation system = InstrumentationRegistry.getInstrumentation().getUiAutomation();
+        try (var key = new ParcelFileDescriptor.AutoCloseInputStream(system.executeShellCommand("input keyevent KEYCODE_BACK"))) {
+            assertEquals(-1, key.read());
+        }
+    }
+
+    @Test
+    public void nativeMobileWorkspacesAndSettingsLayout() throws Exception {
+        try (ActivityScenario<MainActivity> activity = ActivityScenario.launch(MainActivity.class)) {
+            activity.onActivity(main -> main.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT));
+            waitFor(activity, "Boolean(document.querySelector('form input[type=password]'))");
+            // 只替换当前 WebView 的账户快照。模型、设置和图库仍经由原生桥接，不访问官方账户。
+            evaluate(activity, """
+                    (() => {
+                      const request = window.fetch;
+                      const snapshot = { subscription: { active: true, tier: 3 }, anlas: { total: 500 }, information: {} };
+                      window.fetch = (input, init) => {
+                        const path = new URL(input instanceof Request ? input.url : input, location.href).pathname;
+                        if (path === '/api/session') return Promise.resolve(Response.json({ authenticated: true, account_snapshot: snapshot }));
+                        if (path === '/api/account') return Promise.resolve(Response.json({ account_snapshot: snapshot }));
+                        return request(input, init);
+                      };
+                      location.hash = '#/main';
+                    })()
+                    """);
+            waitFor(activity, "Boolean(document.querySelector('[data-testid=mobile-generation-toolbar]'))");
+            capture(activity, "painting");
+            String footer = evaluate(activity, """
+                    (() => {
+                      const bar = document.querySelector('[data-mobile-generation-footer]');
+                      const rect = bar.getBoundingClientRect();
+                      return { height: rect.height, bottom: rect.bottom, windowHeight: innerHeight,
+                        titleBar: document.querySelector('[data-mobile-titlebar]').getBoundingClientRect().height,
+                        root: document.querySelector('#root').getBoundingClientRect().height };
+                    })()
+                    """);
+            JSONObject bounds = new JSONObject(footer);
+            assertTrue(footer, bounds.getDouble("height") >= 44 && bounds.getDouble("height") < 76
+                    && bounds.getDouble("bottom") <= bounds.getDouble("windowHeight") + 1);
+            evaluate(activity, "document.querySelector('[data-mobile-generation-footer] button[aria-label=打开参数面板], [data-mobile-generation-footer] button[aria-label=\"Open parameters\"]').click()");
+            waitFor(activity, "getComputedStyle(document.querySelector('[data-mobile-parameter-header]')).visibility === 'visible'");
+            pressBack();
+            waitFor(activity, "getComputedStyle(document.querySelector('[data-mobile-parameter-header]')).visibility === 'hidden'");
+            evaluate(activity, "document.querySelector('[data-mobile-titlebar] button[aria-controls=main-navigation]').click()");
+            waitFor(activity, "document.querySelector('[data-mobile-titlebar] button[aria-controls=main-navigation]').getAttribute('aria-expanded') === 'true'");
+            waitFor(activity, "document.querySelectorAll('#main-navigation [aria-pressed]').length === 3");
+            capture(activity, "sidebar");
+            evaluate(activity, "document.querySelectorAll('#main-navigation [aria-pressed]')[1].click()");
+            waitFor(activity, "document.querySelectorAll('#main-navigation [aria-pressed]')[1]?.getAttribute('aria-pressed') === 'true'");
+            capture(activity, "inpaint");
+            evaluate(activity, "document.querySelector('[data-mobile-titlebar] button[aria-controls=main-navigation]').click()");
+            evaluate(activity, "document.querySelectorAll('#main-navigation [aria-pressed]')[2].click()");
+            waitFor(activity, "Boolean(document.querySelector('[data-comic-toolbar]'))");
+            waitFor(activity, "document.querySelector('[data-comic-dock]')?.getClientRects().length === 0");
+            waitFor(activity, "document.querySelector('[data-testid=comic-viewport]')?.getBoundingClientRect().height > 180");
+            capture(activity, "comic");
+            evaluate(activity, "document.querySelector('[data-comic-toolbar] button[aria-label=绘图工具], [data-comic-toolbar] button[aria-label=\"Drawing tools\"]').click()");
+            waitFor(activity, "getComputedStyle(document.querySelector('#comic-tools-title')).visibility === 'visible'");
+            capture(activity, "comic-tools");
+            pressBack();
+            waitFor(activity, "getComputedStyle(document.querySelector('#comic-tools-title')).visibility === 'hidden'");
+            evaluate(activity, "document.querySelector('[data-comic-toolbar] button[aria-label=参数], [data-comic-toolbar] button[aria-label=Parameters]').click()");
+            waitFor(activity, "document.querySelector('[data-comic-dock]').getClientRects().length > 0");
+            pressBack();
+            waitFor(activity, "document.querySelector('[data-comic-dock]').getClientRects().length === 0");
+            activity.onActivity(main -> main.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE));
+            waitFor(activity, "innerWidth > innerHeight && document.querySelector('[data-testid=comic-viewport]').getBoundingClientRect().height > 150");
+            capture(activity, "comic-landscape");
+            activity.onActivity(main -> main.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT));
+            waitFor(activity, "innerHeight > innerWidth");
+
+            evaluate(activity, "location.hash = '#/main?page=image-processing'");
+            waitFor(activity, "document.querySelector('.mobile-tool-trigger')?.getBoundingClientRect().width >= 40");
+            waitFor(activity, "getComputedStyle(document.querySelector('.image-processing-editor .tool-rail')).display === 'none'");
+            evaluate(activity, "document.querySelector('.mobile-tool-trigger').click()");
+            waitFor(activity, "document.querySelectorAll('.mobile-tool-colors input[type=color]').length === 2");
+            capture(activity, "image-processing");
+            pressBack();
+            waitFor(activity, "document.querySelector('.mobile-tool-colors') === null");
+
+            evaluate(activity, "location.hash = '#/main?page=settings'");
+            waitFor(activity, "Boolean(document.querySelector('[data-mobile-settings-header]'))");
+            waitFor(activity, "Boolean(document.querySelector('[data-mobile-settings-section=appearance]'))");
+            capture(activity, "settings");
+            evaluate(activity, "document.querySelector('[data-mobile-settings-section=appearance]').click()");
+            waitFor(activity, "location.hash.includes('section=appearance') && Boolean(document.querySelector('#settings-panel-appearance'))");
+            capture(activity, "settings-detail");
+            evaluate(activity, "document.querySelector('[data-mobile-settings-header] button').click()");
+            waitFor(activity, "!location.hash.includes('section=')");
         }
     }
 

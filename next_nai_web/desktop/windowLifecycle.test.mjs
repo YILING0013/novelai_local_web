@@ -52,7 +52,10 @@ function mount(file, { local = false } = {}) {
       HashRouter: 'HashRouter', useLocation: () => ({ pathname: '/main' }), useNavigate: () => () => {},
       useSearchParams: () => [params, next => { params = new URLSearchParams(next); dirty = true; }],
     },
-    '@mui/material': new Proxy({}, { get: (_, name) => name }),
+    '@mui/material': new Proxy({
+      useTheme: () => ({ breakpoints: { down: () => '' } }),
+      useMediaQuery: () => false,
+    }, { get: (values, name) => values[name] || name }),
     '@mui/icons-material': new Proxy({}, { get: (_, name) => name }),
     'lucide-react': { PanelLeft: 'PanelLeft' },
     '@tauri-apps/api/window': { getCurrentWindow: () => nativeWindow },

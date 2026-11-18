@@ -1,9 +1,10 @@
 "use client";
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, Avatar, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel, IconButton, Stack, Tab, Tabs, TextField, Typography, alpha, useMediaQuery, useTheme } from '@mui/material';
-import { AccountCircle as AccountIcon, Close as CloseIcon, Paid as PaidIcon, Refresh as RefreshIcon, Star as StarIcon, VerifiedUser as VerifiedUserIcon, VpnKey as KeyIcon } from '@mui/icons-material';
+import { AccountCircle as AccountIcon, ArrowBack, Close as CloseIcon, Paid as PaidIcon, Refresh as RefreshIcon, Star as StarIcon, VerifiedUser as VerifiedUserIcon, VpnKey as KeyIcon } from '@mui/icons-material';
 import apiClient from '@/utils/ApiClient';
 import { useI18n } from '@/i18n/I18nProvider';
+import MobileSettingsList from '../settings/MobileSettingsList';
 
 const SummaryMetric = ({ label, value, hint, color = 'text.primary' }) => (
   <Box sx={{ minWidth: 0, py: 1 }}>
@@ -38,16 +39,28 @@ const DetailRow = ({ label, value, hint, statusColor }) => (
   </Stack>
 );
 
-const AccountDialog = ({ open, onClose, accountSnapshot, onAccountSnapshot, onLogout }) => {
+const AccountDialog = ({ open, onClose, accountSnapshot, onAccountSnapshot, onLogout, androidLayout = false }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const compactAndroid = androidLayout && isMobile;
   const { t, formatDate, formatNumber } = useI18n();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [section, setSection] = useState(null);
   const [credentialTab, setCredentialTab] = useState(0);
   const [passwordForm, setPasswordForm] = useState({ current: '', next: '', backup: false });
   const [emailForm, setEmailForm] = useState({ current: '', next: '', backup: false });
+  useEffect(() => {
+    if (!compactAndroid || !open || !section) return;
+    const goBack = (event) => {
+      if (event.defaultPrevented || !event.detail?.hasAttribute('data-mobile-account')) return;
+      event.preventDefault();
+      setSection(null);
+    };
+    window.addEventListener('mobile-back', goBack);
+    return () => window.removeEventListener('mobile-back', goBack);
+  }, [compactAndroid, open, section]);
 
   const refreshAccount = useCallback(async () => {
     setLoading(true);
@@ -184,12 +197,24 @@ const AccountDialog = ({ open, onClose, accountSnapshot, onAccountSnapshot, onLo
     : accountSnapshot?.information?.trial_activated === false
       ? t('main.local.trialNotActivated')
       : unavailable;
+  const securityEnabled = accountSnapshot?.auth?.can_manage_credentials === true;
+  const sections = compactAndroid ? [
+    { id: 'account', label: t('main.local.accountSection'), icon: <AccountIcon /> },
+    { id: 'quota', label: t('main.local.subscriptionAndQuota'), icon: <PaidIcon /> },
+    ...(securityEnabled ? [{ id: 'credentials', label: t('main.local.credentialSettings'), icon: <KeyIcon /> }] : []),
+  ] : [];
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth fullScreen={isMobile} PaperProps={{
+      'data-mobile-account': compactAndroid ? '' : undefined,
       sx: { borderRadius: { xs: 0, sm: 2 }, boxShadow: '0 8px 32px rgba(0,0,0,0.12)' },
     }}>
-      <DialogTitle sx={{
+      {compactAndroid ? <DialogTitle sx={{ display: 'flex', alignItems: 'center', px: 1, py: 0, gap: 1, minHeight: 56, borderBottom: 1, borderColor: 'divider' }}>
+        <IconButton aria-label={t('common.back')} onClick={() => section ? setSection(null) : onClose()}><ArrowBack /></IconButton>
+        <Typography variant="h6" sx={{ flex: 1, minWidth: 0 }}>{sections.find((item) => item.id === section)?.label || t('main.accountInfo')}</Typography>
+        <IconButton aria-label={t('main.accountDialog.refreshData')} disabled={loading} onClick={refreshAccount}
+          sx={{ borderRadius: 2, bgcolor: 'action.hover' }}><RefreshIcon /></IconButton>
+      </DialogTitle> : <DialogTitle sx={{
         fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`, pb: 2,
       }}>
@@ -203,8 +228,8 @@ const AccountDialog = ({ open, onClose, accountSnapshot, onAccountSnapshot, onLo
         }}>
           <CloseIcon fontSize="small" />
         </IconButton>
-      </DialogTitle>
-      <DialogContent sx={{ px: { xs: 2, sm: 3 }, py: { xs: 2, sm: 3 } }}>
+      </DialogTitle>}
+      <DialogContent sx={{ px: { xs: 2, sm: 3 }, py: { xs: 2, sm: 3 }, bgcolor: compactAndroid ? 'background.default' : undefined }}>
         {accountSnapshot?.stale === true && (
           <Alert severity="warning" sx={{ mb: 2 }}>{t('main.local.staleAccount')}</Alert>
         )}
@@ -212,9 +237,11 @@ const AccountDialog = ({ open, onClose, accountSnapshot, onAccountSnapshot, onLo
         {notice && <Alert severity="success" sx={{ mb: 2 }}>{notice}</Alert>}
         {loading && !accountSnapshot ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress size={40} /></Box>
+        ) : compactAndroid && !section ? (
+          <MobileSettingsList items={sections} onSelect={setSection} label={t('main.accountInfo')} />
         ) : (
           <>
-            <Box sx={{
+            {(!compactAndroid || section === 'account') && <Box sx={{
               p: { xs: 2, sm: 2.5 }, mb: 3, border: '1px solid',
               borderColor: alpha(theme.palette.primary.main, 0.18), borderRadius: 2.5,
               background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.11)}, ${alpha(theme.palette.background.paper, 0.35)})`,
@@ -263,13 +290,14 @@ const AccountDialog = ({ open, onClose, accountSnapshot, onAccountSnapshot, onLo
                       ? t('main.local.notInGracePeriod')
                       : unavailable} />
               </Box>
-            </Box>
+            </Box>}
 
+            {(!compactAndroid || section !== 'credentials') && (
             <Box sx={{
               display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'repeat(2, minmax(0, 1fr))' },
               gap: { xs: 2.5, md: 0 },
             }}>
-              <Box sx={{ minWidth: 0, pr: { md: 3 } }}>
+              {(!compactAndroid || section === 'account') && <Box sx={{ minWidth: 0, pr: { md: 3 } }}>
                 <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <VerifiedUserIcon sx={{ fontSize: 20, color: theme.palette.primary.main }} />
                   {t('main.local.accountSection')}
@@ -287,11 +315,11 @@ const AccountDialog = ({ open, onClose, accountSnapshot, onAccountSnapshot, onLo
                     statusColor={isBanned ? 'error' : accountSnapshot?.information?.ban_status === null
                       || accountSnapshot?.information?.ban_status === undefined ? 'default' : 'success'} />
                 </Stack>
-              </Box>
+              </Box>}
 
-              <Box sx={{
+              {(!compactAndroid || section === 'quota') && <Box sx={{
                 minWidth: 0, pl: { md: 3 }, pt: { xs: 2.5, md: 0 },
-                borderLeft: { md: '1px solid' }, borderTop: { xs: '1px solid', md: 'none' }, borderColor: 'divider',
+                borderLeft: { md: '1px solid' }, borderTop: compactAndroid ? 0 : { xs: '1px solid', md: 'none' }, borderColor: 'divider',
               }}>
                 <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <PaidIcon sx={{ fontSize: 20, color: theme.palette.primary.main }} />
@@ -317,10 +345,10 @@ const AccountDialog = ({ open, onClose, accountSnapshot, onAccountSnapshot, onLo
                     value={durationValue(accountSnapshot?.v5?.time_until_next_percent)} />
                   <DetailRow label={t('main.local.refreshedAt')} value={timestampValue(accountSnapshot?.refreshed_at)} />
                 </Stack>
-              </Box>
-            </Box>
+              </Box>}
+            </Box>)}
 
-            {accountSnapshot?.auth?.can_manage_credentials === true && (
+            {securityEnabled && (!compactAndroid || section === 'credentials') && (
               <Box sx={{ mt: 3, pt: 2.5, borderTop: '1px solid', borderColor: 'divider' }}>
                 <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <KeyIcon sx={{ fontSize: 20, color: theme.palette.primary.main }} />
@@ -369,14 +397,14 @@ const AccountDialog = ({ open, onClose, accountSnapshot, onAccountSnapshot, onLo
           </>
         )}
       </DialogContent>
-      <DialogActions sx={{ px: { xs: 2, sm: 3 }, py: 2, gap: 0.5, borderTop: `1px solid ${alpha(theme.palette.divider, 0.1)}` }}>
+      {!compactAndroid && <DialogActions sx={{ px: { xs: 2, sm: 3 }, py: 2, gap: 0.5, borderTop: `1px solid ${alpha(theme.palette.divider, 0.1)}` }}>
         <Button onClick={logout} color="error" disabled={loading}>{t('main.logout')}</Button>
         <Box sx={{ flexGrow: 1 }} />
         <Button onClick={onClose} variant="outlined">{t('common.close')}</Button>
         <Button variant="contained" onClick={refreshAccount} startIcon={<RefreshIcon />} disabled={loading}>
           {t('main.accountDialog.refreshData')}
         </Button>
-      </DialogActions>
+      </DialogActions>}
     </Dialog>
   );
 };

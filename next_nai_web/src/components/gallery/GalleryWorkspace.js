@@ -4,7 +4,7 @@ import { createClientId } from '@/utils/browserCapabilities.mjs';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Box, Button, ButtonBase, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, InputAdornment, LinearProgress, Menu, MenuItem, Snackbar, Stack, TextField, Tooltip, Typography, useMediaQuery, useTheme } from '@mui/material';
-import { AddPhotoAlternateOutlined, CheckBoxOutlined, Close, CreateNewFolderOutlined, DeleteOutline, DeleteForeverOutlined, ArrowBack, DescriptionOutlined, DriveFileMoveOutlined, ImageOutlined, PaletteOutlined, Refresh, RestoreFromTrashOutlined, Search, FilterAltOutlined, History, BookmarkAddOutlined, ExpandMore } from '@mui/icons-material';
+import { AddPhotoAlternateOutlined, CheckBoxOutlined, Close, CreateNewFolderOutlined, DeleteOutline, DeleteForeverOutlined, ArrowBack, DescriptionOutlined, DriveFileMoveOutlined, ImageOutlined, PaletteOutlined, Refresh, RestoreFromTrashOutlined, Search, FilterAltOutlined, History, BookmarkAddOutlined, ExpandMore, MoreVert, SettingsOutlined } from '@mui/icons-material';
 import apiClient from '@/utils/ApiClient';
 import { useI18n } from '@/i18n/I18nProvider';
 import GalleryDetailDialog from './GalleryDetailDialog';
@@ -19,11 +19,12 @@ const EMPTY_FILTERS = { model: '', orientation: '', tags: '', negative_tags: '',
  * @param {object} props source 为 references 或 outputs；onSourceChange 切换来源，onBusyChange 让外部导航等当前操作结束。分组不移动原图。
  * @returns {React.ReactElement} 图片浏览、分组、批量操作和详情工作区。
  */
-export default function GalleryWorkspace({ source = 'outputs', onSourceChange, onBusyChange, workContext, onWorkContextChange }) {
-  const { t } = useI18n();
+export default function GalleryWorkspace({ androidLayout = false, source = 'outputs', onSourceChange, onBusyChange, workContext, onWorkContextChange }) {
+  const { t, locale } = useI18n();
   const theme = useTheme();
   const tablet = useMediaQuery(theme.breakpoints.up('sm'));
   const desktop = useMediaQuery(theme.breakpoints.up('md'));
+  const compactAndroid = androidLayout && !desktop;
   const wide = useMediaQuery(theme.breakpoints.up('xl'));
   const columns = wide ? 5 : desktop ? 4 : tablet ? 3 : 2;
   const [items, setItems] = useState([]);
@@ -60,6 +61,7 @@ export default function GalleryWorkspace({ source = 'outputs', onSourceChange, o
   const [collectionDialog, setCollectionDialog] = useState(false);
   const [deleteCollection, setDeleteCollection] = useState(null);
   const [sourceMenu, setSourceMenu] = useState(null);
+  const [actionsMenu, setActionsMenu] = useState(null);
   const fileInputRef = useRef(null);
   const scrollRef = useRef(null);
   const moreRef = useRef(null);
@@ -79,7 +81,7 @@ export default function GalleryWorkspace({ source = 'outputs', onSourceChange, o
     setItems([]); setGroups([]); setTotal(0); setLoading(true); setHasMore(false);
     setError(''); setNotice(''); setSelecting(false); setSelected(new Set());
     setGroupMenu(null); setNewGroupOpen(false); setNewGroupName(''); setTrashIds(null); setDeleteIds(null);
-    setMetadataTarget(null); setCollectionDialog(false); setDeleteCollection(null); setSourceMenu(null);
+    setMetadataTarget(null); setCollectionDialog(false); setDeleteCollection(null); setSourceMenu(null); setActionsMenu(null);
     setShowFilters(false); setDragging(false); dragDepthRef.current = 0;
     setFilters(EMPTY_FILTERS); setFilterDraft(EMPTY_FILTERS); setGroup(''); setQuery(''); setSearch(''); setTrash(false); setDetailId(null); setVersionTarget(null); setCollections([]);
   }, [source]);
@@ -300,7 +302,8 @@ export default function GalleryWorkspace({ source = 'outputs', onSourceChange, o
       event.preventDefault(); dragDepthRef.current = 0; setDragging(false); void importImages(Array.from(event.dataTransfer.files));
     }}>
     <Stack spacing={1.5} sx={{ mb: 2 }}>
-      <Typography component="h1" variant="h5" sx={{ fontSize: { xs: 20, sm: 24 }, minWidth: 0 }}>
+      <Stack data-gallery-toolbar direction="row" alignItems="center" gap={.5}>
+      <Typography component="h1" variant="h5" sx={{ fontSize: { xs: 20, sm: 24 }, minWidth: 0, flex: 1 }}>
         <Button id="gallery-source-button" color="inherit" disabled={sourceLocked} endIcon={<ExpandMore />}
           aria-label={t('gallery.switchSource', { title: sourceTitle })} aria-haspopup="menu"
           aria-controls={sourceMenu ? 'gallery-source-menu' : undefined} aria-expanded={Boolean(sourceMenu)}
@@ -309,22 +312,40 @@ export default function GalleryWorkspace({ source = 'outputs', onSourceChange, o
           <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sourceTitle}</Box>
         </Button>
       </Typography>
+      {compactAndroid && <Stack direction="row" gap={.25} sx={{ flexShrink: 0 }}>
+        <IconButton aria-label={t('gallery.version.title')} disabled={busy} onClick={() => setVersionTarget({ imageIds: [] })}><History /></IconButton>
+        {source === 'references' && !trash && <Button size="small" variant="contained" aria-label={t('gallery.import')}
+          sx={{ minWidth: 40, height: 44, px: 1 }} disabled={busy} onClick={() => fileInputRef.current.click()}><AddPhotoAlternateOutlined /></Button>}
+        <IconButton aria-label={locale === 'zh-CN' ? '更多操作' : 'More actions'} aria-haspopup="menu" aria-expanded={Boolean(actionsMenu)}
+          onClick={(event) => setActionsMenu(event.currentTarget)}><MoreVert /></IconButton>
+      </Stack>}
+      </Stack>
+      <Menu anchorEl={actionsMenu} open={Boolean(actionsMenu)} onClose={() => setActionsMenu(null)}>
+        <MenuItem onClick={() => { setActionsMenu(null); setShowFilters(!showFilters); }}><FilterAltOutlined sx={{ mr: 1.5 }} />{t('gallery.smart.filters')}</MenuItem>
+        <MenuItem onClick={() => { setActionsMenu(null); window.dispatchEvent(new CustomEvent('novelai:open-page', { detail: { pageId: 'settings', section: 'gallery' } })); }}>
+          <SettingsOutlined sx={{ mr: 1.5 }} />{t('settings.sections.gallery.title')}
+        </MenuItem>
+      </Menu>
       <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
         <TextField size="small" value={query} placeholder={t('gallery.search')} onChange={(event) => { setQuery(event.target.value); if (filters.collection_id) setFilters({ ...filters, collection_id: '' }); }}
-          inputProps={{ 'aria-label': t('gallery.search') }} sx={{ flex: '1 1 230px', maxWidth: { sm: 400 }, minWidth: 0, '& .MuiInputBase-root': { height: 36 } }}
+          inputProps={{ 'aria-label': t('gallery.search') }} sx={{ flex: compactAndroid ? '1 1 100%' : '1 1 230px', maxWidth: compactAndroid ? undefined : { sm: 400 }, minWidth: 0, '& .MuiInputBase-root': { height: 36 } }}
           InputProps={{ startAdornment: <InputAdornment position="start"><Search sx={{ fontSize: 19 }} /></InputAdornment> }} />
         <TextField select size="small" value={group} onChange={(event) => { setGroup(event.target.value); if (filters.collection_id) setFilters({ ...filters, collection_id: '' }); }}
           SelectProps={{ displayEmpty: true, inputProps: { 'aria-label': t('gallery.group') } }}
-          sx={{ flex: { xs: '1 1 145px', sm: '0 1 190px' }, minWidth: 130, '& .MuiInputBase-root': { height: 36 } }}>
+          sx={{ flex: compactAndroid ? 1 : { xs: '1 1 145px', sm: '0 1 190px' }, minWidth: compactAndroid ? 0 : 130, '& .MuiInputBase-root': { height: 36 } }}>
           <MenuItem value="">{t('gallery.allGroups')}</MenuItem><MenuItem value="__ungrouped">{t('gallery.ungrouped')}</MenuItem>
           {groups.map((item) => <MenuItem key={item.id} value={item.id}>{item.name} ({item.count})</MenuItem>)}
         </TextField>
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.5, ml: { md: 'auto' } }}>
+        <Box sx={{ display: 'flex', flexWrap: compactAndroid ? 'nowrap' : 'wrap', alignItems: 'center', gap: compactAndroid ? 0 : 0.5, ml: { md: 'auto' }, flexShrink: compactAndroid ? 0 : undefined }}>
+          {!compactAndroid && <>
           <Button size="small" sx={actionButtonSx} startIcon={<History />} disabled={busy} onClick={() => setVersionTarget({ imageIds: [] })}>{t('gallery.version.title')}</Button>
           <Button size="small" sx={actionButtonSx} startIcon={<FilterAltOutlined />} variant={showFilters ? 'outlined' : 'text'} onClick={() => setShowFilters(!showFilters)}>{t('gallery.smart.filters')}</Button>
           {source === 'references' && !trash && <Button size="small" variant="contained" sx={actionButtonSx} startIcon={<AddPhotoAlternateOutlined />} disabled={busy} onClick={() => fileInputRef.current.click()}>{t('gallery.import')}</Button>}
+          </>}
           <Tooltip title={t('gallery.newGroup')}><IconButton size="small" aria-label={t('gallery.newGroup')} disabled={busy || trash} onClick={() => { setError(''); setNewGroupOpen(true); }}><CreateNewFolderOutlined fontSize="small" /></IconButton></Tooltip>
-          <Button size="small" sx={actionButtonSx} variant={selecting ? 'outlined' : 'text'} startIcon={selecting ? <Close /> : <CheckBoxOutlined />} onClick={() => { setSelecting(!selecting); setSelected(new Set()); }}>{t(selecting ? 'gallery.doneSelecting' : 'gallery.select')}</Button>
+          {compactAndroid ? <IconButton aria-label={t(selecting ? 'gallery.doneSelecting' : 'gallery.select')} color={selecting ? 'primary' : 'default'}
+            onClick={() => { setSelecting(!selecting); setSelected(new Set()); }}>{selecting ? <Close /> : <CheckBoxOutlined />}</IconButton>
+            : <Button size="small" sx={actionButtonSx} variant={selecting ? 'outlined' : 'text'} startIcon={selecting ? <Close /> : <CheckBoxOutlined />} onClick={() => { setSelecting(!selecting); setSelected(new Set()); }}>{t(selecting ? 'gallery.doneSelecting' : 'gallery.select')}</Button>}
           <Tooltip title={t('gallery.refresh')}><IconButton size="small" aria-label={t('gallery.refresh')} disabled={loading || busy} onClick={() => { setError(''); setRevision((value) => value + 1); }}><Refresh fontSize="small" /></IconButton></Tooltip>
           <Tooltip title={t(trash ? 'gallery.returnToGallery' : 'gallery.recycleBin')}><IconButton size="small" aria-label={t(trash ? 'gallery.returnToGallery' : 'gallery.recycleBin')} color={trash ? 'primary' : 'default'} onClick={() => { setTrash(!trash); setError(''); if (filters.collection_id) setFilters({ ...filters, collection_id: '' }); }} >{trash ? <ArrowBack fontSize="small" /> : <DeleteOutline fontSize="small" />}</IconButton></Tooltip>
         </Box>
@@ -410,7 +431,7 @@ export default function GalleryWorkspace({ source = 'outputs', onSourceChange, o
     <Dialog open={Boolean(trashIds)} onClose={() => !busy && setTrashIds(null)} fullWidth maxWidth="xs"><DialogTitle>{t('gallery.trashConfirm', { count: trashIds?.length || 0 })}</DialogTitle>
       <DialogContent>{error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}<Typography variant="body2">{t('gallery.trashConfirmHint')}</Typography></DialogContent>
       <DialogActions><Button disabled={busy} onClick={() => setTrashIds(null)}>{t('gallery.cancel')}</Button><Button variant="contained" color="error" disabled={busy} onClick={async () => { const result = await batch('trash', trashIds); if (result) setTrashIds(null); }}>{t('gallery.trash')}</Button></DialogActions></Dialog>
-    {detailId && <GalleryDetailDialog key={detailId} entryId={detailId} groups={groups} operationError={error} operationBusy={busy} onClose={() => setDetailId(null)} onChanged={() => setRevision((value) => value + 1)}
+    {detailId && <GalleryDetailDialog key={detailId} androidLayout={androidLayout} entryId={detailId} groups={groups} operationError={error} operationBusy={busy} onClose={() => setDetailId(null)} onChanged={() => setRevision((value) => value + 1)}
       onVersions={(entry) => setVersionTarget({ imageIds: [entry.id], imageEntry: entry })}
       onSimilar={(entry) => { setDetailId(null); setQuery(''); setGroup(''); const next = { ...EMPTY_FILTERS, similar_to: entry.id, sort: 'similarity' }; setFilters(next); setFilterDraft(next); setShowFilters(true); }}
       onDelete={(entry) => { setError(''); setDeleteIds([entry.id]); }}

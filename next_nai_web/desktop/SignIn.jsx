@@ -3,7 +3,7 @@ import { Alert, Box, Button, Stack, TextField, Typography } from '@mui/material'
 import api from '@/utils/ApiClient';
 import { useI18n } from '@/i18n/I18nProvider';
 
-export default function SignIn({ onSuccess }) {
+export default function SignIn({ onSuccess, android = false }) {
   const { t, locale }=useI18n();
   const [password,setPassword]=useState(false),[recovery,setRecovery]=useState(false);
   const [fields,setFields]=useState({}),[busy,setBusy]=useState(false),[error,setError]=useState('');
@@ -22,14 +22,15 @@ export default function SignIn({ onSuccess }) {
       <Box sx={{position:'absolute',inset:0,background:'linear-gradient(180deg,transparent 50%,rgba(0,0,0,.62))'}}/>
       <Box sx={{position:'absolute',left:28,right:28,bottom:30,color:'#fff'}}><Typography sx={{fontSize:24,fontWeight:700,letterSpacing:2}}>NovelAI Local</Typography></Box>
     </Box>
-    <Box sx={{overflowY:'auto',display:'flex',flexDirection:'column',px:{xs:3,md:4},py:3}}>
+    <Box sx={{overflowY:'auto',minWidth:0,display:'flex',flexDirection:'column',px:{xs:android ? 2 : 3,sm:4},py:3}}>
       <Stack component="form" onSubmit={submit} spacing={2.5} sx={{width:'100%',maxWidth:360,mx:'auto',my:'auto'}}>
         <Stack direction="row" spacing={1.5} alignItems="center"><Box component="img" src="/logo.svg" alt="" width={40}/>
-          <Typography variant="h5">{recovery?t('login.local.recoveryRequired'):(locale==='zh-CN'?'登录 NovelAI':'Sign in to NovelAI')}</Typography></Stack>
+          <Box><Typography variant={android ? 'subtitle1' : 'h5'} sx={android ? { fontSize: 18, fontWeight: 700, letterSpacing: 1 } : undefined}>{recovery?t('login.local.recoveryRequired'):(locale==='zh-CN'?'登录 NovelAI':'Sign in to NovelAI')}</Typography>
+            {android && <Typography variant="caption" color="text.secondary">NovelAI Local</Typography>}</Box></Stack>
         {recovery?['source_email','source_password','target_email','target_password'].map((k,i)=>input(k,t('login.local.'+['oldEmail','oldPassword','newEmail','newPassword'][i]),i%2?'password':'email'))
           :password?<>{input('email',t('login.local.email'),'email')}{input('password',t('login.password'))}<Typography color="text.secondary" variant="caption">{t('login.local.passwordCompatibilityNotice')}</Typography></>:input('token',t('login.local.pat'))}
         {error && <Alert severity="error">{error}</Alert>}
-        <Button type="submit" size="large" variant="contained" disabled={busy}>{busy?t('login.loggingIn'):recovery?t('login.local.resolveRecovery'):t('login.login')}</Button>
+        <Button type="submit" size="large" variant="contained" disabled={busy} sx={android ? { minHeight: 44, borderRadius: 2, boxShadow: 'none', textTransform: 'none', fontWeight: 600 } : undefined}>{busy?t('login.loggingIn'):recovery?t('login.local.resolveRecovery'):t('login.login')}</Button>
         {!recovery&&<Button disabled={busy} onClick={()=>{setPassword(v=>!v);setError('')}}>{t(password?'login.local.usePat':'login.local.useEmailPassword')}</Button>}
       </Stack>
     </Box>

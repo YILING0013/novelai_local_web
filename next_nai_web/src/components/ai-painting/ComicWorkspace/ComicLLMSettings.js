@@ -19,8 +19,8 @@ const defaults = { provider: 'openai', baseUrl: protocols[0][2], model: '', stor
  * @param {object} props 打开状态、语言、关闭与已保存配置回调。
  * @returns {React.ReactElement} Provider 设置窗口。
  */
-export default function ComicLLMSettings({ open, language, disabled, onClose, onChange }) {
-  const mobile = useMediaQuery(useTheme().breakpoints.down('sm'));
+export default function ComicLLMSettings({ open, language, disabled, onClose, onChange, androidLayout = false }) {
+  const mobile = useMediaQuery(useTheme().breakpoints.down(androidLayout ? 'md' : 'sm'));
   const [configuration, setConfiguration] = useState(null);
   const [saved, setSaved] = useState(null);
   const [selectedId, setSelectedId] = useState('novelai');

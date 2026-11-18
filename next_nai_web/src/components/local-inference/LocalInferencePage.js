@@ -20,7 +20,7 @@ const terminal = new Set(['completed', 'failed', 'cancelled']);
  * @param {{kind: 'tagger'|'upscale'}} props kind 决定模型清单、参数和结果操作。
  * @returns {React.ReactElement} 连接本机 Python 后端的推理页面。
  */
-export default function LocalInferencePage({ kind }) {
+export default function LocalInferencePage({ kind, androidLayout = false }) {
   const { locale } = useI18n();
   const words = inferenceMessages[locale];
   const [environment, setEnvironment] = useState(null);
@@ -166,16 +166,7 @@ export default function LocalInferencePage({ kind }) {
   const percentage = job?.total > 0 ? Math.min(100, 100 * job.completed / job.total) : null;
   const stage = job?.status === 'cancelling' ? 'cancelling' : job?.stage;
 
-  return <Box sx={{ height: '100%', overflowY: 'auto', p: { xs: 1.5, md: 3 } }}>
-    <Stack spacing={2} sx={{ maxWidth: 1440, mx: 'auto' }}>
-      <Stack direction="row" alignItems="center" gap={1}>
-        <Typography component="h1" variant="h5" sx={{ fontWeight: 700, mr: 'auto' }}>{kind === 'tagger' ? words.taggerTitle : words.upscaleTitle}</Typography>
-        <Chip size="small" icon={<Memory />} label="Python" variant="outlined" />
-        <Tooltip title={words.refresh}><IconButton aria-label={words.refresh} onClick={() => { setError(''); void refresh(); }}><Refresh /></IconButton></Tooltip>
-      </Stack>
-      {error && <Alert severity="error" onClose={() => setError('')}>{errorText(error)}</Alert>}
-      {environment && !environment.runtime.available && <Alert severity="warning">{words.missingRuntime}</Alert>}
-      <Paper variant="outlined" sx={{ p: { xs: 1.5, md: 2 }, borderRadius: 2 }}>
+  const modelSettings = <Paper variant="outlined" sx={{ p: { xs: 1.5, md: 2 }, borderRadius: 2 }}>
         <Stack spacing={1.5}>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ md: 'center' }}>
             <TextField select size="small" fullWidth label={words.model} value={model ? modelId : ''} disabled={!environment || busy} sx={{ flex: 1.5, minWidth: 0 }} onChange={(event) => {
@@ -188,13 +179,13 @@ export default function LocalInferencePage({ kind }) {
             </TextField>
             <TextField select size="small" label={words.device} value={device} disabled={busy} sx={{ minWidth: { xs: '100%', md: 190 }, flex: 0.6 }} onChange={(event) => setDevice(event.target.value)}>
               <MenuItem value="auto">{words.auto}</MenuItem><MenuItem value="cpu">{words.cpu}</MenuItem>
-              <MenuItem value="cuda" disabled={!environment?.runtime.providers.includes('CUDAExecutionProvider')}>{words.cuda}</MenuItem>
-              <MenuItem value="directml" disabled={!environment?.runtime.providers.includes('DmlExecutionProvider')}>{words.directml}</MenuItem>
+              {!androidLayout && <MenuItem value="cuda" disabled={!environment?.runtime.providers.includes('CUDAExecutionProvider')}>{words.cuda}</MenuItem>}
+              {!androidLayout && <MenuItem value="directml" disabled={!environment?.runtime.providers.includes('DmlExecutionProvider')}>{words.directml}</MenuItem>}
             </TextField>
           </Stack>
           <Stack direction="row" gap={1} flexWrap="wrap" alignItems="center">
-            <Tooltip title={modelId.includes('pixai') ? words.fp32Help : words.modelHelp}><Chip size="small" variant="outlined" color={model?.cached ? 'success' : 'default'} label={model?.loaded ? words.modelLoaded : model?.cached ? words.modelCached : words.modelMissing} /></Tooltip>
-            <Tooltip title={words.downloadHelp}><span><Button size="small" startIcon={<Download />} disabled={!model || busy} onClick={() => start('download')}>{words.download}</Button></span></Tooltip>
+            <Tooltip title={androidLayout ? (locale === 'zh-CN' ? '在手机上下载并使用 CPU 运行模型。' : 'Models are downloaded and run on this device using the CPU.') : modelId.includes('pixai') ? words.fp32Help : words.modelHelp}><Chip size="small" variant="outlined" color={model?.cached ? 'success' : 'default'} label={model?.loaded ? words.modelLoaded : model?.cached ? words.modelCached : words.modelMissing} /></Tooltip>
+            <Tooltip title={androidLayout ? words.download : words.downloadHelp}><span><Button size="small" startIcon={<Download />} disabled={!model || busy} onClick={() => start('download')}>{words.download}</Button></span></Tooltip>
             <Button size="small" startIcon={<PlayArrow />} disabled={!model || busy || !environment?.runtime.available} onClick={() => start('load')}>{words.load}</Button>
             <Button size="small" disabled={busy || !environment?.models.some((entry) => entry.loaded)} onClick={release}>{words.release}</Button>
             <Tooltip title={`${words.location}: ${environment?.models_dir || '…'}`}><IconButton size="small" aria-label={words.location}><FolderOpen fontSize="small" /></IconButton></Tooltip>
@@ -208,8 +199,20 @@ export default function LocalInferencePage({ kind }) {
             <Tooltip title={words.upscaleHelp}><InfoOutlined fontSize="small" color="action" /></Tooltip>
           </Stack>}
         </Stack>
-      </Paper>
+      </Paper>;
+
+  return <Box sx={{ height: '100%', overflowY: 'auto', p: { xs: 1.5, md: 3 } }}>
+    <Stack spacing={2} sx={{ maxWidth: 1440, mx: 'auto' }}>
+      <Stack direction="row" alignItems="center" gap={1}>
+        <Typography component="h1" variant="h5" sx={{ fontWeight: 700, mr: 'auto', color: androidLayout ? 'primary.main' : undefined }}>{kind === 'tagger' ? words.taggerTitle : words.upscaleTitle}</Typography>
+        <Chip size="small" icon={<Memory />} label={androidLayout ? 'ONNX Runtime' : 'Python'} variant="outlined" />
+        <Tooltip title={words.refresh}><IconButton aria-label={words.refresh} onClick={() => { setError(''); void refresh(); }}><Refresh /></IconButton></Tooltip>
+      </Stack>
+      {error && <Alert severity="error" onClose={() => setError('')}>{errorText(error)}</Alert>}
+      {environment && !environment.runtime.available && <Alert severity="warning">{words.missingRuntime}</Alert>}
+      {!androidLayout && modelSettings}
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(260px, 0.85fr) minmax(0, 1.35fr)' }, gap: 2, alignItems: 'start' }}>
+        <Stack spacing={2} sx={{ minWidth: 0 }}>
         <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, minWidth: 0 }}>
           <Box onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); chooseFile(event.dataTransfer.files[0]); }}>
             <Button fullWidth disabled={busy} onClick={() => fileInput.current?.click()} sx={{ display: 'flex', flexDirection: 'column', gap: 1, bgcolor: 'action.hover', border: '1px dashed', borderColor: 'divider', minHeight: 230, p: 1.5, textTransform: 'none' }}>
@@ -218,7 +221,7 @@ export default function LocalInferencePage({ kind }) {
             <input hidden ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { chooseFile(event.target.files[0]); event.target.value = ''; }} />
           </Box>
           {imageName && <Typography variant="caption" component="p" sx={{ mt: 1, overflowWrap: 'anywhere' }}>{imageName}</Typography>}
-          <Stack direction="row" gap={1} sx={{ mt: 2 }}>
+          <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mt: 2 }}>
             <Button startIcon={<UploadFile />} disabled={busy} onClick={() => fileInput.current?.click()}>{image ? words.changeImage : words.selectImage}</Button>
             {image && <IconButton aria-label={words.clearImage} disabled={busy} onClick={() => { setImage(''); setImageName(''); setJob(null); displayedJob.current = null; }}><Close /></IconButton>}
             <Button variant="contained" startIcon={<AutoAwesome />} sx={{ ml: 'auto' }} disabled={!image || !model || busy || !environment?.runtime.available} onClick={() => start(kind)}>{kind === 'tagger' ? words.analyze : words.upscale}</Button>
@@ -235,6 +238,8 @@ export default function LocalInferencePage({ kind }) {
           </Stack>}
           {environment?.busy && !running && <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>{words.busy}</Typography>}
         </Paper>
+        {androidLayout && modelSettings}
+        </Stack>
         <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, minWidth: 0, minHeight: 300 }}>
           {kind === 'tagger' ? <Stack spacing={2}>
             <Stack direction="row" alignItems="center" flexWrap="wrap" gap={1}>

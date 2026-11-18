@@ -15,9 +15,14 @@ import {
   ButtonGroup,
   Button,
   LinearProgress,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
   CircularProgress,
   Snackbar,
   Alert,
+  useMediaQuery,
   useTheme,
 } from '@mui/material';
 import {
@@ -35,6 +40,7 @@ import {
   Refresh as RefreshIcon,
   AutoAwesome as AutoAwesomeIcon,
   OpenInFull as OpenInFullIcon,
+  MoreHoriz as MoreHorizIcon,
 } from '@mui/icons-material';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import Image from 'next/image';
@@ -409,6 +415,7 @@ ReferenceImageGallery.displayName = 'ReferenceImageGallery';
 // --- Main ItemDisplay Component ---
 
 const ItemDisplay = ({
+  androidLayout = false,
   item,
   active = true,
   onActionButtonClick,
@@ -425,8 +432,12 @@ const ItemDisplay = ({
 }) => {
   const { t } = useI18n();
   const theme = useTheme();
+  const narrow = useMediaQuery(theme.breakpoints.down('md'));
+  const compactAndroid = androidLayout && narrow;
   const [hoverToolbar, setHoverToolbar] = useState(false);
   const [hoverImage, setHoverImage] = useState(false);
+  const [imageActionsAnchor, setImageActionsAnchor] = useState(null);
+  useEffect(() => { setImageActionsAnchor(null); }, [active, item?.id]);
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'success' });
   const wrapperRef = useRef(null);
   const { isGenerating, generationStatus } = useGeneration();
@@ -777,12 +788,12 @@ const ItemDisplay = ({
                 </Fade>
 
                 <Box sx={{
-                  position: 'absolute', top: isGenerating ? 80 : 16, left: 16, right: 16,
+                  position: 'absolute', top: isGenerating ? 80 : compactAndroid ? 8 : 16, left: compactAndroid ? 8 : 16, right: compactAndroid ? 8 : 16,
                   zIndex: 100, display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start',
                   justifyContent: 'space-between', gap: 1, pointerEvents: 'none',
                 }}>
                   {onImageTool && (
-                    <Fade in={hoverToolbar} timeout={200}>
+                    <Fade in={compactAndroid || hoverToolbar} timeout={200}>
                       <Paper elevation={0} sx={toolbarPaperSx}>
                       <Tooltip title={!upscaleCost
                         ? t(sourcePixels > 0 ? 'painting.workspace.imageTools.upscaleTooLarge' : 'painting.workspace.imageTools.sourceDimensionsUnavailable')
@@ -807,9 +818,9 @@ const ItemDisplay = ({
                       </Paper>
                     </Fade>
                   )}
-                  <Fade in={hoverToolbar} timeout={200}>
+                  <Fade in={compactAndroid || hoverToolbar} timeout={200}>
                     <Paper elevation={0} sx={{ ...toolbarPaperSx, ml: 'auto' }}>
-                    {toolbarButtons.map((button) => (
+                    {toolbarButtons.filter((button) => !compactAndroid || button.action === 'save').map((button) => (
                       <Tooltip key={button.action} title={button.tooltip} arrow placement="bottom">
                         <span>
                           <IconButton
@@ -824,9 +835,19 @@ const ItemDisplay = ({
                         </span>
                       </Tooltip>
                     ))}
+                    {compactAndroid && <IconButton aria-label={t('painting.workspace.gallery.moreActions')}
+                      aria-haspopup="menu" aria-expanded={Boolean(imageActionsAnchor)} sx={toolbarButtonSx}
+                      onClick={(event) => setImageActionsAnchor(event.currentTarget)}><MoreHorizIcon /></IconButton>}
                     </Paper>
                   </Fade>
                 </Box>
+                {compactAndroid && <Menu anchorEl={imageActionsAnchor} open={active && Boolean(imageActionsAnchor)} onClose={() => setImageActionsAnchor(null)}
+                  anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'top', horizontal: 'right' }}>
+                  {toolbarButtons.filter((button) => button.action !== 'save').map((button) => <MenuItem key={button.action} disabled={button.disabled}
+                    sx={{ minHeight: 44, whiteSpace: 'normal' }} onClick={() => { setImageActionsAnchor(null); void handleButtonClick(button.action); }}>
+                    <ListItemIcon>{button.icon}</ListItemIcon><ListItemText>{button.tooltip}</ListItemText>
+                  </MenuItem>)}
+                </Menu>}
 
                 {generatedItemsCount > 1 && (
                   <>

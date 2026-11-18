@@ -31,7 +31,7 @@ async function readAIImage(source) {
  * @param {object} props 当前页、持久保存及可撤销整页替换回调。
  * @returns {React.ReactElement} 可在桌面和手机操作的漫画制作面板。
  */
-export default function ComicAIStudio({ open, page, language = 'zh', llmSettings, selectedControl, getPage, onUpdatePage, onApplyResult, onBusyChange, generationBusy = false }) {
+export default function ComicAIStudio({ open, page, compact = false, language = 'zh', llmSettings, selectedControl, getPage, onUpdatePage, onApplyResult, onBusyChange, generationBusy = false }) {
   const { generate, isGenerating } = useGeneration();
   const [input, setInput] = useState(initialInput);
   const [workflow, setWorkflow] = useState(null);
@@ -294,13 +294,19 @@ export default function ComicAIStudio({ open, page, language = 'zh', llmSettings
   const actionsBusy = busy || isGenerating || generationBusy || !modelReady;
   // 工作流保留在本组件中继续运行；隐藏时卸载自动伸缩输入框，避免它们在零宽度容器里反复测量。
   if (!open) return null;
-  return <Box data-testid="comic-ai-dock" sx={{ p: 1.5 }}>
-      <Stack spacing={1.5}>
+  const planActions = <Box data-comic-plan-actions sx={compact
+    ? { display: 'grid', gridTemplateColumns: workflow?.plan ? 'repeat(2, minmax(0, 1fr))' : 'minmax(0, 1fr)', gap: 1, '& .MuiButton-root': { minHeight: 44, fontSize: 13, lineHeight: 1.4 } }
+    : { display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+    <Button variant="contained" startIcon={<AutoAwesome />} disabled={actionsBusy || !input.text.trim()} onClick={() => run('plan')}>{w(workflow?.plan ? '重新编排' : '开始编排', workflow?.plan ? 'Replan' : 'Plan comic')}</Button>
+    {workflow?.plan && <Button variant="outlined" disabled={actionsBusy} onClick={() => run('resume')}>{w('确认预览并生成', 'Generate previewed comic')}</Button>}
+  </Box>;
+  return <Box data-testid="comic-ai-dock" sx={{ p: compact ? 0 : 1.5, display: compact ? 'flex' : 'block', flexDirection: 'column', height: compact ? '100%' : 'auto', minHeight: 0 }}>
+      <Stack spacing={1.5} sx={{ flex: compact ? 1 : undefined, minHeight: 0, overflowY: compact ? 'auto' : 'visible', p: compact ? 1 : 0 }}>
         {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
         {busy && <Paper variant="outlined" sx={{ p: 2 }}><Typography variant="body2">{progress}</Typography><LinearProgress sx={{ my: 1 }} variant={percentage === null ? 'indeterminate' : 'determinate'} value={percentage || 0} />{job && <Typography variant="caption">{job.stage}{percentage !== null ? ` · ${Math.round(percentage)}%` : ''}</Typography>}</Paper>}
         {workflow?.plan && selectedControl && <ComicAIPlanEditor plan={workflow.plan} selectedControl={selectedControl} selectedOnly language={language} disabled={busy}
           onChange={(plan) => { void persist({ ...workflowRef.current, plan: positionComicAIControls(callbacks.current.getPage(displayedPageId.current), plan) }).catch((cause) => setError(errorMessage(cause))); }} />}
-        <TextField multiline minRows={5} maxRows={12} label={w('生图提示词或一句剧情', 'Image prompt or story idea')}
+        <TextField multiline minRows={compact ? 2 : 5} maxRows={compact ? 6 : 12} label={w('生图提示词或一句剧情', 'Image prompt or story idea')}
           placeholder={w('直接粘贴 NovelAI 原生 prompt，或写下你想画的故事。', 'Paste a NovelAI prompt, or describe the story you want to draw.')}
           value={input.text} disabled={busy} onChange={(event) => setInput({ ...input, text: event.target.value })} />
         <Accordion disableGutters variant="outlined" sx={{ '&:before': { display: 'none' } }}>
@@ -323,10 +329,7 @@ export default function ComicAIStudio({ open, page, language = 'zh', llmSettings
             </Stack>
           </AccordionDetails>
         </Accordion>
-        <Stack direction="row" flexWrap="wrap" gap={1}>
-          <Button variant="contained" startIcon={<AutoAwesome />} disabled={actionsBusy || !input.text.trim()} onClick={() => run('plan')}>{w(workflow?.plan ? '重新编排' : '开始编排', workflow?.plan ? 'Replan' : 'Plan comic')}</Button>
-          {workflow?.plan && <Button variant="outlined" disabled={actionsBusy} onClick={() => run('resume')}>{w('确认预览并生成', 'Generate previewed comic')}</Button>}
-        </Stack>
+        {!compact && planActions}
         {workflow?.plan && <Accordion disableGutters variant="outlined" sx={{ '&:before': { display: 'none' } }}>
           <AccordionSummary expandIcon={<ExpandMore />}><Typography variant="body2">{w('编排参数', 'Plan parameters')}</Typography></AccordionSummary>
           <AccordionDetails><ComicAIPlanEditor plan={workflow.plan} onChange={(plan) => { void persist({ ...workflowRef.current, plan: positionComicAIControls(callbacks.current.getPage(displayedPageId.current), plan) }).catch((cause) => setError(errorMessage(cause))); }} referenceSections={references} language={language} disabled={busy} /></AccordionDetails>
@@ -392,6 +395,9 @@ export default function ComicAIStudio({ open, page, language = 'zh', llmSettings
           </Paper>;
         })}
       </Stack>
-    <Box sx={{ mt: 1 }}>{busy && <Button startIcon={<Stop />} color="warning" onClick={cancel}>{w('停止后续步骤', 'Stop subsequent steps')}</Button>}</Box>
+    <Box data-comic-plan-footer sx={{ flexShrink: 0, p: compact ? 1 : 0, mt: compact ? 0 : 1, borderTop: compact ? 1 : 0, borderColor: 'divider', bgcolor: 'background.paper' }}>
+      {compact && planActions}
+      {busy && <Button fullWidth={compact} startIcon={<Stop />} color="warning" onClick={cancel}>{w('停止后续步骤', 'Stop subsequent steps')}</Button>}
+    </Box>
   </Box>;
 }

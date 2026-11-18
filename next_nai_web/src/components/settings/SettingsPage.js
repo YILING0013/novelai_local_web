@@ -3,12 +3,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, ButtonBase,
-  Chip, FormControlLabel, InputAdornment, Paper, Radio, RadioGroup, Slider,
+  Chip, FormControlLabel, IconButton, InputAdornment, Paper, Radio, RadioGroup, Slider,
   Snackbar, Stack, Switch, Tab, Tabs, TextField, ToggleButton, ToggleButtonGroup,
   Typography, useMediaQuery, useTheme, alpha,
 } from '@mui/material';
 import {
-  Check, DarkModeOutlined, ExpandMore, FolderOpenOutlined, LightModeOutlined,
+  ArrowBack, Check, DarkModeOutlined, ExpandMore, FolderOpenOutlined, InfoOutlined, LightModeOutlined,
   PaletteOutlined, Refresh, SaveOutlined, SpeedOutlined, TuneOutlined,
 } from '@mui/icons-material';
 import { generateFileName, DOWNLOAD_NAMING_METHODS } from '@/components/ai-painting/tools/ImageTools/ImageSaveUtils';
@@ -18,6 +18,7 @@ import { useI18n } from '@/i18n/I18nProvider';
 import { PAGE_COLOR_DEFAULTS, getPageColorStorageKey } from '@/i18n/pageConfig.mjs';
 import { DEFAULT_THEME_SETTINGS, THEME_PRESETS } from '@/providers/themePresets.mjs';
 import { useAppTheme } from '@/providers/AppThemeProvider';
+import MobileSettingsList from './MobileSettingsList';
 
 const sections = [
   { id: 'appearance', icon: <PaletteOutlined /> },
@@ -62,12 +63,12 @@ function ColorField({ label, value, onChange }) {
  * @param {object} props pages 为可见页面，active 表示标签是否可见，sectionRequest 指定从画廊跳入的分区。
  * @returns {React.ReactElement} 分类导航、设置内容与始终可见的保存栏。
  */
-export default function SettingsPage({ pages = [], active = true, sectionRequest = null, chooseDirectory, fixedOutputDirectory = false, desktopPreferences, onDirtyChange }) {
+export default function SettingsPage({ pages = [], active = true, sectionRequest = null, chooseDirectory, fixedOutputDirectory = false, desktopPreferences, onDirtyChange, mobileLayout = false, onSectionChange, onBack, appVersion }) {
   const theme = useTheme();
   const { t, locale, setLocale } = useI18n();
   const mobile = useMediaQuery(theme.breakpoints.down('sm'));
   const { savedSettings, previewTheme, reloadFromStorage } = useAppTheme();
-  const [section, setSection] = useState(desktopPreferences ? 'desktop' : 'appearance');
+  const [section, setSection] = useState(mobileLayout ? null : desktopPreferences ? 'desktop' : 'appearance');
   const [themeDraft, setThemeDraft] = useState(null);
   const themeSettings = themeDraft || savedSettings;
   const { mode, primaryColors, backgroundColors, animationEnabled, animationSpeed } = themeSettings;
@@ -164,6 +165,10 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
     if (sectionRequest) setSection(sectionRequest.section);
   }, [sectionRequest]);
 
+  const aboutTitle = locale === 'zh-CN' ? '关于' : 'About';
+  const accessibleSectionTitle = section === 'about' ? aboutTitle
+    : section === 'desktop' ? t('desktop.application') : section ? t(`settings.sections.${section}.title`) : '';
+
   const saveSettings = async () => {
     setSaving(true);
     try {
@@ -223,8 +228,23 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
     height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column',
     borderRadius: 0, overflow: 'hidden', bgcolor: 'background.default',
   }}>
-    <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: { xs: 'column', sm: 'row' } }}>
-      <Box component="nav" aria-label={t('settings.navigation')} sx={{
+    {mobileLayout && <Stack data-mobile-settings-header direction="row" alignItems="center" spacing={1}
+      sx={{ px: 1, minHeight: section ? 56 : 48, borderBottom: 1, borderColor: 'divider', flexShrink: 0, bgcolor: section ? 'background.paper' : undefined }}>
+      <IconButton aria-label={section ? (locale === 'zh-CN' ? '返回设置' : 'Back to settings') : t('common.back')}
+        onClick={() => { if (section) { setSection(null); onSectionChange?.(null); } else void onBack?.(); }}><ArrowBack /></IconButton>
+      <Typography id="settings-section-title" variant="h6">{section ? accessibleSectionTitle : t('settings.title')}</Typography>
+    </Stack>}
+    <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: mobileLayout ? 'column' : { xs: 'column', sm: 'row' } }}>
+      {mobileLayout && !section && <Box sx={{ flex: 1, overflowY: 'auto', p: { xs: 2, sm: 4 } }}>
+        <Box sx={{ maxWidth: 680, mx: 'auto' }}>
+          <Typography color="text.secondary" sx={{ mb: 3 }}>{t('settings.localSettings')}</Typography>
+          <MobileSettingsList label={t('settings.navigation')} items={[
+            ...sections.map((item) => ({ ...item, label: t(`settings.sections.${item.id}.title`), description: t(`settings.sections.${item.id}.description`) })),
+            { id: 'about', icon: <InfoOutlined />, label: aboutTitle, description: ['NovelAI Local', appVersion].filter(Boolean).join(' · ') },
+          ]} onSelect={(value) => { setSection(value); onSectionChange?.(value); }} />
+        </Box>
+      </Box>}
+      {!mobileLayout && <Box component="nav" aria-label={t('settings.navigation')} sx={{
         width: { xs: '100%', sm: 210, lg: 232 }, flexShrink: 0, minHeight: 0,
         bgcolor: 'background.paper', borderRight: { sm: `1px solid ${theme.palette.divider}` },
         borderBottom: { xs: `1px solid ${theme.palette.divider}`, sm: 0 },
@@ -258,16 +278,22 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
         <Typography variant="caption" color="text.secondary" sx={{ mt: 'auto', px: 3, pt: 3, display: { xs: 'none', sm: 'block' } }}>
           {t('settings.sidebarHint')}
         </Typography>
-      </Box>
+      </Box>}
 
-      <Box ref={contentRef} role="tabpanel" id={`settings-panel-${section}`}
-        aria-labelledby={`settings-tab-${section}`} tabIndex={0}
+      {(!mobileLayout || section) && <Box ref={contentRef} role={mobileLayout ? 'region' : 'tabpanel'} id={`settings-panel-${section}`}
+        aria-labelledby={mobileLayout ? 'settings-section-title' : `settings-tab-${section}`} tabIndex={mobileLayout ? -1 : 0}
         sx={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: 'auto', p: { xs: 2, md: 3.5, xl: 4 } }}>
         {loadError && <Alert severity="error" sx={{ mb: 2 }} action={<Button onClick={() => setLoadAttempt((n) => n + 1)}>{t('common.retry')}</Button>}>{t('settings.loadFailed')}</Alert>}
-        {section === 'desktop' ? desktopPreferences : (
+        {section === 'about' ? <Stack spacing={1} sx={{ maxWidth: 1080, mx: 'auto' }}>
+          <Typography variant="h6">NovelAI Local</Typography>
+          {appVersion && <Typography>{locale === 'zh-CN' ? '版本' : 'Version'} {appVersion}</Typography>}
+          <Button component="a" href="https://github.com/YILING0013/novelai_local_web" sx={{ alignSelf: 'flex-start' }}>
+            {locale === 'zh-CN' ? '开源仓库' : 'Source repository'}
+          </Button>
+        </Stack> : section === 'desktop' ? desktopPreferences : (
         <Box component="fieldset" disabled={!loaded || saving} sx={{ border: 0, m: 0, p: 0, minWidth: 0, maxWidth: 1080, mx: 'auto' }}>
           <Box sx={{ mb: 3 }}>
-            <Typography variant="h5" sx={{ mb: 0.75 }}>{t(`settings.sections.${section}.title`)}</Typography>
+            {!mobileLayout && <Typography variant="h5" sx={{ mb: 0.75 }}>{accessibleSectionTitle}</Typography>}
             <Typography variant="body2" color="text.secondary">{t(`settings.sections.${section}.description`)}</Typography>
           </Box>
 
@@ -400,13 +426,13 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
           </Stack>}
         </Box>
         )}
-      </Box>
+      </Box>}
     </Box>
 
     {/* 底栏属于工作区自身，不再猜测应用侧栏宽度，也不会遮住滚动内容。 */}
-    <Box component="footer" sx={{
+    {(!mobileLayout || (section && section !== 'about') || dirty) && <Box component="footer" sx={{
       flexShrink: 0, display: section === 'desktop' && !dirty ? 'none' : 'flex', alignItems: 'center', justifyContent: 'space-between',
-      gap: 1.5, px: { xs: 2, sm: 3 }, py: 1.5, pb: 'max(12px, env(safe-area-inset-bottom))',
+      gap: 1.5, px: { xs: 2, sm: 3 }, py: 1.5, pb: mobileLayout ? 1.5 : 'max(12px, env(safe-area-inset-bottom))',
       borderTop: 1, borderColor: 'divider', bgcolor: 'background.paper',
     }}>
       <Chip size="small" variant="outlined" label={t(dirty ? 'settings.unsaved' : 'settings.upToDate')}
@@ -418,7 +444,7 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
         <Button startIcon={<Refresh />} disabled={!loaded || saving} onClick={resetSettings} color="inherit">{t('settings.reset')}</Button>
         <Button variant="contained" startIcon={<SaveOutlined />} disabled={!loaded || saving || !dirty || !colorsValid} onClick={saveSettings}>{t('settings.save')}</Button>
       </Stack>
-    </Box>
+    </Box>}
     <Snackbar open={Boolean(snackbar)} autoHideDuration={4000} onClose={() => setSnackbar(null)}
       anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
       {snackbar && <Alert severity={snackbar.severity} variant="filled" onClose={() => setSnackbar(null)} sx={{ mb: 8 }}>{snackbar.message}</Alert>}

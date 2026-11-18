@@ -1462,7 +1462,7 @@ const InpaintWorkspacePanel = forwardRef(({
 
     const blob = await dataUrlToBlob(exportResult.dataUrl);
     const fileName = `${background === 'white' ? 'inpaint-white' : 'inpaint-transparent'}-${Date.now()}.png`;
-    saveAs(blob, fileName);
+    if (await saveAs(blob, fileName) === false) return null;
     showNotification?.(t('painting.workspace.inpaint.fileExported'), 'success');
     return exportResult;
   }, [onExportToGallery, showNotification, sourceImage, t]);

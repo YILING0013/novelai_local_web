@@ -56,6 +56,7 @@ import {
   PaintBucket,
   RotateCcw,
   History,
+  Menu as MenuIcon,
 } from "lucide-react";
 import { IconButton, Modal, NumberField, Slider } from "./Controls";
 import { useEditorText } from "./messages";
@@ -950,8 +951,8 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
       setBusy(false);
     }
   }
-  function saveProject() {
-    downloadBlob(
+  async function saveProject() {
+    const saved = await downloadBlob(
       new Blob(
         [
           JSON.stringify({
@@ -964,7 +965,7 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
       ),
       `${doc.name}.compweb`,
     );
-    setToast("已下载可编辑项目，包含所有内嵌图片。");
+    if (saved !== false) setToast("已下载可编辑项目，包含所有内嵌图片。");
   }
   async function exportImage(download = true) {
     const source = await renderDocument(doc),
@@ -995,10 +996,11 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
         exportOptions.dpi,
       );
     if (download) {
-      downloadBlob(
+      const saved = await downloadBlob(
         blob,
         `${doc.name}.${exportOptions.format === "jpeg" ? "jpg" : exportOptions.format}`,
       );
+      if (saved === false) return;
       setToast("图片已导出");
       closeModal();
     } else {
@@ -2623,6 +2625,7 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
         }}
       />
       <header className="app-header">
+        <button className="mobile-editor-menu" aria-label={labelText("主菜单")} onClick={() => setModal({ type: "commands" })}><MenuIcon size={18} /></button>
         <nav className="menu-bar" aria-label={labelText("主菜单")}>
           {Object.keys(menus).map((name) => (
             <div className="menu-container" key={name}>
@@ -2699,6 +2702,9 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
         </button>
       </header>
       <div className="tool-options">
+        <button className="mobile-tool-trigger" aria-label={labelText("绘图工具")} aria-haspopup="dialog" aria-expanded={modal?.type === "tools"} onClick={() => setModal({ type: "tools" })}>
+          <ToolIcon size={17} /><ChevronDown size={13} />
+        </button>
         <div className="current-tool">
           <ToolIcon size={16} />
           <span>{labelText(currentTool[2])}</span>
@@ -3340,6 +3346,7 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
               import: "导入转换说明",
               commands: "查找命令",
               shortcuts: "快捷键",
+              tools: "绘图工具",
               about: "关于 Compositor Web",
               history: "历史记录",
               brush: "笔刷设置",
@@ -3924,8 +3931,9 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
               </div>
             </>
           )}
-          {modal.type === "shortcuts" && (
+          {["shortcuts", "tools"].includes(modal.type) && (
             <>
+              {modal.type === "shortcuts" && <>
               <p className="dialog-description">
                 熟悉的操作，让创作不被打断。Mac 使用 ⌘ 替代 Ctrl，Option 替代
                 Alt。
@@ -3955,6 +3963,12 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
                   </div>
                 ))}
               </div>
+              </>}
+              {modal.type === "tools" && <div className="mobile-tool-colors">
+                <label>{labelText("前景色")}<input type="color" aria-label={labelText("工具前景颜色")} value={color} onChange={(event) => setColor(event.target.value)} /></label>
+                <label>{labelText("背景色")}<input type="color" aria-label={labelText("工具背景颜色")} value={backColor} onChange={(event) => setBackColor(event.target.value)} /></label>
+                <IconButton icon={RotateCcw} label="交换前景与背景色" onClick={() => { setColor(backColor); setBackColor(color); }} />
+              </div>}
               <div className="tool-shortcuts">
                 {TOOLS.map(([id, Icon, name, key]) => (
                   <button

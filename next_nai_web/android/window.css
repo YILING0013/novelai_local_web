@@ -1,16 +1,83 @@
-.android-app {
+:root {
+  --mobile-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+  --mobile-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+  --mobile-left: max(env(safe-area-inset-left, 0px), var(--safe-area-inset-left, 0px));
+  --mobile-right: max(env(safe-area-inset-right, 0px), var(--safe-area-inset-right, 0px));
+}
+
+html, body, #root { width: 100%; height: 100%; overscroll-behavior: none; }
+body { -webkit-tap-highlight-color: transparent; }
+#root {
   box-sizing: border-box;
+  padding: var(--mobile-top) var(--mobile-right) var(--mobile-bottom) var(--mobile-left);
+}
+
+.android-app {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  height: 100dvh;
-  padding: var(--safe-area-inset-top, env(safe-area-inset-top))
-    var(--safe-area-inset-right, env(safe-area-inset-right))
-    var(--safe-area-inset-bottom, env(safe-area-inset-bottom))
-    var(--safe-area-inset-left, env(safe-area-inset-left));
+  height: 100%;
+  min-height: 0;
 }
 
-.android-navigation {
-  padding-top: var(--safe-area-inset-top, env(safe-area-inset-top));
-  padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom));
+.android-app :is(input, textarea), .MuiDialog-root :is(input, textarea) { scroll-margin-block: 16px; }
+@media (max-width: 600px) {
+  .MuiDialog-paper { max-width: calc(100vw - 16px); margin: 8px; }
+}
+
+.MuiDialog-paper.MuiDialog-paperFullScreen {
+  margin: 0;
+  max-width: 100%;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  padding: var(--mobile-top) var(--mobile-right) var(--mobile-bottom) var(--mobile-left);
+  box-sizing: border-box;
+}
+
+/* 手机把绘图工具收进弹窗，常驻工具列让出画布宽度。 */
+@media (max-width: 899.95px) {
+  .android-app .image-processing-editor .workspace > .tool-rail,
+  .android-app .image-processing-editor .tool-options .current-tool { display: none; }
+  .android-app .image-processing-editor .mobile-tool-trigger {
+    display: inline-flex; align-items: center; justify-content: center; gap: 3px; flex-shrink: 0;
+    min-width: 40px; height: 36px; padding: 4px; border: 1px solid var(--border);
+    border-radius: 6px; background: var(--panel); color: var(--text);
+  }
+  .android-app .image-processing-editor .tool-options { height: 40px; min-height: 40px; gap: 6px; }
+  .android-app .image-processing-editor .tool-shortcuts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .android-app .image-processing-editor .tool-shortcuts button { min-height: 44px; }
+  .android-app .image-processing-editor .tool-shortcuts kbd { display: none; }
+  .android-app .image-processing-editor .mobile-tool-colors { display: flex; align-items: center; gap: 16px; padding: 12px 20px; }
+  .android-app .image-processing-editor .mobile-tool-colors label { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  .android-app .image-processing-editor .mobile-tool-colors input { width: 32px; height: 32px; padding: 0; border: 0; background: transparent; }
+  .android-app .image-processing-editor .app-header { height: 40px; min-height: 40px; flex-wrap: nowrap; padding: 3px 4px; gap: 4px; }
+  .android-app .image-processing-editor .menu-bar { order: 0; flex: 0 1 auto; padding: 0; border: 0; gap: 0; }
+  .android-app .image-processing-editor .menu-trigger { padding: 6px 2px; font-size: 11px; white-space: nowrap; }
+  .android-app .image-processing-editor .app-header > .header-spacer { flex: 1; min-width: 0; }
+  .android-app .image-processing-editor .import-button { width: 28px; min-width: 28px; height: 32px; padding: 3px; }
+  .android-app .image-processing-editor .import-button > span { display: none; }
+  .android-app .image-processing-editor .export-button { height: 32px; padding: 4px 6px; gap: 3px; font-size: 11px; }
+}
+
+@media (max-width: 359.95px) {
+  .android-app .image-processing-editor .menu-bar { display: none; }
+  .android-app .image-processing-editor .mobile-editor-menu {
+    display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 32px;
+    border: 1px solid var(--border); border-radius: 5px; background: var(--panel); color: var(--text);
+  }
+}
+
+/* 低矮横屏弹出输入法时，保持编辑区可以滚动。 */
+@media (max-width: 899.95px) and (max-height: 250px) {
+  html body [data-mobile-titlebar],
+  html body .MuiDialog-root .MuiDialogTitle-root,
+  html body .MuiDialog-root .MuiDialogActions-root,
+  html body [data-mobile-parameter-header],
+  html body [data-mobile-parameter-footer],
+  html body [data-comic-dock][role="dialog"] > :first-child,
+  html body [data-comic-dock][role="dialog"] [data-comic-plan-footer] { display: none; }
+  html body .MuiDialog-root .MuiDialog-paper { margin: 4px; height: calc(100% - 8px); max-height: calc(100% - 8px); }
+  html body .MuiDialog-root .MuiDialogContent-root { display: block; overflow-y: auto; padding-top: 4px; padding-bottom: 4px; }
+  html body [data-mobile-parameter-body] { padding: 4px 8px; }
 }

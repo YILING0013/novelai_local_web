@@ -56,10 +56,12 @@ async function readImage(blob) {
 }
 
 /** 左侧工具、中央画布与右侧页面库；生成表单由生成页复用现有参数面板。 */
-const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [], onSelectTask, onPanelBoundsChange, manualEditor, onSaveTask, onGenerate, onGenerateAll, getBatchGenerationCost, generationAction, onAIBusyChange, active = true }, ref) {
+const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [], onSelectTask, onPanelBoundsChange, manualEditor, onEditTask, onSaveTask, onGenerate, onGenerateAll, getBatchGenerationCost, generationAction, onAIBusyChange, active = true, androidLayout = false }, ref) {
   const { locale } = useI18n();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const compactAndroid = androidLayout && isMobile;
+  const shortLandscape = useMediaQuery('(min-width: 600px) and (max-height: 500px)');
   const c = messages[locale];
   const textRef = useRef(c); textRef.current = c;
   const language = locale === 'zh-CN' ? 'zh' : 'en';
@@ -76,7 +78,9 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
   const [layersOpen, setLayersOpen] = useState(false);
   const [mode, setMode] = useState('ai');
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [dockCollapsed, setDockCollapsed] = useState(false);
+  const [dockCollapsed, setDockCollapsed] = useState(compactAndroid);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  useEffect(() => { if (compactAndroid) setDockCollapsed(true); }, [compactAndroid]);
   const [llmSettings, setLLMSettings] = useState(null);
   const [selectedControl, setSelectedControl] = useState(null);
   const controlDrag = useRef(null);
@@ -112,6 +116,17 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
   const zoom = view.zoom;
   const [canvasSize, setCanvasSize] = useState({ width: 300, height: 420 });
   const [pagesOpen, setPagesOpen] = useState(false);
+  useEffect(() => {
+    if (!compactAndroid || !active || (!pagesOpen && dockCollapsed)) return;
+    const back = (event) => {
+      if (event.defaultPrevented || (event.detail && !event.detail.hasAttribute('data-comic-dock'))) return;
+      event.preventDefault();
+      if (pagesOpen) setPagesOpen(false);
+      else setDockCollapsed(true);
+    };
+    window.addEventListener('mobile-back', back);
+    return () => window.removeEventListener('mobile-back', back);
+  }, [compactAndroid, active, pagesOpen, dockCollapsed]);
   const [lastAction, setLastAction] = useState('');
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [historyVersion, setHistoryVersion] = useState(0);
@@ -188,7 +203,8 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
     const element = viewport.current;
     let resizeFrame = 0;
     const resize = () => {
-      const ratio = Math.min(Math.max(1, element.clientWidth - 64) / pageWidth, Math.max(1, element.clientHeight - 64) / pageHeight);
+      const inset = compactAndroid ? (shortLandscape ? 24 : 32) : 64;
+      const ratio = Math.min(Math.max(1, element.clientWidth - inset) / pageWidth, Math.max(1, element.clientHeight - inset) / pageHeight);
       const width = pageWidth * ratio, height = pageHeight * ratio;
       setCanvasSize((current) => current.width === width && current.height === height ? current : { width, height });
     };
@@ -196,7 +212,7 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
     const observer = new ResizeObserver(() => { cancelAnimationFrame(resizeFrame); resizeFrame = requestAnimationFrame(resize); });
     observer.observe(element); resize();
     return () => { observer.disconnect(); cancelAnimationFrame(resizeFrame); };
-  }, [pageWidth, pageHeight, active]);
+  }, [pageWidth, pageHeight, active, compactAndroid, shortLandscape]);
 
   useEffect(() => { setView({ zoom: 1, x: 0, y: 0 }); setSelectedControl(null); }, [page?.id, page?.layout]);
   useEffect(() => { if (active) apiClient.request('/comic/llm-settings').then((result) => setLLMSettings(result.settings)).catch((error) => setNotice({ severity: 'error', text: error.message })); }, [active]);
@@ -809,11 +825,15 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
 
   if (!page) return <Box sx={{ p: 4 }}><Typography>{c.loading}</Typography></Box>;
 
-  const batchCost = mode === 'manual' ? getBatchGenerationCost(page) : null;
+  const batchCost = mode === 'manual' && onGenerateAll ? getBatchGenerationCost(page) : null;
   const batchCostLabel = batchCost && (batchCost.total === null
     ? (language === 'zh' ? '请调整生成参数' : 'Adjust generation settings')
     : (language === 'zh' ? `预计 ${batchCost.total.toLocaleString(locale)} 点` : `Est. ${batchCost.total.toLocaleString(locale)} Anlas`));
   const sectionLabels = page.layout === 'spreadPortrait' ? [c.left, c.right] : [c.top, c.bottom];
+  const comicPageSelection = (COMIC_LAYOUTS[page.layout].sections === 2 || (compactAndroid && mode === 'manual')) && <Box sx={{ display: 'flex', gap: 1, minWidth: 0 }}>
+          {COMIC_LAYOUTS[page.layout].sections === 2 && <ToggleButtonGroup size="small" exclusive value={section} onChange={(_, value) => { if (value !== null) { setSection(value); choose(null); } }} sx={{ flex: 1, '& .MuiToggleButton-root': { flex: 1, minHeight: { xs: 44, md: 32 }, whiteSpace: 'nowrap' } }}>{sectionLabels.map((label, index) => <ToggleButton key={index} value={index} aria-label={label} data-action-label={label}>{label}</ToggleButton>)}</ToggleButtonGroup>}
+          {compactAndroid && mode === 'manual' && <TextField select size="small" value={selectedId || ''} slotProps={{ select: { displayEmpty: true, renderValue: () => selectedNumber ? `${c.panel} ${selectedNumber}` : c.panel, inputProps: { 'aria-label': c.panel } } }} sx={{ flex: 1, minWidth: 0, '& .MuiInputBase-root': { minHeight: 44 } }} onChange={(event) => { changeTool('select'); choose(page.panels.find((panel) => panel.id === event.target.value)); }}><MenuItem value="">{c.noPanel}</MenuItem>{page.panels.map((panel, index) => <MenuItem key={panel.id} value={panel.id} disabled={page.layers.some((layer) => layer.id === panel.layerId && (layer.locked || !layer.visible))}>{index + 1} · {panel.type === 'overlay' ? overlayLabel : regularLabel}</MenuItem>)}</TextField>}
+        </Box>;
   const editableItems = getComicRenderItems(page).filter(({ kind, item }) => kind !== 'stroke' && !page.layers.find((layer) => layer.id === item.layerId)?.locked);
   const handleScale = page.width / canvasSize.width / zoom;
   const selectedBounds = selected ? panelBounds(selected) : null;
@@ -860,7 +880,82 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
       </Paper>)}
     </Box>);
   const panelColor = selected?.type === 'overlay' ? '#bd7110' : '#287bcc';
-  return <Box data-testid="comic-workspace" onClickCapture={(event) => { const button = event.target.closest('button'); const label = button?.dataset.actionLabel || button?.getAttribute('aria-label'); if (label) setLastAction(label); }} sx={{ position: 'relative', height: '100%', minHeight: { xs: 0, md: 480 }, maxHeight: { xs: 'calc(100dvh - 110px)', md: 'none' }, display: 'grid', gridTemplateColumns: { xs: '46px minmax(0,1fr)', md: '146px minmax(0,1fr) 164px' }, bgcolor: 'background.default', borderRadius: 1, overflow: 'hidden', '& .MuiButton-root': { fontSize: 11, minWidth: 0, lineHeight: 1.45, textTransform: 'none' }, '& .MuiSvgIcon-root': { fontSize: 17 }, '& .MuiOutlinedInput-root': { fontSize: 11 }, '& .MuiInputBase-input, & .MuiSelect-select': { py: 0.8 }, '& .MuiInputLabel-root': { fontSize: 11 }, '& .MuiTypography-caption': { fontSize: 10 }, '& .MuiChip-root': { height: 21, fontSize: 10 }, '& .MuiToggleButton-root': { fontSize: 11, py: 0.4, px: 1 }, '& .MuiSlider-root': { py: 1.2 }, '& .MuiSlider-thumb': { width: 10, height: 10 } }}>
+  const pageTools = (<Box data-comic-page-tools sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, flex: { md: 1 } }}>
+          <TextField select size="small" value={page.layout} slotProps={{ select: { inputProps: { 'aria-label': c.title } } }} onChange={(event) => navigate(createComicPage(event.target.value, 'blank', getComicLayoutSize(event.target.value, canvasDefaults)), true)} sx={{ flex: { xs: 1, md: 'none' }, minWidth: { xs: 0, md: 108 }, '& .MuiInputBase-root': { minHeight: { xs: 44, md: 34 } } }}>
+            {Object.keys(COMIC_LAYOUTS).map((layout) => <MenuItem key={layout} value={layout}>{c[layout]}</MenuItem>)}
+          </TextField>
+          <ComicButton icon={CropFree} label={c.canvasSize} tip={c.canvasSizeTip} variant={compactAndroid ? 'outlined' : 'text'} disabled={busy || aiBusy} onClick={() => setCanvasDimensions({ width: String(page.width), height: String(page.height) })} />
+          <Box sx={{ flex: 1, display: { xs: 'none', md: 'block' } }} />
+          <Tooltip title={`${c.zoomCanvas} (Ctrl+0 / Ctrl+±)`}><TextField select size="small" value={zoom} slotProps={{ select: { inputProps: { 'aria-label': c.zoomCanvas } } }} onChange={(event) => Number(event.target.value) === 1 ? setView({ zoom: 1, x: 0, y: 0 }) : changeZoom(Number(event.target.value))} sx={{ width: { xs: 90, md: 74 }, flexShrink: 0, '& .MuiInputBase-root': { minHeight: { xs: 44, md: 34 } } }}>{[...new Set([0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 5, zoom])].sort((a, b) => a - b).map((value) => <MenuItem value={value} key={value}>{value === 1 ? c.fit : `${Math.round(value * 100)}%`}</MenuItem>)}</TextField></Tooltip>
+        </Box>);
+  const editingTools = (
+    <Box component="aside" data-comic-editing-tools onClickCapture={(event) => { if (compactAndroid && event.target.closest('button:not(:disabled)')) setToolsOpen(false); }} sx={{ p: { xs: 0.4, md: 0.8 }, minHeight: 0, bgcolor: 'background.paper', borderRight: 1, borderColor: 'divider', overflowY: 'auto', overflowX: 'hidden', '& .MuiButton-root': { justifyContent: compactAndroid ? 'flex-start' : { xs: 'center', md: 'flex-start' }, width: '100%', ...(compactAndroid ? { minHeight: 40, '& > .MuiBox-root': { display: 'inline' }, '& .MuiButton-startIcon': { mr: 1 } } : {}) }, '& [data-comic-tool-group]': { display: compactAndroid ? 'grid' : 'flex', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 0.75 }, '& .MuiTypography-subtitle2': { fontSize: 11 } }}>
+      {compactAndroid && <Box sx={{ gridColumn: '1 / -1', mb: 1 }}>{pageTools}{comicPageSelection}</Box>}
+      <Typography variant="subtitle2" sx={{ mb: 0.5, display: { xs: 'none', md: 'block' } }}>{c.templates}</Typography>
+      <Box data-comic-tool-group sx={{ display: 'flex', flexDirection: 'column', gap: 0.4 }}>
+        <ComicButton variant="outlined" icon={DashboardOutlined} label={language === 'zh' ? '选择模板' : 'Templates'} onClick={() => setTemplatePicker(true)} />
+        <ComicButton icon={Add} label={c.blank} onClick={() => applyPreset(COMIC_TEMPLATES[0])} />
+        <ComicButton icon={SaveOutlined} label={c.saveTemplate} shortcut="Ctrl+Shift+S" onClick={() => { setTemplateName(''); setTemplateDialog(true); }} />
+      </Box>
+      <Divider sx={{ my: 0.75 }} />
+      <Box data-comic-tool-group sx={{ display: 'flex', flexDirection: 'column', gap: 0.35 }}>
+        {tools.map(([id, Icon, label, tip, shortcut]) => <ComicButton key={id} icon={Icon} label={label} tip={tip} shortcut={shortcut} onClick={() => changeTool(id)} onDoubleClick={id === 'hand' ? () => setView({ zoom: 1, x: 0, y: 0 }) : undefined} variant={tool === id ? 'contained' : 'text'} aria-pressed={tool === id} />)}
+      </Box>
+      <Divider sx={{ my: 0.75 }} />
+      <Box data-comic-tool-group sx={{ display: 'flex', flexDirection: 'column', gap: 0.35 }}>
+        <ComicButton icon={ChatBubbleOutline} label={c.dialogue} onClick={() => setBalloonPicker(true)} />
+        <ComicButton icon={TextFields} label={c.text} tip={c.textTip} shortcut="T" variant={tool === 'text' ? 'contained' : 'text'} onClick={() => changeTool('text')} />
+        <ComicButton icon={AutoAwesome} label={c.sticker} onClick={() => { elementUploadKind.current = 'sticker'; elementUpload.current.click(); }} />
+      </Box>
+      <Divider sx={{ my: 0.75 }} />
+      <Box data-comic-tool-group sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+        <ComicButton icon={Undo} label={c.undo} shortcut="Ctrl+Z" disabled={!history.current.undo.length || !historyVersion} onClick={() => undo()} />
+        <ComicButton icon={Redo} label={c.redo} shortcut="Ctrl+Y / Ctrl+Shift+Z" disabled={!history.current.redo.length} onClick={() => undo(true)} />
+      </Box>
+      <TextField select fullWidth size="small" label={c.panel} value={selectedId || ''} sx={{ my: 1, display: { xs: 'none', md: 'block' } }} onChange={(event) => { changeTool('select'); choose(page.panels.find((panel) => panel.id === event.target.value)); }}>
+        <MenuItem value="">{c.noPanel}</MenuItem>
+        {page.panels.map((panel, index) => <MenuItem key={panel.id} value={panel.id} disabled={page.layers.some((layer) => layer.id === panel.layerId && (layer.locked || !layer.visible))} sx={{ color: panel.type === 'overlay' ? '#bd7110' : 'primary.main' }}>{index + 1} · {panel.type === 'overlay' ? overlayLabel : regularLabel}{panel.task ? ' ✓' : ''}</MenuItem>)}
+      </TextField>
+      {tool === 'cut' && <><Typography variant="caption">{c.gutter}: {gutter}px</Typography><Slider aria-label={c.gutter} min={0} max={48} value={gutter} onChange={(_, value) => setGutter(value)} /></>}
+      {['brush', 'eraser'].includes(tool) && <><Typography variant="caption">{compactAndroid ? brushSize : `${c.brushSize}: ${brushSize}px`}</Typography><Slider aria-label={c.brushSize} min={1} max={64} value={brushSize} onChange={(_, value) => setBrushSize(value)} /></>}
+      {selected && <>
+        <Divider sx={{ my: 0.75 }} /><Typography variant="subtitle2" sx={{ color: panelColor, mb: 0.5 }}>{compactAndroid ? `#${selectedNumber}` : `${c.panel} ${selectedNumber} · ${selected.type === 'overlay' ? overlayLabel : regularLabel}`}</Typography>
+        <Box data-comic-tool-group sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+          <ComicButton icon={UploadFile} label={c.upload} shortcut="Ctrl+O" onClick={() => { uploadTarget.current = target; upload.current.click(); }} />
+          <ComicButton icon={ImageOutlined} label={c.gallery} onClick={() => openGallery()} />
+          <ComicButton icon={CropFree} label={c.cropImage} shortcut="Shift+C" disabled={!selected.image} onClick={() => setCropId(selected.id)} />
+          <ComicButton icon={DeleteOutline} label={c.removeImage} disabled={!selected.image} onClick={() => updatePanel(selected.id, { image: null })} />
+        </Box>
+        {compactAndroid ? <ComicButton icon={selected.type === 'overlay' ? LayersOutlined : CropFree} label={selected.type === 'overlay' ? regularLabel : overlayLabel} onClick={() => { const converted = convertPanelType(selected, selected.type === 'overlay' ? 'regular' : 'overlay', page, section); if (converted) updatePanel(selected.id, converted); else setNotice({ severity: 'warning', text: c.smallPanel }); }} /> : <TextField select size="small" fullWidth label={language === 'zh' ? '画框类型' : 'Frame type'} value={selected.type || 'regular'} sx={{ my: 1 }} onChange={(event) => { const converted = convertPanelType(selected, event.target.value, page, section); if (converted) updatePanel(selected.id, converted); else setNotice({ severity: 'warning', text: c.smallPanel }); }}><MenuItem value="regular">{regularLabel}</MenuItem><MenuItem value="overlay">{overlayLabel}</MenuItem></TextField>}
+        <Typography variant="caption">{compactAndroid ? `${selected.borderWidth}px` : selected.borderWidth ? `${c.border}: ${selected.borderWidth}px` : c.borderless}</Typography>
+        <Slider aria-label={c.border} min={0} max={12} value={selected.borderWidth} onChange={(_, value) => updatePanel(selected.id, { borderWidth: value })} />
+        <Box data-comic-tool-group sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}><ComicButton icon={ArrowUpward} label={c.contentForward} onClick={() => moveLayer(1)} /><ComicButton icon={ArrowDownward} label={c.contentBackward} onClick={() => moveLayer(-1)} /></Box>
+        <ComicButton color="error" icon={DeleteOutline} label={c.deletePanel} shortcut="Delete" onClick={deleteSelection} />
+      </>}
+      {selectedElement && <>
+        <Divider sx={{ my: 0.75 }} /><Typography variant="subtitle2" noWrap sx={{ display: { xs: 'none', md: 'block' }, color: '#ad69da' }}>{selectedElement.name || (selectedElement.kind === 'bubble' ? c.dialogue : c[selectedElement.kind])}</Typography>
+        <Box data-comic-tool-group sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+          <ComicButton icon={SettingsOutlined} label={c.editElement} onClick={() => setElementEditorId(selectedElement.id)} />
+          <ComicButton icon={Flip} label={c.flipHorizontal} onClick={() => updateElement(selectedElement.id, { flipX: !selectedElement.flipX })} />
+          <ComicButton icon={ContentCopy} label={c.duplicate} shortcut="Ctrl+J" onClick={duplicateSelection} />
+          <ComicButton icon={ArrowUpward} label={c.contentForward} onClick={() => moveLayer(1)} /><ComicButton icon={ArrowDownward} label={c.contentBackward} onClick={() => moveLayer(-1)} />
+          <ComicButton color="error" icon={DeleteOutline} label={c.deleteContent} shortcut="Delete" onClick={deleteSelection} />
+        </Box>
+      </>}
+      <input ref={upload} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={(event) => { const file = event.target.files[0]; event.target.value = ''; if (file) perform(() => addImage(file, uploadTarget.current), c.imageError); }} />
+      <input ref={elementUpload} data-testid="comic-asset-upload" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" hidden onChange={(event) => {
+        const file = event.target.files[0]; event.target.value = ''; if (!file) return;
+        const pageId = pageRef.current.id, kind = elementUploadKind.current;
+        perform(async () => {
+          const asset = await readComicAsset(file); if (pageRef.current.id !== pageId) return;
+          const scale = Math.min(pageRef.current.width * 0.4 / asset.width, pageRef.current.height * 0.4 / asset.height, 1);
+          const width = asset.width * scale, height = asset.height * scale;
+          insertElement(kind, { x: (pageRef.current.width - width) / 2, y: (pageRef.current.height - height) / 2, width, height }, { dataUrl: asset.dataUrl, name: file.name });
+        }, c.imageError);
+      }} />
+    </Box>
+  );
+  return <Box data-testid="comic-workspace" onClickCapture={(event) => { const button = event.target.closest('button'); const label = button?.dataset.actionLabel || button?.getAttribute('aria-label'); if (label) setLastAction(label); }} sx={{ position: 'relative', height: '100%', minHeight: { xs: 0, md: 480 }, maxHeight: compactAndroid ? '100%' : { xs: 'calc(100dvh - 110px)', md: 'none' }, display: 'grid', gridTemplateColumns: compactAndroid ? 'minmax(0,1fr)' : { xs: '46px minmax(0,1fr)', md: '146px minmax(0,1fr) 164px' }, bgcolor: 'background.default', borderRadius: 1, overflow: 'hidden', '& .MuiButton-root': { fontSize: compactAndroid ? 13 : 11, minWidth: compactAndroid ? 44 : 0, minHeight: compactAndroid ? 44 : undefined, lineHeight: 1.45, textTransform: 'none' }, '& .MuiSvgIcon-root': { fontSize: compactAndroid ? 20 : 17 }, '& .MuiIconButton-root': { minWidth: compactAndroid ? 44 : 0, minHeight: compactAndroid ? 44 : 0 }, '& .MuiOutlinedInput-root': { fontSize: compactAndroid ? 13 : 11 }, '& .MuiInputBase-input, & .MuiSelect-select': { py: 0.8 }, '& .MuiInputLabel-root': { fontSize: compactAndroid ? 13 : 11 }, '& .MuiTypography-caption': { fontSize: compactAndroid ? 12 : 10 }, '& .MuiChip-root': { height: 21, fontSize: 10 }, '& .MuiToggleButton-root': { fontSize: 11, py: 0.4, px: 1 }, '& .MuiSlider-root': { py: 1.2 }, '& .MuiSlider-thumb': { width: 10, height: 10 } }}>
     <input ref={projectUpload} type="file" hidden accept=".zip,application/zip" aria-label={c.importProject} onChange={(event) => {
       const file = event.target.files?.[0]; event.target.value = ''; if (!file) return;
       perform(async () => {
@@ -889,109 +984,47 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
         setNotice({ severity: 'success', text: c.projectImported.replace('{count}', String(project.pages.length)) });
       }, c.importError);
     }} />
-    <Box component="aside" sx={{ p: { xs: 0.4, md: 0.8 }, minHeight: 0, bgcolor: 'background.paper', borderRight: 1, borderColor: 'divider', overflowY: 'auto', '& .MuiButton-root': { justifyContent: { xs: 'center', md: 'flex-start' }, width: '100%' }, '& .MuiTypography-subtitle2': { fontSize: 11 } }}>
-      <Typography variant="subtitle2" sx={{ mb: 0.5, display: { xs: 'none', md: 'block' } }}>{c.templates}</Typography>
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.4 }}>
-        <ComicButton variant="outlined" icon={DashboardOutlined} label={language === 'zh' ? '选择模板' : 'Templates'} onClick={() => setTemplatePicker(true)} />
-        <ComicButton icon={Add} label={c.blank} onClick={() => applyPreset(COMIC_TEMPLATES[0])} />
-        <ComicButton icon={SaveOutlined} label={c.saveTemplate} shortcut="Ctrl+Shift+S" onClick={() => { setTemplateName(''); setTemplateDialog(true); }} />
-      </Box>
-      <Divider sx={{ my: 0.75 }} />
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.35 }}>
-        {tools.map(([id, Icon, label, tip, shortcut]) => <ComicButton key={id} icon={Icon} label={label} tip={tip} shortcut={shortcut} onClick={() => changeTool(id)} onDoubleClick={id === 'hand' ? () => setView({ zoom: 1, x: 0, y: 0 }) : undefined} variant={tool === id ? 'contained' : 'text'} aria-pressed={tool === id} />)}
-      </Box>
-      <Divider sx={{ my: 0.75 }} />
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.35 }}>
-        <ComicButton icon={ChatBubbleOutline} label={c.dialogue} onClick={() => setBalloonPicker(true)} />
-        <ComicButton icon={TextFields} label={c.text} tip={c.textTip} shortcut="T" variant={tool === 'text' ? 'contained' : 'text'} onClick={() => changeTool('text')} />
-        <ComicButton icon={AutoAwesome} label={c.sticker} onClick={() => { elementUploadKind.current = 'sticker'; elementUpload.current.click(); }} />
-      </Box>
-      <Divider sx={{ my: 0.75 }} />
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
-        <ComicButton icon={Undo} label={c.undo} shortcut="Ctrl+Z" disabled={!history.current.undo.length || !historyVersion} onClick={() => undo()} />
-        <ComicButton icon={Redo} label={c.redo} shortcut="Ctrl+Y / Ctrl+Shift+Z" disabled={!history.current.redo.length} onClick={() => undo(true)} />
-      </Box>
-      <TextField select fullWidth size="small" label={c.panel} value={selectedId || ''} sx={{ my: 1, display: { xs: 'none', md: 'block' } }} onChange={(event) => { changeTool('select'); choose(page.panels.find((panel) => panel.id === event.target.value)); }}>
-        <MenuItem value="">{c.noPanel}</MenuItem>
-        {page.panels.map((panel, index) => <MenuItem key={panel.id} value={panel.id} disabled={page.layers.some((layer) => layer.id === panel.layerId && (layer.locked || !layer.visible))} sx={{ color: panel.type === 'overlay' ? '#bd7110' : 'primary.main' }}>{index + 1} · {panel.type === 'overlay' ? overlayLabel : regularLabel}{panel.task ? ' ✓' : ''}</MenuItem>)}
-      </TextField>
-      {tool === 'cut' && <><Typography variant="caption">{c.gutter}: {gutter}px</Typography><Slider aria-label={c.gutter} min={0} max={48} value={gutter} onChange={(_, value) => setGutter(value)} /></>}
-      {['brush', 'eraser'].includes(tool) && <><Typography variant="caption">{isMobile ? brushSize : `${c.brushSize}: ${brushSize}px`}</Typography><Slider aria-label={c.brushSize} min={1} max={64} value={brushSize} onChange={(_, value) => setBrushSize(value)} /></>}
-      {selected && <>
-        <Divider sx={{ my: 0.75 }} /><Typography variant="subtitle2" sx={{ color: panelColor, mb: 0.5 }}>{isMobile ? `#${selectedNumber}` : `${c.panel} ${selectedNumber} · ${selected.type === 'overlay' ? overlayLabel : regularLabel}`}</Typography>
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
-          <ComicButton icon={UploadFile} label={c.upload} shortcut="Ctrl+O" onClick={() => { uploadTarget.current = target; upload.current.click(); }} />
-          <ComicButton icon={ImageOutlined} label={c.gallery} onClick={() => openGallery()} />
-          <ComicButton icon={CropFree} label={c.cropImage} shortcut="Shift+C" disabled={!selected.image} onClick={() => setCropId(selected.id)} />
-          <ComicButton icon={DeleteOutline} label={c.removeImage} disabled={!selected.image} onClick={() => updatePanel(selected.id, { image: null })} />
-        </Box>
-        {isMobile ? <ComicButton icon={selected.type === 'overlay' ? LayersOutlined : CropFree} label={selected.type === 'overlay' ? regularLabel : overlayLabel} onClick={() => { const converted = convertPanelType(selected, selected.type === 'overlay' ? 'regular' : 'overlay', page, section); if (converted) updatePanel(selected.id, converted); else setNotice({ severity: 'warning', text: c.smallPanel }); }} /> : <TextField select size="small" fullWidth label={language === 'zh' ? '画框类型' : 'Frame type'} value={selected.type || 'regular'} sx={{ my: 1 }} onChange={(event) => { const converted = convertPanelType(selected, event.target.value, page, section); if (converted) updatePanel(selected.id, converted); else setNotice({ severity: 'warning', text: c.smallPanel }); }}><MenuItem value="regular">{regularLabel}</MenuItem><MenuItem value="overlay">{overlayLabel}</MenuItem></TextField>}
-        <Typography variant="caption">{isMobile ? `${selected.borderWidth}px` : selected.borderWidth ? `${c.border}: ${selected.borderWidth}px` : c.borderless}</Typography>
-        <Slider aria-label={c.border} min={0} max={12} value={selected.borderWidth} onChange={(_, value) => updatePanel(selected.id, { borderWidth: value })} />
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}><ComicButton icon={ArrowUpward} label={c.contentForward} onClick={() => moveLayer(1)} /><ComicButton icon={ArrowDownward} label={c.contentBackward} onClick={() => moveLayer(-1)} /></Box>
-        <ComicButton color="error" icon={DeleteOutline} label={c.deletePanel} shortcut="Delete" onClick={deleteSelection} />
-      </>}
-      {selectedElement && <>
-        <Divider sx={{ my: 0.75 }} /><Typography variant="subtitle2" noWrap sx={{ display: { xs: 'none', md: 'block' }, color: '#ad69da' }}>{selectedElement.name || (selectedElement.kind === 'bubble' ? c.dialogue : c[selectedElement.kind])}</Typography>
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
-          <ComicButton icon={SettingsOutlined} label={c.editElement} onClick={() => setElementEditorId(selectedElement.id)} />
-          <ComicButton icon={Flip} label={c.flipHorizontal} onClick={() => updateElement(selectedElement.id, { flipX: !selectedElement.flipX })} />
-          <ComicButton icon={ContentCopy} label={c.duplicate} shortcut="Ctrl+J" onClick={duplicateSelection} />
-          <ComicButton icon={ArrowUpward} label={c.contentForward} onClick={() => moveLayer(1)} /><ComicButton icon={ArrowDownward} label={c.contentBackward} onClick={() => moveLayer(-1)} />
-          <ComicButton color="error" icon={DeleteOutline} label={c.deleteContent} shortcut="Delete" onClick={deleteSelection} />
-        </Box>
-      </>}
-      <input ref={upload} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={(event) => { const file = event.target.files[0]; event.target.value = ''; if (file) perform(() => addImage(file, uploadTarget.current), c.imageError); }} />
-      <input ref={elementUpload} data-testid="comic-asset-upload" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" hidden onChange={(event) => {
-        const file = event.target.files[0]; event.target.value = ''; if (!file) return;
-        const pageId = pageRef.current.id, kind = elementUploadKind.current;
-        perform(async () => {
-          const asset = await readComicAsset(file); if (pageRef.current.id !== pageId) return;
-          const scale = Math.min(pageRef.current.width * 0.4 / asset.width, pageRef.current.height * 0.4 / asset.height, 1);
-          const width = asset.width * scale, height = asset.height * scale;
-          insertElement(kind, { x: (pageRef.current.width - width) / 2, y: (pageRef.current.height - height) / 2, width, height }, { dataUrl: asset.dataUrl, name: file.name });
-        }, c.imageError);
-      }} />
-    </Box>
+    {!compactAndroid && editingTools}
 
     <Box sx={{ position: 'relative', minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-      <Box sx={{ position: 'relative', p: 0.65, pr: { xs: 5, md: 0.65 }, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.65, borderBottom: 1, borderColor: 'divider' }}>
-        <ToggleButtonGroup exclusive value={mode} aria-label={language === 'zh' ? '制作方式' : 'Creation mode'}
-          onChange={(_, value) => { if (value) { setMode(value); setDockCollapsed(false); if (value === 'manual' && !selected) choose(page.panels.find((panel) => page.layers.some((layer) => layer.id === panel.layerId && layer.visible && !layer.locked))); } }}
-          sx={{ position: 'relative', display: 'grid', gridTemplateColumns: '1fr 1fr', width: language === 'zh' ? 190 : 250, p: '4px', border: 0, borderRadius: 2, bgcolor: 'action.selected', boxShadow: 'inset 0 1px 3px #00000014',
-            '&:before': { content: '""', position: 'absolute', top: 4, bottom: 4, left: 4, width: 'calc((100% - 8px) / 2)', borderRadius: 1.3, bgcolor: 'primary.main', boxShadow: '0 2px 5px #00000030, inset 0 1px 0 #ffffff35', transform: mode === 'manual' ? 'translateX(100%)' : 'translateX(0)', transition: 'transform 260ms cubic-bezier(0.22, 1, 0.36, 1)' },
-            '& .MuiToggleButtonGroup-grouped': { position: 'relative', zIndex: 1, m: 0, border: 0, borderRadius: '6px !important', px: 1, py: 0.8, fontSize: 13, fontWeight: 500, color: 'text.secondary', transition: 'color 160ms, transform 200ms', '&:hover': { bgcolor: 'transparent' }, '&.Mui-selected': { color: 'primary.contrastText', fontWeight: 700, bgcolor: 'transparent', transform: 'translateY(-0.5px)', '&:hover': { bgcolor: 'transparent' } }, '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 } },
-            '@media (prefers-reduced-motion: reduce)': { '&:before, & .MuiToggleButtonGroup-grouped': { transition: 'none' } } }}>
-          <ToggleButton value="ai">{language === 'zh' ? 'AI制作' : 'AI creation'}</ToggleButton>
-          <ToggleButton value="manual">{language === 'zh' ? '手动编排' : 'Manual layout'}</ToggleButton>
-        </ToggleButtonGroup>
-        <TextField select size="small" value={page.layout} aria-label={c.title} onChange={(event) => navigate(createComicPage(event.target.value, 'blank', getComicLayoutSize(event.target.value, canvasDefaults)), true)} sx={{ minWidth: 108 }}>
-          {Object.keys(COMIC_LAYOUTS).map((layout) => <MenuItem key={layout} value={layout}>{c[layout]}</MenuItem>)}
-        </TextField>
-        <ComicButton icon={SettingsOutlined} label={c.canvasSize} tip={c.canvasSizeTip} disabled={busy || aiBusy} onClick={() => setCanvasDimensions({ width: String(page.width), height: String(page.height) })} />
-        {COMIC_LAYOUTS[page.layout].sections === 2 && <ToggleButtonGroup size="small" exclusive value={section} onChange={(_, value) => { if (value !== null) { setSection(value); choose(null); } }}>{sectionLabels.map((label, index) => <Tooltip key={index} title={label}><ToggleButton value={index} aria-label={label} data-action-label={label}>{isMobile ? (page.layout === 'spreadPortrait' ? (index ? <ArrowForward /> : <ArrowBack />) : (index ? <ArrowDownward /> : <ArrowUpward />)) : label}</ToggleButton></Tooltip>)}</ToggleButtonGroup>}
-        <Box sx={{ flex: 1 }} />
-        {isMobile && <Box sx={{ position: 'absolute', top: 3, right: 3 }}><ComicButton icon={MenuIcon} label={c.pages} onClick={() => setPagesOpen(true)} /></Box>}
-        <Tooltip title={`${c.zoomCanvas} (Ctrl+0 / Ctrl+±)`}><TextField select size="small" value={zoom} onChange={(event) => Number(event.target.value) === 1 ? setView({ zoom: 1, x: 0, y: 0 }) : changeZoom(Number(event.target.value))} sx={{ width: 74 }}>{[...new Set([0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 5, zoom])].sort((a, b) => a - b).map((value) => <MenuItem value={value} key={value}>{value === 1 ? c.fit : `${Math.round(value * 100)}%`}</MenuItem>)}</TextField></Tooltip>
-        {isMobile && <TextField select size="small" value={selectedId || ''} slotProps={{ select: { displayEmpty: true, renderValue: () => selectedNumber ? `#${selectedNumber}` : c.panel, inputProps: { 'aria-label': c.panel } } }} sx={{ width: 72 }} onChange={(event) => { changeTool('select'); choose(page.panels.find((panel) => panel.id === event.target.value)); }}><MenuItem value="">{c.noPanel}</MenuItem>{page.panels.map((panel, index) => <MenuItem key={panel.id} value={panel.id} disabled={page.layers.some((layer) => layer.id === panel.layerId && (layer.locked || !layer.visible))}>{index + 1} · {panel.type === 'overlay' ? overlayLabel : regularLabel}</MenuItem>)}</TextField>}
+      <Box data-comic-toolbar sx={{ p: { xs: 0.5, md: 0.65 }, display: 'flex', flexDirection: 'row', flexWrap: compactAndroid ? 'nowrap' : 'wrap', alignItems: 'center', gap: 0.5, borderBottom: 1, borderColor: 'divider' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0, flex: compactAndroid ? 1 : 'none' }}>
+          <ToggleButtonGroup exclusive value={mode} aria-label={language === 'zh' ? '制作方式' : 'Creation mode'}
+            onChange={(_, value) => { if (value) { setMode(value); setDockCollapsed(compactAndroid); if (value === 'manual' && !selected) choose(page.panels.find((panel) => page.layers.some((layer) => layer.id === panel.layerId && layer.visible && !layer.locked))); } }}
+            sx={{ position: 'relative', display: 'grid', gridTemplateColumns: '1fr 1fr', flex: { xs: 1, md: 'none' }, width: { md: language === 'zh' ? 190 : 250 }, minWidth: 0, minHeight: 44, p: '4px', border: 0, borderRadius: 2, bgcolor: 'action.selected',
+              '&:before': { content: '""', position: 'absolute', top: 4, bottom: 4, left: 4, width: 'calc((100% - 8px) / 2)', borderRadius: 1.3, bgcolor: 'primary.main', transform: mode === 'manual' ? 'translateX(100%)' : 'translateX(0)', transition: 'transform 200ms ease' },
+              '& .MuiToggleButtonGroup-grouped': { position: 'relative', zIndex: 1, m: 0, border: 0, borderRadius: '6px !important', px: 1, py: 0.75, fontSize: 13, fontWeight: 500, color: 'text.secondary', '&:hover': { bgcolor: 'transparent' }, '&.Mui-selected': { color: 'primary.contrastText', fontWeight: 700, bgcolor: 'transparent', '&:hover': { bgcolor: 'transparent' } }, '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 } },
+              '@media (prefers-reduced-motion: reduce)': { '&:before': { transition: 'none' } } }}>
+            <ToggleButton value="ai" aria-label={language === 'zh' ? 'AI制作' : 'AI creation'}>{compactAndroid ? 'AI' : (language === 'zh' ? 'AI制作' : 'AI creation')}</ToggleButton>
+            <ToggleButton value="manual" aria-label={language === 'zh' ? '手动编排' : 'Manual layout'}>{compactAndroid ? (language === 'zh' ? '手动' : 'Manual') : (language === 'zh' ? '手动编排' : 'Manual layout')}</ToggleButton>
+          </ToggleButtonGroup>
+          {compactAndroid && <ComicButton icon={BrushOutlined} label={language === 'zh' ? '绘图工具' : 'Drawing tools'} variant="outlined" onClick={() => setToolsOpen(true)} />}
+          {compactAndroid && <ComicButton icon={SettingsOutlined} label={language === 'zh' ? '参数' : 'Parameters'} variant="outlined" onClick={() => setDockCollapsed(false)} />}
+          {compactAndroid && <><ComicButton icon={MenuIcon} label={c.pages} onClick={() => setPagesOpen(true)} /><ComicButton icon={dirty ? SaveOutlined : Check} label={c.savePage} disabled={busy} onClick={() => perform(savePage)} /></>}
+        </Box>
+        {!compactAndroid && pageTools}
+        {!compactAndroid && comicPageSelection}
+        {isMobile && !compactAndroid && <ComicButton icon={MenuIcon} label={c.pages} onClick={() => setPagesOpen(true)} />}
       </Box>
+
       <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: { xs: 'column', lg: 'row' } }}>
-        <Box component="aside" data-comic-dock data-testid="comic-dock" sx={{ width: { xs: '100%', lg: dockCollapsed ? 44 : 350 }, flexShrink: 0, minHeight: 0, maxHeight: { xs: dockCollapsed ? 42 : '46%', lg: 'none' }, display: 'flex', flexDirection: 'column', border: 0, bgcolor: 'background.paper', '& .MuiInputBase-root, & .MuiButton-root, & .MuiTypography-body2': { fontSize: 13 } }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', px: 0.5, minHeight: 40, borderBottom: dockCollapsed ? 0 : 1, borderColor: 'divider' }}>
-            <IconButton size="small" aria-label={dockCollapsed ? (language === 'zh' ? '展开参数' : 'Expand parameters') : (language === 'zh' ? '收起参数' : 'Collapse parameters')} onClick={() => setDockCollapsed(!dockCollapsed)}><ArrowBack sx={{ transform: dockCollapsed ? 'rotate(180deg)' : 'none', width: 18 }} /></IconButton>
+        <Box component="aside" data-comic-dock data-testid="comic-dock" role={active && compactAndroid && !dockCollapsed ? 'dialog' : undefined} aria-modal={active && compactAndroid && !dockCollapsed ? true : undefined} aria-label={language === 'zh' ? '漫画参数' : 'Comic parameters'} sx={{ width: { xs: '100%', lg: dockCollapsed ? 44 : 350 }, flexShrink: 0, minHeight: 0, height: { xs: mode === 'ai' && !dockCollapsed ? '54%' : 'auto', lg: 'auto' }, maxHeight: { xs: dockCollapsed ? 48 : '54%', lg: 'none' }, display: 'flex', flexDirection: 'column', border: 0, bgcolor: 'background.paper', '& .MuiInputBase-root, & .MuiButton-root, & .MuiTypography-body2': { fontSize: 13 }, ...(compactAndroid ? { display: dockCollapsed ? 'none' : 'flex', position: 'absolute', inset: 0, width: 'auto', height: 'auto', maxHeight: 'none', zIndex: 1200 } : {}) }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', px: 1, minHeight: 48, gap: 0.5, borderBottom: dockCollapsed ? 0 : 1, borderColor: 'divider' }}>
+            <IconButton size="small" aria-label={dockCollapsed ? (language === 'zh' ? '展开参数' : 'Expand parameters') : (language === 'zh' ? '收起参数' : 'Collapse parameters')} onClick={() => setDockCollapsed(!dockCollapsed)}>{compactAndroid ? <Close /> : <ArrowBack sx={{ transform: dockCollapsed ? 'rotate(180deg)' : 'none', width: 18 }} />}</IconButton>
             {!dockCollapsed && <><Typography sx={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{mode === 'ai' ? (language === 'zh' ? 'AI制作' : 'AI creation') : `${c.panel} ${selectedNumber || '—'}`}</Typography>
               {mode === 'manual' && <Button size="small" startIcon={<SaveOutlined />} disabled={!selected || aiBusy || generationAction?.loading} onClick={() => { const snapshot = onSaveTask?.(); if (snapshot) { rememberTask(target, snapshot); setNotice({ severity: 'success', text: c.taskSaved }); } }} sx={{ whiteSpace: 'nowrap', mr: 0.5 }}>{c.saveTask}</Button>}
-              <Tooltip title="Provider"><IconButton size="small" aria-label={language === 'zh' ? 'Provider 设置' : 'Provider settings'} disabled={aiBusy} onClick={() => setSettingsOpen(true)}><SettingsOutlined fontSize="small" /></IconButton></Tooltip></>}
+              {mode === 'ai' && <Button size="small" variant="outlined" startIcon={<SettingsOutlined />} disabled={aiBusy} onClick={() => setSettingsOpen(true)} sx={{ minHeight: compactAndroid ? 44 : 32, flexShrink: 0, px: 1 }}>{language === 'zh' ? '模型设置' : 'Models'}</Button>}</>}
           </Box>
-          <Box sx={{ display: dockCollapsed ? 'none' : 'block', overflowY: 'auto', overflowX: 'hidden', flex: 1, minHeight: 0 }}>
-            <Box sx={{ display: mode === 'ai' ? 'block' : 'none' }}>
-              <ComicAIStudio open={active && mode === 'ai'} page={page} language={language} llmSettings={llmSettings} selectedControl={selectedControl}
+          <Box sx={{ display: dockCollapsed ? 'none' : (compactAndroid && mode === 'ai' ? 'flex' : 'block'), overflowY: compactAndroid && mode === 'ai' ? 'hidden' : 'auto', overflowX: 'hidden', flex: 1, minHeight: 0, flexDirection: 'column' }}>
+            {compactAndroid && comicPageSelection}
+            <Box sx={{ display: mode === 'ai' ? (compactAndroid ? 'flex' : 'block') : 'none', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+              <ComicAIStudio compact={compactAndroid} open={active && mode === 'ai' && !dockCollapsed} page={page} language={language} llmSettings={llmSettings} selectedControl={selectedControl}
                 getPage={getAIPage} onUpdatePage={updateAIPage} onApplyResult={applyAIResult} generationBusy={generationAction?.loading && !aiBusy}
                 onBusyChange={(value) => { setAiBusy(value); onAIBusyChange?.(value); }} />
             </Box>
             <Box sx={{ display: mode === 'manual' ? 'flex' : 'none', flexDirection: 'column', gap: 1.5, p: 1 }}>
               {/* 参数快照由父层保存，隐藏时卸载输入控件，避免自动高度观察器在零尺寸下触发循环。 */}
-              {mode === 'manual' && manualEditor}
+              {mode === 'manual' && (manualEditor || (compactAndroid ? <Button fullWidth variant="outlined" startIcon={<SettingsOutlined />} disabled={!selected} onClick={() => { setDockCollapsed(true); onEditTask?.(selectedBounds); }}>{c.editTask}</Button> : <ComicButton icon={SettingsOutlined} label={c.editTask} onClick={() => onEditTask?.(selectedBounds)} />))}
             </Box>
           </Box>
         </Box>
@@ -1117,19 +1150,25 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
           if (kind === 'panel') choose(item, current); else if (kind === 'element') chooseElement(item); else { choose(null); setSelectedStrokeId(item.id); setActiveLayerId(item.layerId); }
         }} onChange={changeLayers} />
       </Box>}
-      <Box data-testid="comic-actions" sx={{ p: 0.8, display: 'flex', flexWrap: 'wrap', gap: 0.75, alignItems: 'center', flexShrink: 0, borderTop: 1, borderColor: 'divider', bgcolor: 'background.paper' }}>
+      <Box data-testid="comic-actions" sx={{ p: compactAndroid ? 0.5 : 0.8, display: compactAndroid && mode === 'ai' ? 'none' : 'flex', flexWrap: 'wrap', gap: 0.75, alignItems: 'center', flexShrink: 0, borderTop: 1, borderColor: 'divider', bgcolor: 'background.paper' }}>
+        <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexWrap: 'wrap', flexDirection: compactAndroid ? 'column' : 'row', gap: 1, '& .MuiButton-root': { minHeight: { xs: 44, md: 30 }, fontSize: { xs: 13, md: 11 } } }}>
         {mode === 'manual' && <>
           <Button size="small" variant="contained" startIcon={<PlayArrow />} disabled={busy || aiBusy || generationAction?.disabled || (!selected && !generationAction?.loading)} onClick={onGenerate}>{generationAction?.text || c.generate}{generationAction?.costLabel ? ` · ${generationAction.costLabel}` : ''}</Button>
-          <Tooltip title={language === 'zh' ? `共 ${batchCost.count} 个分镜，每个生成一张` : `${batchCost.count} panels, one image each`}><span>
+          {onGenerateAll && <Tooltip title={language === 'zh' ? `共 ${batchCost.count} 个分镜，每个生成一张` : `${batchCost.count} panels, one image each`}><span>
             <Button size="small" variant="outlined" disabled={busy || aiBusy || generationAction?.loading || !batchCost.count || batchCost.total === null} onClick={onGenerateAll}>{language === 'zh' ? '依次生成所有分镜' : 'Generate every panel'} · {batchCostLabel}</Button>
-          </span></Tooltip>
+          </span></Tooltip>}
         </>}
         {selectedElement && <><Chip size="small" label={selectedElement.kind === 'bubble' ? c.dialogue : c[selectedElement.kind]} /><ComicButton icon={SettingsOutlined} label={c.editElement} onClick={() => setElementEditorId(selectedElement.id)} /></>}
-        <Box sx={{ flex: 1 }} /><ComicButton icon={dirty ? SaveOutlined : Check} label={c.savePage} tip={c.savedLocally} shortcut="Ctrl+S" disabled={busy} onClick={() => perform(savePage)} />
+        </Box>
+        {!compactAndroid && <ComicButton icon={dirty ? SaveOutlined : Check} label={c.savePage} tip={c.savedLocally} shortcut="Ctrl+S" disabled={busy} onClick={() => perform(savePage)} />}
       </Box>
     </Box>
 
-    {isMobile ? <Drawer anchor="right" open={pagesOpen} onClose={() => setPagesOpen(false)} slotProps={{ paper: { sx: { width: 'min(82vw, 290px)', p: 1 } } }}>{pageLibrary}</Drawer> : pageLibrary}
+    {compactAndroid && <Dialog open={active && toolsOpen} keepMounted onClose={() => setToolsOpen(false)} fullWidth maxWidth="xs" aria-labelledby="comic-tools-title">
+      <DialogTitle id="comic-tools-title" sx={{ display: 'flex', alignItems: 'center', py: 1, fontSize: 16 }}><Box sx={{ flex: 1 }}>{language === 'zh' ? '绘图工具' : 'Drawing tools'}</Box><IconButton aria-label={c.close} onClick={() => setToolsOpen(false)}><Close /></IconButton></DialogTitle>
+      <DialogContent dividers sx={{ p: 1 }}>{editingTools}</DialogContent>
+    </Dialog>}
+    {isMobile ? <Drawer anchor="right" open={active && pagesOpen} onClose={() => setPagesOpen(false)} slotProps={{ paper: { sx: { width: 'min(82vw, 290px)', p: 1, ...(compactAndroid ? { top: 'var(--mobile-top)', bottom: 'var(--mobile-bottom)', height: 'auto' } : {}) } } }}>{pageLibrary}</Drawer> : pageLibrary}
 
     <Menu open={Boolean(contextMenu)} onClose={() => setContextMenu(null)} onClick={() => setContextMenu(null)} anchorReference="anchorPosition" anchorPosition={contextMenu ? { top: contextMenu.mouseY, left: contextMenu.mouseX } : undefined}>
       <MenuItem onClick={() => setView({ zoom: 1, x: 0, y: 0 })}>{c.resetView}<Typography component="span" sx={{ ml: 3, color: 'text.secondary', fontSize: 11 }}>Ctrl+0</Typography></MenuItem>
@@ -1147,7 +1186,7 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
       {selectedItem && [<MenuItem key="duplicate" onClick={duplicateSelection}>{c.duplicate}<Typography component="span" sx={{ ml: 'auto', pl: 3, color: 'text.secondary', fontSize: 11 }}>Ctrl+J</Typography></MenuItem>, <MenuItem key="up" onClick={() => moveLayer(1)}>{c.contentForward}</MenuItem>, <MenuItem key="down" onClick={() => moveLayer(-1)}>{c.contentBackward}</MenuItem>, <MenuItem key="delete" sx={{ color: 'error.main' }} onClick={deleteSelection}>{c.deleteContent}</MenuItem>]}
     </Menu>
 
-    <ComicLLMSettings open={settingsOpen} onClose={() => setSettingsOpen(false)} language={language} disabled={aiBusy} onChange={setLLMSettings} />
+    <ComicLLMSettings androidLayout={androidLayout} open={active && settingsOpen} onClose={() => setSettingsOpen(false)} language={language} disabled={aiBusy} onChange={setLLMSettings} />
     <Dialog open={Boolean(canvasDimensions)} onClose={() => !busy && setCanvasDimensions(null)} maxWidth="xs" fullWidth aria-labelledby="comic-canvas-size-title">
       <Box component="form" onSubmit={(event) => {
         event.preventDefault();

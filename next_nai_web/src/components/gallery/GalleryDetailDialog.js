@@ -2,9 +2,10 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Chip, CircularProgress, Dialog, IconButton, MenuItem, Stack, TextField, Tooltip, Typography } from '@mui/material';
-import { ChevronLeft, ChevronRight, Close, ContentCopy, DeleteForeverOutlined, DeleteOutline, DescriptionOutlined, EditOutlined, ExpandMore, ImageOutlined, PaletteOutlined, RestoreFromTrashOutlined, SaveOutlined, History, Search } from '@mui/icons-material';
+import { ChevronLeft, ChevronRight, Close, ContentCopy, DeleteForeverOutlined, DeleteOutline, DescriptionOutlined, DownloadOutlined, EditOutlined, ExpandMore, ImageOutlined, PaletteOutlined, RestoreFromTrashOutlined, SaveOutlined, History, Search } from '@mui/icons-material';
 import apiClient from '@/utils/ApiClient';
 import { copyTextToClipboard } from '@/utils/browserCapabilities.mjs';
+import { downloadUrlToFile } from '../../utils/mediaAssets.js';
 import { useI18n } from '@/i18n/I18nProvider';
 import GalleryMetadataFields, { getParameterSharedPaths } from './GalleryMetadataFields';
 
@@ -15,8 +16,8 @@ const basicFields = ['model', 'seed', 'steps', 'guidanceScale', 'sampler', 'widt
  * @param {object} props 详情 ID、分组以及图库的应用、回收、另存和切图回调。
  * @returns {React.ReactElement} 桌面左右分栏、手机上下分栏的全屏详情。
  */
-export default function GalleryDetailDialog({ entryId, groups, onClose, onChanged, onApply, onTrash, onRestore, onDelete, onMetadata, onVersions, onSimilar, onPrevious, onNext, operationError = '', operationBusy = false }) {
-  const { t } = useI18n();
+export default function GalleryDetailDialog({ androidLayout = false, entryId, groups, onClose, onChanged, onApply, onTrash, onRestore, onDelete, onMetadata, onVersions, onSimilar, onPrevious, onNext, operationError = '', operationBusy = false }) {
+  const { t, locale } = useI18n();
   const [entry, setEntry] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -100,13 +101,19 @@ export default function GalleryDetailDialog({ entryId, groups, onClose, onChange
               {operationError && <Alert severity="error">{operationError}</Alert>}
               {notice && <Alert severity="success" onClose={() => setNotice('')}>{notice}</Alert>}
               <Box sx={cardSx}>
-                <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 1 }}>
+                <Stack direction="row" alignItems="center" flexWrap={androidLayout ? 'wrap' : 'nowrap'} gap={1} sx={{ mb: 1 }}>
                   <Typography variant="subtitle2" sx={{ flex: 1 }}>{t('gallery.imageDetails')}</Typography>
                   {!trashed && <Button size="small" startIcon={editing ? <Close /> : <EditOutlined />} disabled={actionBusy} onClick={() => {
                     if (editing) setDraft({ title: entry.title || '', prompt: entry.prompt || '', negative_prompt: entry.negative_prompt || '', style_prompt: entry.style_prompt || '', group_id: entry.group_id || '' });
                     setEditing(!editing); setSelectedText('');
                   }}>{t(editing ? 'gallery.cancelEdit' : 'gallery.editDetails')}</Button>}
                   {!trashed && <Button size="small" startIcon={<DescriptionOutlined />} disabled={actionBusy || editing} onClick={() => onMetadata(entry)}>{t('gallery.metadata')}</Button>}
+                  {androidLayout && <Button size="small" startIcon={<DownloadOutlined />} disabled={actionBusy || editing || !entry.url} onClick={async () => {
+                    setBusy(true); setError('');
+                    try { await downloadUrlToFile(entry.url, entry.filename); }
+                    catch (failure) { setError(failure.message); }
+                    finally { setBusy(false); }
+                  }}>{locale === 'zh-CN' ? '下载原图' : 'Download original'}</Button>}
                 </Stack>
                 {editing ? <Stack spacing={1.5}>
                   <TextField size="small" label={t('gallery.optionalTitle')} value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} inputProps={{ maxLength: 200 }} />

@@ -2424,3 +2424,4 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+.image-processing-editor :is(.mobile-editor-menu, .mobile-tool-trigger) { display: none; }

@@ -30,6 +30,8 @@ import {
   Slide,
   Divider,
   Stack,
+  Menu,
+  MenuItem,
   SwipeableDrawer,
   alpha
 } from '@mui/material';
@@ -48,6 +50,10 @@ import {
   ViewQuilt as ComicIcon,
   Warning as WarningIcon,
   PhotoFilter as ImageProcessingIcon,
+  AddPhotoAlternate as ImportImageIcon,
+  MoreHoriz as MoreHorizIcon,
+  Check as CheckIcon,
+  PlayArrow as PlayArrowIcon,
 } from '@mui/icons-material';
 import ItemDisplay from './ItemDisplay';
 import ImageEnhanceDialog from './ImageEnhanceDialog';
@@ -308,7 +314,7 @@ const getResponsiveGenerateButtonContent = ({
 // 使用GenerationContext包装的AIPaintingPage内部组件
 const ImageProcessingWorkspace = dynamic(() => import('./ImageProcessing/ImageProcessingWorkspace'), { ssr: false });
 
-const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange, renderModeTools, desktopEditor }) => {
+const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange, renderModeTools, desktopEditor, androidLayout = false, onOpenAccount }) => {
   const { t, formatNumber, locale } = useI18n();
   const comicText = locale === 'en-US' ? {
     title: 'Comic maker', edit: 'Panel parameters', save: 'Save task', close: 'Back to canvas',
@@ -325,7 +331,11 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
   };
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const compactAndroid = androidLayout && isMobile;
   const workspaceRef = useRef(null);
+  const imageImportInputRef = useRef(null);
+  const [mobileGenerationMenuAnchor, setMobileGenerationMenuAnchor] = useState(null);
+  const [comicEditorOpen, setComicEditorOpen] = useState(false);
   const parameterResizeRef = useRef(null);
   const [workspaceWidth, setWorkspaceWidth] = useState(0);
   const [parameterPanelWidth, setParameterPanelWidth] = useState(null);
@@ -949,7 +959,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
         text: previewCount > 1
           ? t('painting.workspace.actions.generateInpaintResults', { count: previewCount })
           : t('painting.workspace.actions.generateInpaintResult'),
-        shortText: t('painting.workspace.actions.startInpainting'),
+        shortText: compactAndroid ? (locale === 'zh-CN' ? '局部重绘' : 'Inpaint') : t('painting.workspace.actions.startInpainting'),
         action: handleGenerate,
         color: 'primary',
         icon: <ImageIcon />,
@@ -1288,25 +1298,8 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
     });
   }, [applyMetadataToCurrentParams, t]);
 
-  const handlePageDrop = useCallback(async (event) => {
-    const hasFiles = Array.from(event.dataTransfer?.types || []).includes('Files');
-    if (!hasFiles) {
-      return;
-    }
-
-    if (event.target?.closest?.('[data-drop-zone]')) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    const imageFile = Array.from(event.dataTransfer?.files || []).find((file) => file.type?.startsWith('image/'));
-    if (!imageFile) {
-      return;
-    }
-
-    // 先显示图片用途；没有元数据的普通图片也能发送到工具。
+  const openImageImport = useCallback(async (imageFile) => {
+    // 普通图片也能进入参考、重绘或编辑流程。
     setPageMetadataDialog({ open: true, file: imageFile, metadata: null, reading: true });
     try {
       const metadata = await extractMetadataFromFile(imageFile);
@@ -1317,6 +1310,14 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
       setPageMetadataDialog(current => current.file === imageFile ? { ...current, reading: false } : current);
     }
   }, [showNotification, t]);
+
+  const handlePageDrop = useCallback((event) => {
+    if (!Array.from(event.dataTransfer?.types || []).includes('Files') || event.target?.closest?.('[data-drop-zone]')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const imageFile = Array.from(event.dataTransfer.files).find((file) => file.type?.startsWith('image/'));
+    if (imageFile) void openImageImport(imageFile);
+  }, [openImageImport]);
 
   const handleUseDroppedImage = async (target) => {
     const file = pageMetadataDialog.file;
@@ -1346,6 +1347,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
     changeWorkspaceMode('generation');
     setExpandedPanels(current => ({ ...current, [target]: true }));
     setImageImportRequest({ id: crypto.randomUUID(), target, file });
+    if (compactAndroid) setMobileDrawerOpen(true);
   };
 
   const handleSeedCopyAndApply = useCallback(async (seed) => {
@@ -2485,6 +2487,21 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
 
 
   const comicGenerationAction = { ...getGenerateButtonState(), loading: comicGenerationBusy || comicAIBusy || isGenerating };
+  const closeComicEditor = () => {
+    saveComicTask();
+    setComicEditorOpen(false);
+  };
+
+  useEffect(() => {
+    if (!compactAndroid || !active || !mobileDrawerOpen) return;
+    const back = (event) => {
+      if (event.defaultPrevented || event.detail) return;
+      event.preventDefault();
+      setMobileDrawerOpen(false);
+    };
+    window.addEventListener('mobile-back', back);
+    return () => window.removeEventListener('mobile-back', back);
+  }, [active, compactAndroid, mobileDrawerOpen]);
 
   return (
     <>
@@ -2498,7 +2515,8 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
           flexDirection: isMobile ? 'column' : 'row',
           overflowX: 'hidden',
           position: 'relative',
-          pb: isMobile && !isCanvasWorkspace ? { xs: '116px', sm: '60px' } : 0,
+          pb: isMobile && !isCanvasWorkspace && !compactAndroid ? { xs: '116px', sm: '60px' } : 0,
+          overflowY: androidLayout ? 'hidden' : undefined,
           backgroundColor: theme.palette.background.default,
           userSelect: resizingParameters ? 'none' : undefined,
           cursor: resizingParameters ? 'col-resize' : undefined,
@@ -2510,7 +2528,22 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
         }}
         onDropCapture={handlePageDrop}
       >
-        {/* 通知提示框 */}
+        {compactAndroid && leftPanelMode === 'comic' && <Dialog
+          open={active && comicEditorOpen} keepMounted fullScreen onClose={closeComicEditor}
+          aria-labelledby="mobile-comic-editor-title">
+          <DialogTitle id="mobile-comic-editor-title" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            {comicText.edit} {comicSelectedTarget && `#${comicSelectedTarget.panelNumber}`}
+            <IconButton aria-label={comicText.close} onClick={closeComicEditor}><CloseIcon /></IconButton>
+          </DialogTitle>
+          <DialogContent dividers>{parameterEditor}</DialogContent>
+          <DialogActions sx={{ gap: 1 }}>
+            <Button aria-label={comicText.save} onClick={() => { closeComicEditor(); showNotification(comicText.saved); }}><CheckIcon /></Button>
+            <Button aria-label={comicGenerationAction.text} variant="contained" disabled={comicGenerationAction.disabled}
+              onClick={comicGenerationAction.action} startIcon={<PlayArrowIcon />}>
+              {comicGenerationAction.costLabel || comicGenerationAction.text}
+            </Button>
+          </DialogActions>
+        </Dialog>}
         {/* 通知提示框 */}
         <Snackbar
           open={notification.open}
@@ -2592,12 +2625,12 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
         {/* 左侧区域 - 图像显示 */}
         <Box
           sx={{
-            flex: isMobile ? (isCanvasWorkspace ? '1 1 0' : 'none') : '1 1 0',
+            flex: compactAndroid || !isMobile || isCanvasWorkspace ? '1 1 0' : 'none',
             minWidth: 0,
             width: isMobile ? '100%' : 'auto',
             display: 'flex',
             flexDirection: isMobile ? 'column' : 'row',
-            minHeight: isMobile ? (isCanvasWorkspace ? 0 : '80vh') : 'auto',
+            minHeight: compactAndroid || isCanvasWorkspace ? 0 : isMobile ? '80vh' : 'auto',
             maxHeight: '100%',
             p: isMobile ? 0.5 : '1px',
             overflow: 'hidden',
@@ -2751,7 +2784,9 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
                   active={active && leftPanelMode === 'comic'}
                   generatedItems={generatedItems}
                   onSelectTask={handleComicSelectTask}
-                  manualEditor={leftPanelMode === 'comic' ? parameterEditor : null}
+                  androidLayout={androidLayout}
+                  manualEditor={!compactAndroid && leftPanelMode === 'comic' ? parameterEditor : null}
+                  onEditTask={() => setComicEditorOpen(true)}
                   onPanelBoundsChange={setComicPanelBounds}
                   onGenerateAll={() => handleGenerate(true)}
                   getBatchGenerationCost={getComicBatchCost}
@@ -2785,11 +2820,12 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
                   overflow: 'hidden',
                   borderRadius: isMobile ? 2 : '8px 0 0 8px',
                   backgroundColor: themeColors.ItemDisplayBg,
-                  minHeight: isMobile ? '50vh' : '300px',
+                  minHeight: compactAndroid ? 0 : isMobile ? '50vh' : '300px',
                   border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
                 }}
               >
                 <ItemDisplay
+                  androidLayout={androidLayout}
                   item={currentItem}
                   active={active && leftPanelMode === 'generation'}
                   onActionButtonClick={handleActionButtonClick}
@@ -3166,7 +3202,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
         {isMobile && !isCanvasWorkspace && (
           <SwipeableDrawer
             anchor="bottom"
-            open={mobileDrawerOpen}
+            open={active && mobileDrawerOpen}
             onClose={() => setMobileDrawerOpen(false)}
             onOpen={() => setMobileDrawerOpen(true)}
             disableSwipeToOpen={false}
@@ -3175,7 +3211,8 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
             }}
             sx={{
               '& .MuiDrawer-paper': {
-                height: '100dvh',
+                height: compactAndroid ? '100%' : '100dvh',
+                ...(compactAndroid ? { pt: 'var(--mobile-top)', pb: 'var(--mobile-bottom)', pl: 'var(--mobile-left)', pr: 'var(--mobile-right)', boxSizing: 'border-box' } : {}),
                 overflow: 'hidden',
                 borderTopLeftRadius: 4,
                 borderTopRightRadius: 4,
@@ -3186,6 +3223,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
           >
             {/* 抽屉标题栏 */}
             <Box
+              data-mobile-parameter-header
               sx={{
                 display: 'flex',
                 alignItems: 'center',
@@ -3217,6 +3255,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
 
             {/* 抽屉内容区域 */}
             <Box
+              data-mobile-parameter-body
               // 内容中的滑动和长按交给浏览器，只允许从标题栏开始拖动折叠抽屉。
               onTouchStart={(event) => event.stopPropagation()}
               sx={{
@@ -3261,20 +3300,21 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
                 {renderAnlasStatus()}
               </Paper>
             </Box>
-            <Box ref={setDrawerToolbarContainer} sx={{ px: 2, pt: 1, flexShrink: 0, bgcolor: 'background.paper', borderTop: 1, borderColor: 'divider' }} />
+            <Box data-mobile-parameter-footer ref={setDrawerToolbarContainer} sx={{ px: 2, pt: 1, flexShrink: 0, bgcolor: 'background.paper', borderTop: 1, borderColor: 'divider' }} />
           </SwipeableDrawer>
         )}
 
         {/* 移动端下的固定生成按钮 */}
         {isMobile && !isCanvasWorkspace && (
-          <Box
+          <Box data-mobile-generation-footer
             sx={{
-              position: 'fixed',
+              position: compactAndroid ? 'relative' : 'fixed',
               bottom: 0,
               left: 0,
               right: 0,
-              py: 1.5,
-              px: 2,
+              py: compactAndroid ? 1 : 1.5,
+              px: compactAndroid ? 1 : 2,
+              flexShrink: 0,
               backgroundColor: themeColors.mobileBottomBg,
               borderTop: `1px solid ${themeColors.mobileBottomBorder}`,
               zIndex: 1200,
@@ -3284,8 +3324,35 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
               alignItems: 'stretch',
             }}
           >
-            <Box sx={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'center', gap: 1, minWidth: 0 }}>
-            {/* 验证状态小组件 - 使用统一的 renderVerificationIcon */}
+            <Box data-testid="mobile-generation-toolbar" sx={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'center', gap: compactAndroid ? 0 : 1, minWidth: 0 }}>
+            {compactAndroid ? <>
+              <Tooltip title={t('painting.workspace.anlas.openDetails')} arrow>
+                <Button size="small" onClick={onOpenAccount} aria-label={t('painting.workspace.anlas.openDetails')}
+                  sx={{ minWidth: 40, minHeight: 44, px: .75, border: 1, borderColor: 'divider', bgcolor: alpha(theme.palette.primary.main, .055) }}>
+                  <Box component="span" sx={{ width: 24, height: 24, borderRadius: '50%', display: 'grid', placeItems: 'center', bgcolor: alpha(theme.palette.primary.main, .12) }}>
+                    <AnlasIcon sx={{ fontSize: 17 }} />
+                  </Box>
+                </Button>
+              </Tooltip>
+              <IconButton aria-label={locale === 'zh-CN' ? '生成工具' : 'Generation tools'} aria-haspopup="menu"
+                aria-expanded={Boolean(mobileGenerationMenuAnchor)} onClick={(event) => setMobileGenerationMenuAnchor(event.currentTarget)}
+                color={workspaceErrors.length ? 'error' : 'default'} sx={{ width: 40, height: 44, flexShrink: 0 }}>
+                <Badge badgeContent={workspaceErrors.length} color="error" max={99}><MoreHorizIcon /></Badge>
+              </IconButton>
+              <Menu anchorEl={mobileGenerationMenuAnchor} open={active && Boolean(mobileGenerationMenuAnchor)} onClose={() => setMobileGenerationMenuAnchor(null)}>
+                <MenuItem onClick={() => { setMobileGenerationMenuAnchor(null); imageImportInputRef.current.click(); }}>
+                  <ImportImageIcon sx={{ mr: 1.5, fontSize: 20 }} />{t('painting.tools.metadata.selectImage')}
+                </MenuItem>
+                {batchStatus.active && <MenuItem onClick={() => { setMobileGenerationMenuAnchor(null); setBatchDialogOpen(true); }}>
+                  <BarChartIcon sx={{ mr: 1.5, fontSize: 20 }} />{t('painting.workspace.actions.viewBatchDetails')}
+                  <Typography variant="caption" sx={{ ml: 2 }}>{batchStatus.current}/{batchStatus.total}</Typography>
+                </MenuItem>}
+                <MenuItem onClick={() => { setMobileGenerationMenuAnchor(null); setErrorSummaryOpen(true); }}>
+                  <ErrorOutlineIcon sx={{ mr: 1.5, fontSize: 20 }} />{t('painting.workspace.actions.viewErrorDetails')}
+                  <Typography variant="caption" sx={{ ml: 2 }}>{workspaceErrors.length}</Typography>
+                </MenuItem>
+              </Menu>
+            </> : (
             <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
               {renderAnlasStatus(true)}
 
@@ -3334,6 +3401,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
                 </Badge>
               </IconButton>
             </Box>
+            )}
 
             {/* 生成按钮 - 使用动态状态 */}
             {(() => {
@@ -3352,7 +3420,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
               const darkColor = isError ? theme.palette.error.dark : theme.palette.primary.dark;
 
               return (
-                <Box sx={{ display: 'flex', flex: '1 1 0', minWidth: 0, alignItems: 'center', maxWidth: '100%' }}>
+                <Box sx={{ display: 'flex', flex: '1 1 0', minWidth: 0, ml: compactAndroid ? .75 : 0, alignItems: 'center', maxWidth: '100%' }}>
                   <Button
                     ref={setMobileGenerateButtonContainer}
                     variant="contained"
@@ -3578,15 +3646,21 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
         onUseImage={handleUseDroppedImage}
         onApply={handleApplyPageMetadata}
       />
+      {androidLayout && <input ref={imageImportInputRef} type="file" accept="image/*" aria-label={t('painting.tools.metadata.selectImage')} hidden
+        onChange={(event) => {
+          const file = event.currentTarget.files[0];
+          event.currentTarget.value = '';
+          if (file) void openImageImport(file);
+        }} />}
     </>
   );
 };
 
 // 包装了Context Provider的根组件
-const AIPaintingPage = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange, renderModeTools, desktopEditor }) => {
+const AIPaintingPage = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange, renderModeTools, desktopEditor, androidLayout, onOpenAccount }) => {
   return (
     <GenerationProvider>
-      <AIPaintingPageContent userId={userId} accountSnapshot={accountSnapshot} active={active} workContext={workContext} onWorkContextChange={onWorkContextChange} renderModeTools={renderModeTools} desktopEditor={desktopEditor} />
+      <AIPaintingPageContent userId={userId} accountSnapshot={accountSnapshot} active={active} workContext={workContext} onWorkContextChange={onWorkContextChange} renderModeTools={renderModeTools} desktopEditor={desktopEditor} androidLayout={androidLayout} onOpenAccount={onOpenAccount} />
     </GenerationProvider>
   );
 };

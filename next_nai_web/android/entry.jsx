@@ -1,19 +1,20 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { HashRouter, useLocation, useNavigate } from 'react-router-dom';
-import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, Toolbar, Typography } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent } from '@mui/material';
+import { CollectionsOutlined } from '@mui/icons-material';
 import { App } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
 import { SystemBars, SystemBarsStyle } from '@capacitor/core';
 import AppProviders from '@/providers/AppProviders';
 import { useAppTheme } from '@/providers/AppThemeProvider';
 import { useI18n } from '@/i18n/I18nProvider';
-import LanguageSwitcher from '@/components/i18n/LanguageSwitcher';
 import { DesktopHistoryProvider, useDesktopHistory } from '@/desktop/navigation';
 import api from '@/utils/ApiClient';
 import SignIn from '../desktop/SignIn';
 import { installTransport } from './transport';
 import { saveAs } from './save-file';
+import MobileTitleBar from './MobileTitleBar';
 import '@fontsource/geist/400.css';
 import '@/app/globals.css';
 import '../desktop/window.css';
@@ -23,16 +24,6 @@ const Workspace = lazy(() => import('../desktop/Workspace'));
 installTransport();
 window.novelaiSaveFile = saveAs;
 
-/** 安卓状态栏以下的工具条，与工作区共用语言、设置和账号操作。 */
-export function AndroidTitleBar({ leading, children }) {
-  return <Toolbar variant="dense" disableGutters sx={{ bgcolor: 'background.paper', flexShrink: 0, px: 1, gap: .5, minHeight: 48 }}>
-    {leading}
-    <Box component="img" src="/logo.svg" width={24} height={24} alt="" />
-    <Typography noWrap sx={{ flex: 1, minWidth: 0, fontWeight: 650 }}>NovelAI Local</Typography>
-    {children}
-  </Toolbar>;
-}
-
 function Routes() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
@@ -41,8 +32,10 @@ function Routes() {
   const { mode } = useAppTheme();
   const [error, setError] = useState('');
   const [previewUrl, setPreviewUrl] = useState('');
+  const [appVersion, setAppVersion] = useState('');
   const [checking, setChecking] = useState(pathname !== '/local');
   const auth = pathname !== '/main' && pathname !== '/local';
+  useEffect(() => { void App.getInfo().then(({ version }) => setAppVersion(version)); }, []);
 
   useEffect(() => {
     if (!checking) return;
@@ -63,8 +56,9 @@ function Routes() {
 
   useEffect(() => {
     const listener = App.addListener('backButton', () => {
-      const dialog = [...document.querySelectorAll('[role="dialog"], [role="menu"]')].reverse()
-        .find((node) => node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden');
+      const dialog = [...document.querySelectorAll('[role="dialog"], [role="menu"], [role="listbox"]')].reverse()
+        .find((node) => !node.closest('[aria-hidden="true"]') && node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden');
+      if (!window.dispatchEvent(new CustomEvent('mobile-back', { cancelable: true, detail: dialog }))) return;
       if (dialog) {
         dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
       } else if (history.canBack) {
@@ -100,17 +94,24 @@ function Routes() {
     };
   }, [history, t]);
 
+  useEffect(() => {
+    const revealInput = () => requestAnimationFrame(() => {
+      const input = document.activeElement;
+      if (input?.matches('input, textarea')) input.scrollIntoView({ block: 'center', inline: 'nearest' });
+    });
+    window.addEventListener('resize', revealInput);
+    return () => window.removeEventListener('resize', revealInput);
+  }, []);
+
   return <Box className="android-app" sx={{ bgcolor: 'background.default' }}>
     {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
-    {auth && <AndroidTitleBar>
-      <Button size="small" onClick={() => { setChecking(false); navigate('/local'); }}>
-        {locale === 'zh-CN' ? '本机工具' : 'Local tools'}
-      </Button>
-      <LanguageSwitcher compact />
-    </AndroidTitleBar>}
+    {auth && <MobileTitleBar actions={[{
+      label: locale === 'zh-CN' ? '本机工具' : 'Local tools', icon: <CollectionsOutlined />,
+      onClick: () => { setChecking(false); navigate('/local'); },
+    }]} />}
     <Suspense fallback={<CircularProgress sx={{ m: 'auto' }} />}>
-      {checking ? <CircularProgress sx={{ m: 'auto' }} /> : auth ? <SignIn onSuccess={() => navigate('/main', { replace: true })} />
-        : <Workspace android TitleBar={AndroidTitleBar} local={pathname === '/local'} onLogin={() => navigate('/login', { replace: true })} />}
+      {checking ? <CircularProgress sx={{ m: 'auto' }} /> : auth ? <SignIn android onSuccess={() => navigate('/main', { replace: true })} />
+        : <Workspace android appVersion={appVersion} TitleBar={MobileTitleBar} local={pathname === '/local'} onLogin={() => navigate('/login', { replace: true })} />}
     </Suspense>
     {previewUrl && <Dialog open onClose={() => setPreviewUrl('')} maxWidth="md">
       <DialogContent sx={{ p: 1, display: 'grid', placeItems: 'center' }}>
