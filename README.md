@@ -1,5 +1,7 @@
 > **Windows 桌面版（2.0.3）**：从 [GitHub Releases](https://github.com/YILING0013/novelai_local_web/releases/latest) 下载 x64 安装包，从开始菜单启动 NovelAI Local。应用内支持检查和安装签名更新。首次运行不开端口。启用 Web：进入工作区 → 标题栏齿轮 → 桌面应用。无需 Python、Node 或 Redis。构建、数据目录与测试说明见 [桌面版](docs/desktop.md)。下文中的 Flask 和 Next.js 开发命令属于保留的 Web 版行为基线。
 >
+> **Android 本地版**：在手机上直接登录 NovelAI 官方账号，使用同一套创作、图库与图片工具。工作区数据存放在手机上。支持的设备、从源码构建 APK 和数据导出见 [Android 版](docs/android.md)。
+
 <p align="center">
   <img src="./next_nai_web/public/logo.png" width="104" alt="NovelAI Local Web Logo">
 </p>

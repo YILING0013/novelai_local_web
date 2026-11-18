@@ -1,4 +1,7 @@
 fn main() {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("android") {
+        return;
+    }
     // The unit-test executable also imports TaskDialogIndirect from comctl32 v6.
     // tauri-build embeds these controls for the application binary only.
     println!("cargo:rerun-if-env-changed=NOVELAI_UNIT_TEST_MANIFEST");

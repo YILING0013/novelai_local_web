@@ -7,12 +7,12 @@ license-file = "../LICENSE"
 
 [lib]
 name = "novelai_local"
-crate-type = ["rlib"]
+crate-type = ["rlib", "cdylib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
-[dependencies]
+[target.'cfg(not(target_os = "android"))'.dependencies]
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "=2.14.1"
@@ -20,6 +20,20 @@ tauri-plugin-opener = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-window-state = "2"
 tauri-plugin-single-instance = "2"
+local-ip-address = "0.6"
+tower-http = { version = "0.6", features = ["fs", "limit"] }
+ort = { version = "=2.0.0-rc.14", default-features = false, features = ["std", "load-dynamic", "directml", "api-24"] }
+openssl = { version = "0.10", features= ["vendored"] }
+hyper-openssl = {version="0.10",features= ["client-legacy"] }
+hyper-util = {version="0.1",features= ["client-legacy", "tokio", "http1", "http2"] }
+http-body-util = "0.1"
+bytes = "1"
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21.1"
+ort = { version = "=2.0.0-rc.14", default-features = false, features = ["std", "load-dynamic", "api-24"] }
+
+[dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.41.1", features = ["bundled"] }
@@ -35,18 +49,10 @@ base64 = "0.22"
 tempfile = "3"
 url = "2"
 zip = { version = "9.0.5", default-features = false, features = ["deflate"] }
-ort = { version = "=2.0.0-rc.14", default-features = false, features = ["std", "load-dynamic", "directml", "api-24"] }
 libloading = "0.8"
 axum = { version = "0.8", features = ["multipart"] }
-tower-http = { version = "0.6", features = ["fs", "limit"] }
-local-ip-address = "0.6"
 mime_guess = "2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp"] }
-openssl = { version = "0.10", features= ["vendored"] }
-hyper-openssl = {version="0.10",features= ["client-legacy"] }
-hyper-util = {version="0.1",features= ["client-legacy", "tokio", "http1", "http2"] }
-http-body-util = "0.1"
-bytes = "1"
 blake2 = "0.10"
 argon2 = "0.5"
 crypto_secretbox = "0.1"

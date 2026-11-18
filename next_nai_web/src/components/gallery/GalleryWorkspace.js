@@ -202,6 +202,26 @@ export default function GalleryWorkspace({ source = 'outputs', onSourceChange, o
         result.succeeded.push(...page.succeeded);
         result.errors.push(...page.errors);
       }
+      if (action === 'export' && result.items.some((item) => item.file_url)) {
+        try {
+          let saved;
+          if (result.items.length === 1) {
+            saved = await window.novelaiSaveFile(result.items[0].file_url, result.items[0].filename);
+          } else {
+            const { default: JSZip } = await import('jszip');
+            const zip = new JSZip();
+            for (const item of result.items) {
+              const response = await fetch(item.file_url);
+              if (!response.ok) throw new Error(t('gallery.operationErrors', { count: 1 }));
+              zip.file(item.filename, await response.blob());
+            }
+            saved = await window.novelaiSaveFile(await zip.generateAsync({ type: 'blob' }), 'metadata-copies.zip');
+          }
+          if (!saved) return null;
+        } finally {
+          await Promise.allSettled(result.items.map((item) => fetch(item.file_url, { method: 'DELETE' })));
+        }
+      }
       if (result.errors.length) setError(t('gallery.operationErrors', { count: result.errors.length }) + '\n' + result.errors.map((item) => item.error).join('\n'));
       const message = action === 'delete' ? 'gallery.deleted' : action === 'export' ? 'gallery.copiesSaved' : action === 'trash' ? 'gallery.trashed' : action === 'restore' ? 'gallery.restored' : 'gallery.moved';
       setNotice(t(message, { count: result.succeeded.length }));

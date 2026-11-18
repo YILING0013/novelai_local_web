@@ -107,6 +107,7 @@ async fn login_key(c: &Core, key: &str) -> Res<String> {
     )
     .await?;
     let t = field(&v, "accessToken", 4096)?;
+    #[cfg(not(target_os = "android"))]
     official::login_binding(c, key, &t)?;
     Ok(t)
 }
@@ -212,6 +213,7 @@ pub async fn change(c: &Shared, caller: &str, op: &str, sess: Option<&Session>, 
         if j["source"] != digest(salt, &sk) || j["target"] != digest(salt, &dk) {
             return Err(Fault::bad("Credentials do not match the recovery record."));
         }
+        #[cfg(not(target_os = "android"))]
         official::inherit(c, &sk, &dk)?;
         login_key(c, &dk).await.map_err(|_| uncertain())?
     } else {
@@ -253,7 +255,9 @@ pub async fn change(c: &Shared, caller: &str, op: &str, sess: Option<&Session>, 
             _ => return Err(uncertain()),
         };
         let nt = field(&v, "accessToken", 4096).map_err(|_| uncertain())?;
+        #[cfg(not(target_os = "android"))]
         official::inherit(c, &token, &dk)?;
+        #[cfg(not(target_os = "android"))]
         official::inherit(c, &token, &nt)?;
         stage(c, &mut j, "access_key_changed")?;
         nt

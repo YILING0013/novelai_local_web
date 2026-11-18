@@ -12,5 +12,7 @@ async function walk(folder,callback,prefix=''){
  }
 }
 await walk(join(root,'public'),name=>allowed.has(name));
-await walk(join(root,'out'),name=>allowed.has(name)||pages.has(name)||name.startsWith('_next/static/'));
-await walk(join(root,'dist'),name=>allowed.has(name)||name==='index.html'||name.startsWith('assets/'));
+if (!process.argv.includes('--public-only')) {
+ await walk(join(root,'out'),name=>allowed.has(name)||pages.has(name)||name.startsWith('_next/static/'));
+ await walk(join(root,'dist'),name=>allowed.has(name)||name==='index.html'||name.startsWith('assets/'));
+}

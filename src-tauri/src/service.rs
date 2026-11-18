@@ -131,12 +131,16 @@ impl Session {
 }
 pub struct Core {
     pub operation_gate: Arc<tokio::sync::RwLock<()>>,
+    #[cfg(not(target_os = "android"))]
     pub picked: Mutex<HashMap<String, (PathBuf, std::time::Instant)>>,
     pub credential_lock: tokio::sync::Mutex<()>,
     pub memory_keys: Mutex<HashMap<(String, String), String>>,
     #[cfg(test)]
     pub mock: std::sync::OnceLock<fn(&str, Option<&V>) -> Res<(Vec<u8>, String)>>,
+    #[cfg(not(target_os = "android"))]
     pub app: std::sync::OnceLock<tauri::AppHandle>,
+    pub inference: crate::inference::InferenceState,
+    pub inference_runtime: PathBuf,
     pub tasks: crate::jobs::Jobs,
     pub image_lock: tokio::sync::Mutex<()>,
     pub root: PathBuf,
@@ -147,8 +151,23 @@ pub struct Core {
 }
 pub type Shared = Arc<Core>;
 pub type Query = HashMap<String, String>;
+pub const APP_CALLER: &str = if cfg!(target_os = "android") {
+    "android"
+} else {
+    "desktop"
+};
 impl Core {
+    #[cfg(not(target_os = "android"))]
     pub fn open(root: &Path, resources: &Path) -> Res<Shared> {
+        Self::open_with_runtime(root, resources, resources.join("resources/runtime"))
+    }
+
+    /// 使用应用私有数据目录和平台打包的 ONNX Runtime 创建本地工作区。
+    pub fn open_with_runtime(
+        root: &Path,
+        resources: &Path,
+        inference_runtime: PathBuf,
+    ) -> Res<Shared> {
         std::fs::create_dir_all(root.join("objects"))?;
         let db = Connection::open(root.join("library.sqlite3"))?;
         db.execute_batch("PRAGMA journal_mode=WAL;CREATE TABLE IF NOT EXISTS docs(kind TEXT NOT NULL,k TEXT NOT NULL,v TEXT NOT NULL,PRIMARY KEY(kind,k));")?;
@@ -161,7 +180,7 @@ impl Core {
                 .and_then(|x| crate::secrets::unprotect(&x).ok())
                 .and_then(|x| serde_json::from_slice::<Session>(&x).ok())
             {
-                sessions.insert("desktop".into(), entry);
+                sessions.insert(APP_CALLER.into(), entry);
             }
         }
         Ok(Arc::new(Self {
@@ -170,8 +189,12 @@ impl Core {
             mock: Default::default(),
             credential_lock: Default::default(),
             memory_keys: Default::default(),
+            #[cfg(not(target_os = "android"))]
             app: Default::default(),
+            #[cfg(not(target_os = "android"))]
             picked: Default::default(),
+            inference: Default::default(),
+            inference_runtime,
             tasks: Default::default(),
             image_lock: Default::default(),
             root: root.to_owned(),
@@ -185,15 +208,20 @@ impl Core {
         self.sessions.lock().unwrap().get(caller).cloned()
     }
     pub fn persist(&self, caller: &str, session: Option<Session>) -> Res<()> {
-        if caller == "desktop" {
+        if caller == APP_CALLER {
             use base64::Engine;
             let db = self.db.lock().unwrap();
             if let Some(ref sess) = session {
                 let blob = crate::secrets::protect(&serde_json::to_vec(sess)?).map_err(|_| {
                     Fault(
                         500,
-                        "DPAPI_ERROR".into(),
-                        "Windows could not protect the credential.".into(),
+                        if cfg!(target_os = "android") {
+                            "KEYSTORE_ERROR"
+                        } else {
+                            "DPAPI_ERROR"
+                        }
+                        .into(),
+                        "The system could not protect the credential.".into(),
                     )
                 })?;
                 put(
@@ -218,8 +246,25 @@ impl Core {
         }
         Ok(())
     }
-    pub fn asset(&self, path: &str) -> Res<(Vec<u8>, String)> {
+    /// 按本地资源路由定位文件和 MIME，以便各平台按自己的方式交付图片。
+    pub fn asset_file(&self, path: &str) -> Res<(PathBuf, String)> {
         let parts = path.trim_start_matches('/').split('/').collect::<Vec<_>>();
+        #[cfg(target_os = "android")]
+        if let ["api", "local", "metadata-exports", name] = &parts[..] {
+            if name.split_once('-').is_some_and(|(first, last)| {
+                last.strip_suffix(".png").is_some_and(|second| {
+                    [first, second]
+                        .iter()
+                        .all(|part| part.len() == 32 && part.bytes().all(|b| b.is_ascii_hexdigit()))
+                })
+            }) {
+                return Ok((
+                    self.root.join("metadata-exports").join(name),
+                    "image/png".into(),
+                ));
+            }
+            return Err(Fault::missing());
+        }
         let (kind, key, thumb) = match &parts[..] {
             ["api", "local", "gallery", key, op @ ("file" | "thumbnail")] => {
                 ("image", *key, *op == "thumbnail")
@@ -237,17 +282,22 @@ impl Core {
             return Err(Fault::missing());
         }
         Ok((
-            std::fs::read(self.root.join("objects").join(if thumb {
+            self.root.join("objects").join(if thumb {
                 format!("{hash}.thumb.png")
             } else {
                 hash.into()
-            }))?,
+            }),
             if thumb {
                 "image/png".into()
             } else {
                 s(&record, "mime_type").into()
             },
         ))
+    }
+    #[cfg(not(target_os = "android"))]
+    pub fn asset(&self, path: &str) -> Res<(Vec<u8>, String)> {
+        let (file, mime) = self.asset_file(path)?;
+        Ok((std::fs::read(file)?, mime))
     }
     pub async fn dispatch(
         self: &Arc<Self>,
@@ -310,11 +360,19 @@ impl Core {
                     self.persist(caller, None)?;
                     Ok(json!({"authenticated":false}))
                 }
-                _ if caller != "desktop" && session.is_none() => {
+                _ if caller != APP_CALLER && session.is_none() => {
                     Err(Fault(401, "AUTH_REQUIRED".into(), "Sign in first.".into()))
                 }
                 (["api", "local", "inference", rest @ ..], _) => {
                     crate::jobs::route(self, caller, method, rest, &body).await
+                }
+                #[cfg(target_os = "android")]
+                (["api", "local", "metadata-exports", _], "DELETE") => {
+                    let (file, _) = self.asset_file(path)?;
+                    if file.is_file() {
+                        std::fs::remove_file(file)?;
+                    }
+                    Ok(json!({"deleted":true}))
                 }
                 (["api", "local", rest @ ..], _) => {
                     crate::library::handle(self, method, rest, &query, &body)

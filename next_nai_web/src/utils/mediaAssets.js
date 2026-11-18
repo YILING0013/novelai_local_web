@@ -108,6 +108,9 @@ export const downloadBlobToFile = async (blob, fileName) => {
   if (!blob) {
     throw createMediaAssetError(MEDIA_ASSET_ERROR_CODES.CONTENT_REQUIRED);
   }
+  if (typeof window !== 'undefined' && window.novelaiSaveFile) {
+    return window.novelaiSaveFile(blob, fileName);
+  }
 
   const objectUrl = createObjectUrlFromBlob(blob);
 
@@ -125,6 +128,9 @@ export const downloadBlobToFile = async (blob, fileName) => {
 export const downloadUrlToFile = async (url, fileName) => {
   if (!url) {
     throw createMediaAssetError(MEDIA_ASSET_ERROR_CODES.URL_REQUIRED);
+  }
+  if (typeof window !== 'undefined' && window.novelaiSaveFile) {
+    return window.novelaiSaveFile(url, fileName);
   }
 
   if (isObjectUrl(url) || url.startsWith('data:')) {

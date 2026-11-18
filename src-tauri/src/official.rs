@@ -4,17 +4,24 @@ use blake2::{
     digest::{Update, VariableOutput},
     Blake2bVar,
 };
+#[cfg(not(target_os = "android"))]
 use bytes::Bytes;
+#[cfg(not(target_os = "android"))]
 use http_body_util::{BodyExt, Full, Limited};
+#[cfg(not(target_os = "android"))]
 use hyper_openssl::client::legacy::HttpsConnector;
+#[cfg(not(target_os = "android"))]
 use hyper_util::{
     client::legacy::{connect::HttpConnector, Client},
     rt::TokioExecutor,
 };
+#[cfg(not(target_os = "android"))]
 use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode, SslVersion};
 use serde_json::{json, Value as V};
+#[cfg(not(target_os = "android"))]
 use sha2::{Digest, Sha256};
 use std::{collections::HashMap, sync::OnceLock, time::Duration};
+const MAX_REPLY: usize = 64 * 1024 * 1024;
 pub fn derive(email: &str, password: &str, size: usize, domain: &str) -> Res<String> {
     let prefix = String::from_utf16_lossy(&password.encode_utf16().take(6).collect::<Vec<_>>());
     let mut hash = Blake2bVar::new(16).unwrap();
@@ -32,6 +39,7 @@ pub fn derive(email: &str, password: &str, size: usize, domain: &str) -> Res<Str
     .map_err(|_| Fault::bad("Credential derivation failed."))?;
     Ok(URL_SAFE_NO_PAD.encode(buf))
 }
+#[cfg(not(target_os = "android"))]
 fn profile(core: &Core, identity: &str) -> Res<u64> {
     let key = format!("{:x}", Sha256::digest(identity.as_bytes()));
     let db = core.db.lock().unwrap();
@@ -50,6 +58,7 @@ fn profile(core: &Core, identity: &str) -> Res<u64> {
     put(&db, "tls", &key, &json!(mask))?;
     Ok(mask)
 }
+#[cfg(not(target_os = "android"))]
 pub(crate) fn inherit(core: &Core, parent: &str, token: &str) -> Res<()> {
     let mask = profile(core, parent)?;
     put(
@@ -59,6 +68,7 @@ pub(crate) fn inherit(core: &Core, parent: &str, token: &str) -> Res<()> {
         &json!(mask),
     )
 }
+#[cfg(not(target_os = "android"))]
 pub(crate) fn login_binding(c: &Core, key: &str, token: &str) -> Res<()> {
     let fallback = profile(c, key)?;
     let mut db = c.db.lock().unwrap();
@@ -81,6 +91,7 @@ pub(crate) fn login_binding(c: &Core, key: &str, token: &str) -> Res<()> {
     tx.commit()?;
     Ok(())
 }
+#[cfg(not(target_os = "android"))]
 fn ciphers(mask: u64) -> String {
     let mut c = vec![
         "ECDHE-ECDSA-AES128-GCM-SHA256",
@@ -115,6 +126,24 @@ fn net() -> Fault {
         "Could not complete the request to NovelAI.".into(),
     )
 }
+fn upstream_url(path: &str) -> String {
+    let host = if path == "/oa/v1/chat/completions" {
+        "text.novelai.net"
+    } else {
+        "image.novelai.net"
+    };
+    format!("https://{host}{path}")
+}
+
+fn status_error(status: u16) -> Fault {
+    Fault(
+        status,
+        "NOVELAI_UPSTREAM_ERROR".into(),
+        format!("NovelAI returned HTTP {status}."),
+    )
+}
+
+#[cfg(not(target_os = "android"))]
 pub async fn request(
     core: &Core,
     identity: &str,
@@ -153,14 +182,7 @@ pub async fn request(
     let connector = HttpsConnector::with_connector(http, tls).map_err(|_| net())?;
     let client = Client::builder(TokioExecutor::new()).build::<_, Full<Bytes>>(connector);
     let mut req = axum::http::Request::builder()
-        .uri(format!(
-            "https://{}{path}",
-            if path == "/oa/v1/chat/completions" {
-                "text.novelai.net"
-            } else {
-                "image.novelai.net"
-            }
-        ))
+        .uri(upstream_url(path))
         .method(m)
         .header("accept", "application/json")
         .header("x-correlation-id", &id()[..6]);
@@ -179,11 +201,7 @@ pub async fn request(
         let r = client.request(req).await.map_err(|_| net())?;
         let status = r.status();
         if !status.is_success() {
-            return Err(Fault(
-                status.as_u16(),
-                "NOVELAI_UPSTREAM_ERROR".into(),
-                format!("NovelAI returned HTTP {}.", status.as_u16()),
-            ));
+            return Err(status_error(status.as_u16()));
         }
         let mime = r
             .headers()
@@ -191,7 +209,7 @@ pub async fn request(
             .and_then(|v| v.to_str().ok())
             .unwrap_or("application/octet-stream")
             .to_string();
-        let raw = Limited::new(r.into_body(), 64 * 1024 * 1024)
+        let raw = Limited::new(r.into_body(), MAX_REPLY)
             .collect()
             .await
             .map_err(|_| net())?
@@ -201,6 +219,64 @@ pub async fn request(
     })
     .await
     .map_err(|_| net())?
+}
+
+/// Android 使用标准 Rustls HTTPS，限制响应大小并禁止重定向或重发生成请求。
+#[cfg(target_os = "android")]
+pub async fn request(
+    _core: &Core,
+    _identity: &str,
+    token: Option<&str>,
+    method: &str,
+    path: &str,
+    body: Option<&V>,
+) -> Res<(Vec<u8>, String)> {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    let client = if let Some(client) = CLIENT.get() {
+        client
+    } else {
+        let client = reqwest::Client::builder()
+            .https_only(true)
+            .min_tls_version(reqwest::tls::Version::TLS_1_2)
+            .redirect(reqwest::redirect::Policy::none())
+            .retry(reqwest::retry::never())
+            .connect_timeout(Duration::from_secs(20))
+            .timeout(Duration::from_secs(180))
+            .build()
+            .map_err(|_| net())?;
+        CLIENT.get_or_init(|| client)
+    };
+    let mut request = client
+        .request(
+            method.parse().map_err(|_| Fault::bad("Invalid request."))?,
+            upstream_url(path),
+        )
+        .header("accept", "application/json")
+        .header("x-correlation-id", &id()[..6]);
+    if let Some(token) = token {
+        request = request.bearer_auth(token);
+    }
+    if let Some(body) = body {
+        request = request.json(body);
+    }
+    let mut response = request.send().await.map_err(|_| net())?;
+    if !response.status().is_success() {
+        return Err(status_error(response.status().as_u16()));
+    }
+    let mime = response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream")
+        .to_owned();
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| net())? {
+        if bytes.len() + chunk.len() > MAX_REPLY {
+            return Err(net());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok((bytes, mime))
 }
 pub(crate) async fn json_req(
     c: &Core,
@@ -234,6 +310,7 @@ pub async fn login(c: &Core, mode: &str, b: &V) -> Res<Session> {
         )
         .await?;
         let t = field(&r, "accessToken", 4096)?;
+        #[cfg(not(target_os = "android"))]
         login_binding(c, &key, &t)?;
         t
     } else {
@@ -372,7 +449,7 @@ pub async fn operation(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_os = "android")))]
 mod tls_tests {
     use super::*;
     #[test]

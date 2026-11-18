@@ -1,11 +1,11 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
-import { Alert, Box, CircularProgress, IconButton, List, ListItemButton, ListItemIcon, Tooltip, alpha } from '@mui/material';
+import { Alert, Box, CircularProgress, Drawer, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Tooltip, alpha } from '@mui/material';
 import { AccountCircle, Brightness4, Brightness7, Brush, CollectionsOutlined, AutoAwesome, PhotoFilter, Settings, ZoomInMap } from '@mui/icons-material';
 import { PanelLeft } from 'lucide-react';
 import { open as pick } from '@tauri-apps/plugin-dialog';
-import TitleBar from '@/desktop/DesktopTitleBar';
+import DesktopTitleBar from '@/desktop/DesktopTitleBar';
 import { confirmWorkspaceLeave } from '@/desktop/navigation';
 import { useI18n } from '@/i18n/I18nProvider';
 import { useAppTheme } from '@/providers/AppThemeProvider';
@@ -25,7 +25,7 @@ const pages=[
   [ID.IMAGE_PROCESSING,'painting.workspace.tabs.imageProcessing',PhotoFilter],
   [ID.IMAGE_TAGGING,'pages.imageTagging',AutoAwesome],[ID.LOCAL_UPSCALING,'pages.localUpscaling',ZoomInMap],
   [ID.SETTINGS,'pages.settings',Settings]];
-export default function Workspace({local,onLogin}){
+export default function Workspace({ local, onLogin, android = false, TitleBar = DesktopTitleBar }){
   const {t}=useI18n(),{mode,toggleTheme}=useAppTheme();
   const [params,setParams]=useSearchParams(), first=local?ID.GALLERY:ID.AI_PAINTING;
   const requested= params.get('page');
@@ -36,7 +36,7 @@ export default function Workspace({local,onLogin}){
   const [gallerySource, setGallerySource] = useState(requestedSource);
   const [galleryBusy, setGalleryBusy] = useState(false);
   useEffect(() => { if (active === ID.GALLERY && !galleryBusy) setGallerySource(requestedSource); }, [active, galleryBusy, requestedSource]);
-  const [visited,setVisited]=useState([active]),[rail,setRail]=useState(true),[account,setAccount]=useState(null),[accountOpen,setAccountOpen]=useState(false);
+  const [visited,setVisited]=useState([active]),[rail,setRail]=useState(!android),[account,setAccount]=useState(null),[accountOpen,setAccountOpen]=useState(false);
   const [work,setWork]=useState(null),[dirty,setDirty]=useState(false),[error,setError]=useState('');
   const [paintHost,setPaintHost]=useState(null),[generated,setGenerated]=useState([]),[incoming,setIncoming]=useState(null);
   const comic=useRef(null);
@@ -63,13 +63,14 @@ export default function Workspace({local,onLogin}){
   const modes=(selected,onChange)=>paintHost&&createPortal(<PaintingModeNavigation selected={selected} onChange={onChange}/>,paintHost);
   function render(id){
     const on=active===id;
-    if(id===ID.AI_PAINTING)return <Painting active={on} userId={account?.information?.email||''} accountSnapshot={account} workContext={work} onWorkContextChange={setWork} renderModeTools={modes} desktopEditor={bridge}/>;
+    if(id===ID.AI_PAINTING)return <Painting active={on} userId={account?.information?.email||''} accountSnapshot={account} workContext={work} onWorkContextChange={setWork} renderModeTools={android ? undefined : modes} desktopEditor={bridge}/>;
     if(id===ID.GALLERY)return <Gallery source={gallerySource} onBusyChange={setGalleryBusy} onSourceChange={source=>setParams({page:ID.GALLERY,source})} workContext={work} onWorkContextChange={setWork}/>;
     if(id===ID.IMAGE_PROCESSING)return <Editor active={on} generatedItems={generated} getCurrentComicPage={()=>comic.current?.()} galleryRequest={incoming} onGalleryRequestHandled={()=>setIncoming(null)}/>;
-    if(id===ID.SETTINGS)return <Preferences active={on} pages={nav} onDirtyChange={setDirty} chooseDirectory={()=>pick({directory:true})} desktopPreferences={<WebSettings/>}/>;
+    if(id===ID.SETTINGS)return <Preferences active={on} pages={nav} onDirtyChange={setDirty} fixedOutputDirectory={android}
+      chooseDirectory={android ? undefined : ()=>pick({directory:true})} desktopPreferences={android ? undefined : <WebSettings/>}/>;
     return <Inference active={on} kind={id===ID.IMAGE_TAGGING?'tagger':'upscale'}/>;
   }
-  const toggleLabel = t(rail ? 'main.hideSidebar' : 'main.showSidebarIcons');
+  const toggleLabel = t(android ? 'main.navigation' : rail ? 'main.hideSidebar' : 'main.showSidebarIcons');
   return <><TitleBar leading={<Tooltip title={toggleLabel}><IconButton size="small" aria-label={toggleLabel}
     aria-controls="main-navigation" aria-expanded={rail} onClick={()=>setRail(v=>!v)}>
     <PanelLeft size={18} strokeWidth={1.7}>{!rail&&<path d="M5 3h4v18H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" fill="currentColor" stroke="none"/>}</PanelLeft>
@@ -80,7 +81,14 @@ export default function Workspace({local,onLogin}){
     </TitleBar>
     {error&&<Alert severity="error" onClose={()=>setError('')}>{error}</Alert>}
     <Box sx={{flex:1,minHeight:0,display:'flex'}}>
-    {rail&&<Box id="main-navigation" component="nav" aria-label={t('main.navigation')} sx={{width:64,overflowY:'auto',flexShrink:0,bgcolor:'background.drawer',borderRight:1,borderColor:'divider'}}>
+    {android ? <Drawer open={rail} onClose={()=>setRail(false)} slotProps={{ paper: { className: 'android-navigation' } }}>
+      <List component="nav" id="main-navigation" role="menu" aria-label={t('main.navigation')} sx={{ width: 248 }}>
+        {nav.map(({id,title,Icon,color}) => <ListItemButton key={id} role="menuitem" selected={id===active}
+          onClick={()=>{select(id);setRail(false);}}>
+          <ListItemIcon sx={{color}}><Icon/></ListItemIcon><ListItemText primary={title}/>
+        </ListItemButton>)}
+      </List>
+    </Drawer> : rail&&<Box id="main-navigation" component="nav" aria-label={t('main.navigation')} sx={{width:64,overflowY:'auto',flexShrink:0,bgcolor:'background.drawer',borderRight:1,borderColor:'divider'}}>
       <List sx={{px:1,pt:'5px'}}>{nav.filter(p=>p.id!==ID.SETTINGS).map(({id,title,Icon,color})=><Box key={id} sx={{mb:.5}}>
         <Tooltip title={title} placement="right" arrow><ListItemButton aria-label={title} aria-current={id===active?'page':undefined} onClick={()=>select(id)}
           sx={{height:44,minHeight:44,px:1,borderRadius:1.5,position:'relative',bgcolor:id===active?'action.selected':'transparent','&::before':id===active?{content:'""',position:'absolute',left:0,top:'22%',height:'56%',width:2,bgcolor:color,borderRadius:1}:{}}}>

@@ -2,9 +2,11 @@
 
 #[path = "lettering.rs"]
 pub(crate) mod lettering;
+use crate::service::{Core, Shared};
+#[cfg(not(target_os = "android"))]
+use ort::ep;
 use ort::{
     environment::Environment,
-    ep,
     session::{RunOptions, Session},
     value::Tensor,
 };
@@ -21,11 +23,8 @@ use std::{
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tauri::{
-    ipc::{InvokeBody, Request, Response},
-    path::BaseDirectory,
-    AppHandle, Emitter, Manager, State,
-};
+#[cfg(not(target_os = "android"))]
+use tauri::Emitter;
 use tokio::sync::{Notify, Semaphore};
 
 const MANIFEST: &str = include_str!("../resources/models.json");
@@ -129,6 +128,7 @@ pub struct InferenceState {
 
 impl InferenceState {
     /// 原生模型下载、导入、加载或推理未结束时，更新安装必须等待。
+    #[cfg(not(target_os = "android"))]
     pub fn is_busy(&self) -> Result<bool, String> {
         Ok(!self
             .inner
@@ -162,14 +162,11 @@ fn model(id: &str) -> Result<Model, String> {
         .ok_or_else(|| "UNKNOWN_MODEL".into())
 }
 
-fn model_dir(app: &AppHandle, model: &Model) -> Result<PathBuf, String> {
-    Ok(app
-        .path()
-        .app_local_data_dir()
-        .map_err(|e| e.to_string())?
+fn model_dir(core: &Core, model: &Model) -> PathBuf {
+    core.root
         .join("models")
         .join(&model.id)
-        .join(model.revision.as_ref().or(model.version.as_ref()).unwrap()))
+        .join(model.revision.as_ref().or(model.version.as_ref()).unwrap())
 }
 
 fn read_record(directory: &Path) -> Result<Option<ModelRecord>, String> {
@@ -183,14 +180,15 @@ fn read_record(directory: &Path) -> Result<Option<ModelRecord>, String> {
     Ok(Some(record))
 }
 
-fn progress(app: &AppHandle, job_id: &str, stage: &str, completed: u64, total: u64) {
-    if let Some(core) = app.try_state::<crate::service::Shared>() {
-        crate::jobs::progress(&core, job_id, stage, completed, total);
+fn progress(core: &Core, job_id: &str, stage: &str, completed: u64, total: u64) {
+    crate::jobs::progress(core, job_id, stage, completed, total);
+    #[cfg(not(target_os = "android"))]
+    if let Some(app) = core.app.get() {
+        let _ = app.emit(
+            "native-inference-progress",
+            serde_json::json!({"jobId":job_id,"stage":stage,"completed":completed,"total":total}),
+        );
     }
-    let _ = app.emit(
-        "native-inference-progress",
-        serde_json::json!({"jobId":job_id,"stage":stage,"completed":completed,"total":total}),
-    );
 }
 
 fn start_job(
@@ -297,12 +295,13 @@ fn commit_model(
     Ok(record)
 }
 
+#[cfg(not(target_os = "android"))]
 fn import_into(
     directory: &Path,
     model: &Model,
     selected: &[PathBuf],
     operation: &Operation,
-    app: &AppHandle,
+    core: &Core,
     job_id: &str,
 ) -> Result<(), String> {
     for (index, expected) in model.files.iter().enumerate() {
@@ -338,7 +337,7 @@ fn import_into(
         }
         output.sync_all().map_err(|e| e.to_string())?;
         progress(
-            app,
+            core,
             job_id,
             "importing",
             index as u64 + 1,
@@ -374,14 +373,13 @@ fn copy_model_file(
 }
 
 /// 读取一个固定模型的安装状态；不加载权重或启动推理。
-#[tauri::command]
 pub async fn inference_model_status(
-    app: AppHandle,
+    core: Shared,
     model_id: String,
 ) -> Result<Option<ModelRecord>, String> {
     let model = model(&model_id)?;
-    let directory = model_dir(&app, &model)?;
-    tauri::async_runtime::spawn_blocking(move || {
+    let directory = model_dir(&core, &model);
+    tokio::task::spawn_blocking(move || {
         let record = read_record(&directory)?;
         if let Some(record) = &record {
             for file in &model.files {
@@ -401,10 +399,9 @@ pub async fn inference_model_status(
 }
 
 /// 导入用户明确选择的模型文件或 ZIP，校验大小和摘要后切换安装版本。
-#[tauri::command]
+#[cfg(not(target_os = "android"))]
 pub async fn inference_model_import(
-    app: AppHandle,
-    state: State<'_, InferenceState>,
+    core: Shared,
     model_id: String,
     paths: Vec<String>,
     job_id: String,
@@ -413,20 +410,20 @@ pub async fn inference_model_import(
         return Err("MODEL_IMPORT_REQUIRES_SELECTED_FILES".into());
     }
     let model = model(&model_id)?;
-    let directory = model_dir(&app, &model)?;
-    let inner = state.inner.clone();
+    let directory = model_dir(&core, &model);
+    let inner = core.inference.inner.clone();
     let (operation, _job) = start_job(&inner, &job_id, None, Some(model_id.clone()))?;
     let old = read_record(&directory)?;
     let generation = uuid::Uuid::new_v4().to_string();
     let work_dir = directory.join(&generation);
-    let result = tauri::async_runtime::spawn_blocking(move || {
+    let result = tokio::task::spawn_blocking(move || {
         fs::create_dir_all(&work_dir).map_err(|e| e.to_string())?;
         let result = import_into(
             &work_dir,
             &model,
             &paths.into_iter().map(PathBuf::from).collect::<Vec<_>>(),
             &operation,
-            &app,
+            &core,
             &job_id,
         )
         .and_then(|_| commit_model(&directory, &model, &generation, &operation));
@@ -446,17 +443,15 @@ pub async fn inference_model_import(
 }
 
 /// 从固定模型清单下载权重；支持进度和取消，网络错误不会切换成浏览器推理。
-#[tauri::command]
 pub async fn inference_model_download(
-    app: AppHandle,
-    state: State<'_, InferenceState>,
+    core: Shared,
     model_id: String,
     job_id: String,
 ) -> Result<ModelRecord, String> {
     use tokio::io::AsyncWriteExt;
     let model = model(&model_id)?;
-    let directory = model_dir(&app, &model)?;
-    let inner = state.inner.clone();
+    let directory = model_dir(&core, &model);
+    let inner = core.inference.inner.clone();
     let (operation, _job) = start_job(&inner, &job_id, None, Some(model_id.clone()))?;
     let generation = uuid::Uuid::new_v4().to_string();
     let work_dir = directory.join(&generation);
@@ -483,13 +478,13 @@ pub async fn inference_model_download(
                 let limit = if archive { total + 2 * 1024 * 1024 } else { expected.bytes };
                 if received > limit { return Err(format!("FILE_SIZE: {}", expected.name)); }
                 if let Some(file) = &mut file { file.write_all(&chunk).await.map_err(|e| format!("MODEL_WRITE_FAILED: {e}"))?; } else { bytes.extend_from_slice(&chunk); }
-                progress(&app, &job_id, "downloading", (downloaded + received).min(total), total);
+                progress(&core, &job_id, "downloading", (downloaded + received).min(total), total);
             }
             if let Some(file) = &mut file { file.sync_all().await.map_err(|e| e.to_string())?; }
             if archive { archives.insert(expected.url.clone(), bytes); } else { downloaded += received; }
         }
-        let model = model.clone(); let directory = directory.clone(); let work_dir = work_dir.clone(); let generation = generation.clone(); let operation = operation.clone(); let app = app.clone(); let job_id = job_id.clone();
-        tauri::async_runtime::spawn_blocking(move || {
+        let model = model.clone(); let directory = directory.clone(); let work_dir = work_dir.clone(); let generation = generation.clone(); let operation = operation.clone(); let core = core.clone(); let job_id = job_id.clone();
+        tokio::task::spawn_blocking(move || {
             for expected in &model.files {
                 if let Some(entry_name) = &expected.archive_path {
                     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&archives[&expected.url])).map_err(|e| format!("MODEL_ARCHIVE_INVALID: {e}"))?;
@@ -499,7 +494,7 @@ pub async fn inference_model_download(
                     output.sync_all().map_err(|e| e.to_string())?;
                 }
             }
-            progress(&app, &job_id, "verifying", 0, 0);
+            progress(&core, &job_id, "verifying", 0, 0);
             let record = commit_model(&directory, &model, &generation, &operation)?;
             if let Some(old) = old { let _ = remove_generation(&directory, &model, &old.generation); }
             Ok::<_, String>(record)
@@ -512,15 +507,12 @@ pub async fn inference_model_download(
 }
 
 /// 卸载一个固定模型的已安装文件；正在使用的会话必须先关闭。
-#[tauri::command]
-pub async fn inference_model_remove(
-    app: AppHandle,
-    state: State<'_, InferenceState>,
-    model_id: String,
-) -> Result<(), String> {
+#[cfg(not(target_os = "android"))]
+pub async fn inference_model_remove(core: Shared, model_id: String) -> Result<(), String> {
     let model = model(&model_id)?;
-    let directory = model_dir(&app, &model)?;
-    if state
+    let directory = model_dir(&core, &model);
+    if core
+        .inference
         .inner
         .sessions
         .lock()
@@ -531,12 +523,12 @@ pub async fn inference_model_remove(
         return Err("MODEL_BUSY".into());
     }
     let (_, _job) = start_job(
-        &state.inner,
+        &core.inference.inner,
         &uuid::Uuid::new_v4().to_string(),
         None,
         Some(model_id),
     )?;
-    tauri::async_runtime::spawn_blocking(move || {
+    tokio::task::spawn_blocking(move || {
         if let Some(record) = read_record(&directory)? {
             remove_generation(&directory, &model, &record.generation)?;
             fs::remove_file(directory.join("active.json")).map_err(|e| e.to_string())?;
@@ -550,24 +542,29 @@ pub async fn inference_model_remove(
 fn environment(inner: &InferenceInner, runtime_dir: &Path) -> Result<Environment, String> {
     let mut runtime = inner.runtime.lock().unwrap();
     if runtime.is_none() {
+        #[cfg(target_os = "android")]
+        let dll = runtime_dir.join("libonnxruntime.so");
+        #[cfg(not(target_os = "android"))]
         let dll = runtime_dir.join("onnxruntime.dll");
         if !dll.is_file() {
-            return Err(
-                "INFERENCE_RUNTIME_MISSING: run npm run prepare:runtime before packaging".into(),
-            );
+            return Err("INFERENCE_RUNTIME_MISSING: ONNX Runtime was not packaged".into());
         }
         // 依赖 DLL 位于应用资源目录，显式预加载避免误用 PATH 中其它软件的 DirectML。
+        #[cfg(not(target_os = "android"))]
         let directml = unsafe { libloading::Library::new(runtime_dir.join("DirectML.dll")) }
             .map_err(|e| format!("INFERENCE_RUNTIME_MISSING: {e}"))?;
         let env = ort::init_from(&dll)
             .map_err(|e| format!("INFERENCE_RUNTIME_INVALID: {e}"))?
-            .with_name("nai-desktop")
+            .with_name("novelai-local")
             .with_telemetry(false)
             .build()
             .map_err(|e| e.to_string())?;
         *runtime = Some(Runtime {
             environment: env,
+            #[cfg(not(target_os = "android"))]
             _libraries: vec![directml],
+            #[cfg(target_os = "android")]
+            _libraries: vec![],
         });
     }
     Ok(runtime.as_ref().unwrap().environment.clone())
@@ -578,12 +575,13 @@ fn create_session(
     path: &Path,
     directml: bool,
 ) -> Result<Session, String> {
-    let mut builder = Session::builder(environment)
+    let builder = Session::builder(environment)
         .map_err(|e| e.to_string())?
         .with_intra_threads(std::thread::available_parallelism().map_or(2, |n| n.get().min(8)))
         .map_err(|e| e.to_string())?;
-    if directml {
-        builder = builder
+    #[cfg(not(target_os = "android"))]
+    let builder = if directml {
+        builder
             .with_parallel_execution(false)
             .map_err(|e| e.to_string())?
             .with_memory_pattern(false)
@@ -592,8 +590,15 @@ fn create_session(
                 .with_performance_preference(ep::directml::PerformancePreference::HighPerformance)
                 .build()
                 .error_on_failure()])
-            .map_err(|e| format!("DIRECTML_UNAVAILABLE: {e}"))?;
+            .map_err(|e| format!("DIRECTML_UNAVAILABLE: {e}"))?
+    } else {
+        builder
+    };
+    #[cfg(target_os = "android")]
+    if directml {
+        return Err("DIRECTML_UNAVAILABLE".into());
     }
+    let mut builder = builder;
     builder
         .commit_from_file(path)
         .map_err(|e| format!("MODEL_LOAD_FAILED: {e}"))
@@ -630,10 +635,8 @@ fn create_model_session(
 }
 
 /// 排队加载模型并返回实际计算设备和输入输出名；DirectML 失败明确返回 CPU 降级原因。
-#[tauri::command]
 pub async fn inference_open(
-    app: AppHandle,
-    state: State<'_, InferenceState>,
+    core: Shared,
     model_id: String,
     session_id: String,
     job_id: String,
@@ -641,22 +644,19 @@ pub async fn inference_open(
 ) -> Result<serde_json::Value, String> {
     uuid::Uuid::parse_str(&session_id).map_err(|_| "INVALID_SESSION_ID")?;
     let model = model(&model_id)?;
-    let directory = model_dir(&app, &model)?;
-    let inner = state.inner.clone();
+    let directory = model_dir(&core, &model);
+    let inner = core.inference.inner.clone();
     let (operation, _job) = start_job(&inner, &job_id, Some(session_id.clone()), None)?;
-    let runtime_dir = app
-        .path()
-        .resolve("resources/runtime", BaseDirectory::Resource)
-        .map_err(|e| e.to_string())?;
-    progress(&app, &job_id, "queued", 0, 0);
+    let runtime_dir = core.inference_runtime.clone();
+    progress(&core, &job_id, "queued", 0, 0);
     let permit = tokio::select! { permit = inner.queue.clone().acquire_owned() => permit.map_err(|e| e.to_string())?, _ = operation.changed.notified() => { inner.operations.lock().unwrap().remove(&job_id); return Err(CANCELLED.into()); } };
-    let result = tauri::async_runtime::spawn_blocking(move || {
+    let result = tokio::task::spawn_blocking(move || {
         let _permit = permit; operation.check()?;
         let record = read_record(&directory)?.ok_or("CACHE_MISSING")?;
-        progress(&app, &job_id, "verifying", 0, 0);
+        progress(&core, &job_id, "verifying", 0, 0);
         for expected in &model.files { verify_file(&directory.join(&record.generation).join(&expected.name), expected, &operation)?; }
         let env = environment(&inner, &runtime_dir)?;
-        progress(&app, &job_id, "loading", 0, 0);
+        progress(&core, &job_id, "loading", 0, 0);
         let path = directory.join(&record.generation).join(&model.model_file);
         let (session, backend, notice) = create_model_session(&env, &path, &model, prefer_gpu)?;
         operation.check()?;
@@ -671,36 +671,8 @@ pub async fn inference_open(
     result
 }
 
-/// 接收二进制 Float32 输入，在计算队列执行后返回带形状头的二进制输出。
-/// 请求头包括 x-session-id、x-job-id、x-input-name、x-input-shape；正文不使用 JSON 数字数组。
-#[tauri::command]
-pub async fn inference_run(
-    state: State<'_, InferenceState>,
-    request: Request<'_>,
-) -> Result<Response, String> {
-    let header = |name: &str| {
-        request
-            .headers()
-            .get(name)
-            .and_then(|v| v.to_str().ok())
-            .map(str::to_owned)
-            .ok_or_else(|| format!("INVALID_TENSOR_HEADER: {name}"))
-    };
-    let session_id = header("x-session-id")?;
-    let job_id = header("x-job-id")?;
-    let input_name = header("x-input-name")?;
-    let shape: Vec<i64> =
-        serde_json::from_str(&header("x-input-shape")?).map_err(|e| e.to_string())?;
-    let bytes = match request.body() {
-        InvokeBody::Raw(bytes) => bytes.clone(),
-        _ => return Err("BINARY_TENSOR_REQUIRED".into()),
-    };
-    tensor_run(state, session_id, job_id, input_name, shape, bytes)
-        .await
-        .map(Response::new)
-}
 pub(crate) async fn tensor_run(
-    state: State<'_, InferenceState>,
+    state: &InferenceState,
     session_id: String,
     job_id: String,
     input_name: String,
@@ -743,7 +715,7 @@ pub(crate) async fn tensor_run(
     }
     let (operation, _job) = start_job(&inner, &job_id, Some(session_id), None)?;
     let permit = tokio::select! { permit = inner.queue.clone().acquire_owned() => permit.map_err(|e| e.to_string())?, _ = operation.changed.notified() => { inner.operations.lock().unwrap().remove(&job_id); return Err(CANCELLED.into()); } };
-    let result = tauri::async_runtime::spawn_blocking(move || {
+    let result = tokio::task::spawn_blocking(move || {
         let _permit = permit; operation.check()?;
         let data: Vec<f32> = bytes.as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes(*b)).collect();
         let input = Tensor::from_array((shape, data)).map_err(|e| e.to_string())?;
@@ -768,16 +740,14 @@ pub(crate) async fn tensor_run(
 }
 
 /// 取消下载、排队或正在运行的计算；不会影响其他任务。
-#[tauri::command]
-pub fn inference_cancel(state: State<'_, InferenceState>, job_id: String) {
+pub fn inference_cancel(state: &InferenceState, job_id: String) {
     if let Some(operation) = state.inner.operations.lock().unwrap().get(&job_id) {
         operation.cancel();
     }
 }
 
 /// 释放一个页面的模型会话并取消其在途操作。
-#[tauri::command]
-pub fn inference_close(state: State<'_, InferenceState>, session_id: String) {
+pub fn inference_close(state: &InferenceState, session_id: String) {
     for operation in state
         .inner
         .operations

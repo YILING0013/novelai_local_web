@@ -65,3 +65,8 @@ Thumbs.db
 /src-tauri/gen/
 /src-tauri/resources/runtime/
 /next_nai_web/dist/
+/android/.gradle/
+/android/local.properties
+**/*.jks
+**/*.keystore
+**/*.p12

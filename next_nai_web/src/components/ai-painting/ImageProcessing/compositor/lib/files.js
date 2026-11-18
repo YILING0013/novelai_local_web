@@ -36,6 +36,7 @@ Object.assign(blendNames, {
  * @param {string} name 下载名称。
  */
 export function downloadBlob(blob, name) {
+  if (window.novelaiSaveFile) return window.novelaiSaveFile(blob, name);
   const url = URL.createObjectURL(blob),
     anchor = document.createElement("a");
   anchor.href = url;

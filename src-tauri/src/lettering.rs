@@ -56,7 +56,7 @@ impl Models {
         })
     }
 }
-pub fn release(state: State<'_, InferenceState>) {
+pub fn release(state: &InferenceState) {
     *state.inner.ocr.lock().unwrap() = None;
 }
 fn input(img: &RgbImage, w: usize, h: usize, bgr: bool, normalize: bool) -> Vec<f32> {
@@ -481,18 +481,12 @@ fn rebuild(
         json!({"sourceHash":hash,"unmatchedDialogueIds":dialogues.iter().filter(|d|!blocks.iter().any(|v|v["applied"]==true&&v["dialogueId"]==d["id"])).map(|d|&d["id"]).collect::<Vec<_>>(),"blocks":blocks}),
     ))
 }
-pub async fn job(
-    c: Shared,
-    app: AppHandle,
-    k: String,
-    b: V,
-    token: tokio_util::sync::CancellationToken,
-) -> E<V> {
+pub async fn job(c: Shared, k: String, b: V, token: tokio_util::sync::CancellationToken) -> E<V> {
     let model = model("comic-lettering")?;
-    let dir = model_dir(&app, &model)?;
-    let inner = app.state::<InferenceState>().inner.clone();
+    let dir = model_dir(&c, &model);
+    let inner = c.inference.inner.clone();
     let (op, _job) = start_job(&inner, &k, None, None)?;
-    tauri::async_runtime::spawn_blocking(move||{if token.is_cancelled(){return Err(CANCELLED.into())}let record=read_record(&dir)?.ok_or("CACHE_MISSING")?;let folder=dir.join(record.generation);let env=environment(&inner,&c.resources.join("resources/runtime"))?;let mut slot=inner.ocr.lock().unwrap();if slot.is_none(){for f in &model.files{verify_file(&folder.join(&f.name),f,&op)?}*slot=Some(Models::new(&env,&folder)?)}if b["action"]=="load"{return Ok(json!({"loaded":true,"backend":"cpu"}))}let raw=s(&b,"image");let raw=STANDARD.decode(raw.split_once(',').map(|(_,d)|d).unwrap_or(raw)).map_err(|_|"Invalid image")?;let reader=image::ImageReader::new(Cursor::new(&raw)).with_guessed_format().map_err(|e|e.to_string())?;let(w,h)=reader.into_dimensions().map_err(|e|e.to_string())?;if w==0||h==0||u64::from(w)*u64::from(h)>16_777_216{return Err("Image too large".into())}let src=image::load_from_memory(&raw).map_err(|e|e.to_string())?;let(clean,mask,mut info)=rebuild(slot.as_mut().unwrap(),&env,src,&b,&op,|s,n,t|jobs::progress(&c,&k,s,n,t))?;op.check()?;let db=c.db.lock().unwrap();for (kind,img)in[("image",clean),("mask",mask)]{let mut buf=Cursor::new(vec![]);img.write_to(&mut buf,image::ImageFormat::Png).map_err(|e|e.to_string())?;info[kind]=crate::library::import(&c,&db,"outputs",&format!("comic_{kind}_{k}.png"),buf.get_ref(),&json!({"parameters":{"image_tool":"comic-lettering","comic_lettering_source_hash":info["sourceHash"]}})).map_err(|e|e.2)?}Ok(info)}).await.map_err(|e|e.to_string())?
+    tokio::task::spawn_blocking(move||{if token.is_cancelled(){return Err(CANCELLED.into())}let record=read_record(&dir)?.ok_or("CACHE_MISSING")?;let folder=dir.join(record.generation);let env=environment(&inner,&c.inference_runtime)?;let mut slot=inner.ocr.lock().unwrap();if slot.is_none(){for f in &model.files{verify_file(&folder.join(&f.name),f,&op)?}*slot=Some(Models::new(&env,&folder)?)}if b["action"]=="load"{return Ok(json!({"loaded":true,"backend":"cpu"}))}let raw=s(&b,"image");let raw=STANDARD.decode(raw.split_once(',').map(|(_,d)|d).unwrap_or(raw)).map_err(|_|"Invalid image")?;let reader=image::ImageReader::new(Cursor::new(&raw)).with_guessed_format().map_err(|e|e.to_string())?;let(w,h)=reader.into_dimensions().map_err(|e|e.to_string())?;if w==0||h==0||u64::from(w)*u64::from(h)>16_777_216{return Err("Image too large".into())}let src=image::load_from_memory(&raw).map_err(|e|e.to_string())?;let(clean,mask,mut info)=rebuild(slot.as_mut().unwrap(),&env,src,&b,&op,|s,n,t|jobs::progress(&c,&k,s,n,t))?;op.check()?;let db=c.db.lock().unwrap();for (kind,img)in[("image",clean),("mask",mask)]{let mut buf=Cursor::new(vec![]);img.write_to(&mut buf,image::ImageFormat::Png).map_err(|e|e.to_string())?;info[kind]=crate::library::import(&c,&db,"outputs",&format!("comic_{kind}_{k}.png"),buf.get_ref(),&json!({"parameters":{"image_tool":"comic-lettering","comic_lettering_source_hash":info["sourceHash"]}})).map_err(|e|e.2)?}Ok(info)}).await.map_err(|e|e.to_string())?
 }
 
 #[cfg(test)]

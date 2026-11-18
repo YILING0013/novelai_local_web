@@ -34,6 +34,7 @@ export default function GalleryMetadataDialog({ count, initialParameters = {}, i
   const [directoryLoading, setDirectoryLoading] = useState(false);
   const [directoryError, setDirectoryError] = useState('');
   const formBusy = busy || templateLoading;
+  const documentPicker = directoryListing?.use_document_picker;
   const hiddenParameters = [...getParameterSharedPaths(parameters), ...basicFields.map((key) => [key])];
   const cardSx = { p: { xs: 1.5, sm: 2 }, border: 1, borderColor: 'divider', borderRadius: 2, bgcolor: 'background.paper' };
 
@@ -109,13 +110,13 @@ export default function GalleryMetadataDialog({ count, initialParameters = {}, i
       <Stack spacing={2}>
         {error && <Alert severity="error">{error}</Alert>}
         <Typography variant="body2" color="text.secondary">{t('gallery.metadataCopyHint')}</Typography>
-        <Box sx={cardSx}>
+        {!documentPicker && <Box sx={cardSx}>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'flex-start' }}>
             <TextField fullWidth size="small" label={t('gallery.outputDirectory')} value={outputDirectory} disabled={busy} onChange={(event) => setOutputDirectory(event.target.value)} helperText={t('gallery.outputDirectoryHint')} />
             <Button variant="outlined" size="small" startIcon={<FolderOpenOutlined />} disabled={busy || directoryLoading} sx={{ height: 40, flexShrink: 0 }} onClick={() => { setDirectoryOpen(true); void browseDirectory(outputDirectory.trim() === directoryListing?.suggested_export_directory ? '' : outputDirectory.trim()); }}>{t('gallery.browseDirectory')}</Button>
           </Stack>
           {directoryError && !directoryOpen && <Alert severity="error" sx={{ mt: 1 }}>{directoryError}</Alert>}
-        </Box>
+        </Box>}
         <ToggleButtonGroup exclusive value={mode} size="small" onChange={(_, next) => next && setMode(next)} aria-label={t('gallery.metadataAction')} disabled={formBusy}>
           <ToggleButton value="edit">{t('gallery.editMetadata')}</ToggleButton>
           <ToggleButton value="strip">{t('gallery.clearMetadata')}</ToggleButton>
@@ -170,7 +171,7 @@ export default function GalleryMetadataDialog({ count, initialParameters = {}, i
     </DialogContent>
     <DialogActions sx={{ px: { xs: 1.5, sm: 3 }, py: 2, borderTop: 1, borderColor: 'divider' }}>
       <Button onClick={onClose} disabled={busy}>{t('gallery.cancel')}</Button>
-      <Button variant="contained" onClick={submit} disabled={formBusy || !outputDirectory.trim() || Boolean(templateError)}>{t(busy ? 'gallery.saving' : 'gallery.saveCopy')}</Button>
+      <Button variant="contained" onClick={submit} disabled={formBusy || (!documentPicker && !outputDirectory.trim()) || Boolean(templateError)}>{t(busy ? 'gallery.saving' : 'gallery.saveCopy')}</Button>
     </DialogActions>
     <Dialog open={directoryOpen} onClose={() => setDirectoryOpen(false)} maxWidth="sm" fullWidth>
       <DialogTitle>{t('gallery.browseDirectory')}</DialogTitle>

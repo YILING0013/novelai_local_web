@@ -58,11 +58,21 @@ fn windows_protect(data: &[u8], decrypt: bool) -> Result<Vec<u8>, String> {
     Ok(result)
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "android")]
+pub fn protect(data: &[u8]) -> Result<Vec<u8>, String> {
+    crate::android::crypt(data, "protect")
+}
+
+#[cfg(target_os = "android")]
+pub fn unprotect(data: &[u8]) -> Result<Vec<u8>, String> {
+    crate::android::crypt(data, "unprotect")
+}
+
+#[cfg(not(any(windows, target_os = "android")))]
 pub fn protect(_: &[u8]) -> Result<Vec<u8>, String> {
     Err("WINDOWS_CREDENTIAL_STORAGE_REQUIRED".into())
 }
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "android")))]
 pub fn unprotect(_: &[u8]) -> Result<Vec<u8>, String> {
     Err("WINDOWS_CREDENTIAL_STORAGE_REQUIRED".into())
 }

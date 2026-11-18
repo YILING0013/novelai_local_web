@@ -9,10 +9,7 @@ export const MODEL_OPTIONS = [
   { value: 'nai-diffusion-4-curated-preview', label: 'NAI Diffusion 4 Curated', descriptionKey: 'painting.workspace.parameters.modelV4CuratedPreview' },
   { value: 'nai-diffusion-3', label: 'NAI Diffusion 3', descriptionKey: 'painting.workspace.parameters.modelNaiV3' },
   { value: 'nai-diffusion-furry-3', label: 'NAI Diffusion Furry 3', descriptionKey: 'painting.workspace.parameters.modelNaiFurryV3' },
-].map(option => ({
-  ...option, category: option.value.startsWith('nai-diffusion-') ? 'novelai'
-    : option.value.startsWith('wan') ? 'video' : 'image',
-}));
+].map(option => ({ ...option, category: 'novelai' }));
 
 export const SAMPLER_OPTIONS = [
   { value: 'k_euler', label: 'Euler' },
@@ -51,7 +48,7 @@ export function resolveMetadataModel(value) {
   if (version === '4.5') model = normalized.includes('curated') ? 'nai-diffusion-4-5-curated' : 'nai-diffusion-4-5-full';
   if (version === '4') model = normalized.includes('curated') ? 'nai-diffusion-4-curated-preview' : 'nai-diffusion-4-full';
   if (version === '3') model = normalized.includes('furry') ? 'nai-diffusion-furry-3' : 'nai-diffusion-3';
-  // A1111 的模型版本数字不能被当成 NovelAI；只有模型来源明确时才使用上述名称映射。
+  // 只有来源明确的名称才按版本号匹配，避免把其他模型误套进 NovelAI 参数。
   if (!/novelai|nai[ -]|^v[345](?:[ .]|$)/i.test(text)) return undefined;
   return MODEL_OPTIONS.some(option => option.value === model) ? model : undefined;
 }

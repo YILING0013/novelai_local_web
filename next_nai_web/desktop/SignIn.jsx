@@ -16,13 +16,13 @@ export default function SignIn({ onSuccess }) {
       if(s.authenticated)onSuccess();else setError(t('login.invalidCredentials'));
     }catch(e){setError(e.data?.message||e.message)}finally{setBusy(false)}
   }
-  return <Box component="main" sx={{ flex:1,minHeight:0, width:'100%',bgcolor:'background.paper',display:'grid',gridTemplateColumns:'minmax(280px,1fr) minmax(420px,1fr)',overflow:'hidden' }}>
-    <Box aria-hidden="true" sx={{position:'relative',overflow:'hidden'}}>
+  return <Box component="main" sx={{ flex:1,minHeight:0, width:'100%',bgcolor:'background.paper',display:'grid',gridTemplateColumns:{xs:'minmax(0,1fr)',md:'minmax(280px,1fr) minmax(420px,1fr)'},overflow:'hidden' }}>
+    <Box aria-hidden="true" sx={{display:{xs:'none',md:'block'},position:'relative',overflow:'hidden'}}>
       <Box component="img" src="/reference_img/6JVxqoqt4t7qCGVBUkovwn8IKePfdDpk.webp" alt="" sx={{width:'100%',height:'100%',objectFit:'cover',display:'block'}}/>
       <Box sx={{position:'absolute',inset:0,background:'linear-gradient(180deg,transparent 50%,rgba(0,0,0,.62))'}}/>
       <Box sx={{position:'absolute',left:28,right:28,bottom:30,color:'#fff'}}><Typography sx={{fontSize:24,fontWeight:700,letterSpacing:2}}>NovelAI Local</Typography></Box>
     </Box>
-    <Box sx={{overflowY:'auto',display:'flex',flexDirection:'column',px:4,py:3}}>
+    <Box sx={{overflowY:'auto',display:'flex',flexDirection:'column',px:{xs:3,md:4},py:3}}>
       <Stack component="form" onSubmit={submit} spacing={2.5} sx={{width:'100%',maxWidth:360,mx:'auto',my:'auto'}}>
         <Stack direction="row" spacing={1.5} alignItems="center"><Box component="img" src="/logo.svg" alt="" width={40}/>
           <Typography variant="h5">{recovery?t('login.local.recoveryRequired'):(locale==='zh-CN'?'登录 NovelAI':'Sign in to NovelAI')}</Typography></Stack>

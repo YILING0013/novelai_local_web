@@ -7,7 +7,6 @@ use std::{
     io::Cursor,
     sync::Mutex,
 };
-use tauri::Manager;
 type Loaded = (String, String, String, V);
 #[derive(Default)]
 pub struct Jobs {
@@ -16,6 +15,7 @@ pub struct Jobs {
     cancel: Mutex<HashMap<String, tokio_util::sync::CancellationToken>>,
 }
 impl Jobs {
+    #[cfg(not(target_os = "android"))]
     pub fn is_busy(&self) -> bool {
         self.cancel.lock().map_or(true, |tasks| !tasks.is_empty())
     }
@@ -44,7 +44,6 @@ fn models() -> Vec<V> {
     serde_json::from_str(include_str!("../resources/models.json")).unwrap()
 }
 pub async fn route(c: &Shared, owner: &str, method: &str, p: &[&str], b: &V) -> Res<V> {
-    let app = c.app.get().ok_or_else(Fault::unsupported)?;
     let latest = |key: Option<&str>| {
         c.tasks
             .rows
@@ -60,14 +59,19 @@ pub async fn route(c: &Shared, owner: &str, method: &str, p: &[&str], b: &V) -> 
             let mut models = models();
             let loaded = c.tasks.loaded.lock().unwrap().clone();
             for m in &mut models {
-                m["cached"] = json!(inference_model_status(app.clone(), s(m, "id").into())
+                m["cached"] = json!(inference_model_status(c.clone(), s(m, "id").into())
                     .await
                     .map_err(fault)?
                     .is_some());
                 m["loaded"] = json!(loaded.as_ref().is_some_and(|(_, id, ..)| m["id"] == *id));
             }
+            let (version, providers): (&str, &[&str]) = if cfg!(target_os = "android") {
+                ("1.31.1", &["CPUExecutionProvider"])
+            } else {
+                ("1.24.4", &["CPUExecutionProvider", "DmlExecutionProvider"])
+            };
             Ok(
-                json!({"models":models,"models_dir":c.root.join("models"),"runtime":{"available":true,"version":"1.24.4","providers":["CPUExecutionProvider","DmlExecutionProvider"]},"device":loaded.map(|(_,_,d,_)|d).unwrap_or("auto".into()),"busy":!c.tasks.cancel.lock().unwrap().is_empty(),"job":latest(None)}),
+                json!({"models":models,"models_dir":c.root.join("models"),"runtime":{"available":true,"version":version,"providers":providers},"device":loaded.map(|(_,_,d,_)|d).unwrap_or("auto".into()),"busy":!c.tasks.cancel.lock().unwrap().is_empty(),"job":latest(None)}),
             )
         }
         (["jobs", k], "GET") => latest(Some(k)).ok_or_else(Fault::missing),
@@ -75,7 +79,7 @@ pub async fn route(c: &Shared, owner: &str, method: &str, p: &[&str], b: &V) -> 
             let v = latest(Some(k)).ok_or_else(Fault::missing)?;
             if let Some(t) = c.tasks.cancel.lock().unwrap().get(*k) {
                 t.cancel();
-                inference_cancel(app.state(), k.to_string());
+                inference_cancel(&c.inference, k.to_string());
             }
             Ok(v)
         }
@@ -84,9 +88,9 @@ pub async fn route(c: &Shared, owner: &str, method: &str, p: &[&str], b: &V) -> 
                 return Err(Fault::bad("A job is running."));
             }
             if let Some((sid, _, _, _)) = c.tasks.loaded.lock().unwrap().take() {
-                inference_close(app.state(), sid)
+                inference_close(&c.inference, sid)
             }
-            lettering::release(app.state());
+            lettering::release(&c.inference);
             Ok(json!({"released":true}))
         }
         (["jobs"], "POST") => {
@@ -99,7 +103,9 @@ pub async fn route(c: &Shared, owner: &str, method: &str, p: &[&str], b: &V) -> 
                 return Err(Fault::bad("Invalid model operation."));
             }
             let dev = b["device"].as_str().unwrap_or("auto");
-            if !matches!(dev, "auto" | "cpu" | "directml") {
+            if !matches!(dev, "auto" | "cpu" | "directml")
+                || (cfg!(target_os = "android") && dev == "directml")
+            {
                 return Err(Fault::bad("Unsupported device."));
             }
             let scale = b["scale"].as_u64().unwrap_or(4);
@@ -147,7 +153,7 @@ pub async fn route(c: &Shared, owner: &str, method: &str, p: &[&str], b: &V) -> 
     }
 }
 async fn tensor(
-    app: &tauri::AppHandle,
+    state: &InferenceState,
     sid: &str,
     k: &str,
     input: &str,
@@ -155,15 +161,7 @@ async fn tensor(
     values: Vec<f32>,
 ) -> Result<(Vec<usize>, Vec<f32>), String> {
     let bytes = values.iter().flat_map(|v| v.to_le_bytes()).collect();
-    let raw = tensor_run(
-        app.state(),
-        sid.into(),
-        k.into(),
-        input.into(),
-        shape,
-        bytes,
-    )
-    .await?;
+    let raw = tensor_run(state, sid.into(), k.into(), input.into(), shape, bytes).await?;
     let n = u32::from_le_bytes(raw[..4].try_into().unwrap()) as usize;
     let meta: V = serde_json::from_slice(&raw[4..4 + n]).map_err(|e| e.to_string())?;
     let first = &meta[0];
@@ -195,7 +193,6 @@ async fn run(
     b: &V,
     t: &tokio_util::sync::CancellationToken,
 ) -> Result<V, String> {
-    let app = c.app.get().unwrap();
     let mid = s(m, "id").to_owned();
     let act = s(b, "action");
     let dev = b["device"].as_str().unwrap_or("auto");
@@ -206,11 +203,11 @@ async fn run(
             Ok(())
         }
     };
-    if inference_model_status(app.clone(), mid.clone())
+    if inference_model_status(c.clone(), mid.clone())
         .await?
         .is_none()
     {
-        inference_model_download(app.clone(), app.state(), mid.clone(), k.into()).await?;
+        inference_model_download(c.clone(), mid.clone(), k.into()).await?;
     }
     check()?;
     if act == "download" {
@@ -219,29 +216,27 @@ async fn run(
     let loaded = c.tasks.loaded.lock().unwrap().clone();
     if mid == "comic-lettering" {
         if let Some((sid, _, _, _)) = loaded {
-            inference_close(app.state(), sid);
+            inference_close(&c.inference, sid);
         }
-        let result =
-            lettering::job(c.clone(), app.clone(), k.to_string(), b.clone(), t.clone()).await?;
+        let result = lettering::job(c.clone(), k.to_string(), b.clone(), t.clone()).await?;
         *c.tasks.loaded.lock().unwrap() = Some((String::new(), mid, "cpu".into(), V::Null));
         return Ok(result);
     }
-    lettering::release(app.state());
+    lettering::release(&c.inference);
     let (sid, info) = match loaded {
         Some((sid, id, d, info)) if id == mid && d == dev => (sid, info),
         old => {
             if let Some((sid, ..)) = old {
-                inference_close(app.state(), sid);
+                inference_close(&c.inference, sid);
                 *c.tasks.loaded.lock().unwrap() = None;
             }
             let sid = uuid::Uuid::new_v4().to_string();
             let info = inference_open(
-                app.clone(),
-                app.state(),
+                c.clone(),
                 mid.clone(),
                 sid.clone(),
                 k.to_owned(),
-                dev != "cpu",
+                !cfg!(target_os = "android") && dev != "cpu",
             )
             .await?;
             *c.tasks.loaded.lock().unwrap() =
@@ -312,7 +307,7 @@ async fn run(
         let size = size as i64;
         check()?;
         let (_, out) = tensor(
-            app,
+            &c.inference,
             &sid,
             k,
             input,
@@ -401,7 +396,7 @@ async fn run(
                 }
             }
             let (dims, v) = tensor(
-                app,
+                &c.inference,
                 &sid,
                 k,
                 input,

@@ -1,0 +1,12 @@
+{
+  "appId": "cc.idlecloud.nai.local",
+  "appName": "NovelAI Local",
+  "webDir": "public",
+  "loggingBehavior": "none",
+  "server": { "hostname": "localhost", "androidScheme": "https" },
+  "android": { "allowMixedContent": false, "captureInput": false, "webContentsDebuggingEnabled": false },
+  "plugins": {
+    "CapacitorHttp": { "enabled": false },
+    "SystemBars": { "style": "DARK", "insetsHandling": "css", "initialViewportFitValueHint": "cover" }
+  }
+}

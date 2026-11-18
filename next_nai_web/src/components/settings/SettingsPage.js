@@ -62,7 +62,7 @@ function ColorField({ label, value, onChange }) {
  * @param {object} props pages 为可见页面，active 表示标签是否可见，sectionRequest 指定从画廊跳入的分区。
  * @returns {React.ReactElement} 分类导航、设置内容与始终可见的保存栏。
  */
-export default function SettingsPage({ pages = [], active = true, sectionRequest = null, chooseDirectory, desktopPreferences, onDirtyChange }) {
+export default function SettingsPage({ pages = [], active = true, sectionRequest = null, chooseDirectory, fixedOutputDirectory = false, desktopPreferences, onDirtyChange }) {
   const theme = useTheme();
   const { t, locale, setLocale } = useI18n();
   const mobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -368,10 +368,10 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
 
           {section === 'gallery' && <Stack spacing={2.5}>
             <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
-              <TextField fullWidth size="small" label={t('librarySettings.outputDirectory')}
+              {!fixedOutputDirectory && <TextField fullWidth size="small" label={t('librarySettings.outputDirectory')}
                 value={imageSettings.outputDirectory}
                 onChange={(event) => setImageSettings({ ...imageSettings, outputDirectory: event.target.value })}
-                helperText={t('librarySettings.outputHint')} sx={{ mb: 2 }} />
+                helperText={t('librarySettings.outputHint')} sx={{ mb: 2 }} />}
               {chooseDirectory && <Button startIcon={<FolderOpenOutlined />} onClick={async () => {
                 const path = await chooseDirectory();
                 if (path) setImageSettings(current => ({ ...current, outputDirectory: path }));

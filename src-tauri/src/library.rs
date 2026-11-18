@@ -122,6 +122,16 @@ pub fn handle(core: &Core, method: &str, path: &[&str], q: &Query, b: &V) -> Res
             {
                 return Err(Fault::bad("Invalid local settings."));
             }
+            #[cfg(target_os = "android")]
+            if settings["outputDirectory"]
+                .as_str()
+                .is_some_and(|dir| !dir.is_empty())
+            {
+                return Err(Fault::bad(
+                    "Android stores generated images in the app gallery.",
+                ));
+            }
+            #[cfg(not(target_os = "android"))]
             if let Some(dir) = settings["outputDirectory"]
                 .as_str()
                 .filter(|v| !v.is_empty())
@@ -145,6 +155,7 @@ pub fn handle(core: &Core, method: &str, path: &[&str], q: &Query, b: &V) -> Res
             }
             json!({"random_prompts":load(&db,"settings","random")?.unwrap_or(json!({"categories":[],"collections":[],"enabled":true}))})
         }
+        #[cfg(not(target_os = "android"))]
         (["directories"], "GET") => {
             let suggested = core.root.join("metadata-exports");
             let dir = q
@@ -167,6 +178,10 @@ pub fn handle(core: &Core, method: &str, path: &[&str], q: &Query, b: &V) -> Res
                 .map(|p| json!({"name":p,"path":p}))
                 .collect::<Vec<_>>();
             json!({"path":dir,"parent":dir.parent(),"directories":dirs,"roots":roots,"suggested_export_directory":suggested})
+        }
+        #[cfg(target_os = "android")]
+        (["directories"], "GET") => {
+            json!({"path":"","parent":null,"directories":[],"roots":[],"suggested_export_directory":"","use_document_picker":true})
         }
         (["gallery", "import"], "POST") => {
             if let Some(group) = b["group_id"].as_str().filter(|k| !k.is_empty()) {
@@ -285,6 +300,9 @@ pub fn handle(core: &Core, method: &str, path: &[&str], q: &Query, b: &V) -> Res
                             return Ok(V::Null);
                         }
                         "export" => {
+                            #[cfg(target_os = "android")]
+                            let dir = core.root.join("metadata-exports");
+                            #[cfg(not(target_os = "android"))]
                             let dir = if let Some(p) =
                                 b["output_directory"].as_str().filter(|s| !s.is_empty())
                             {
@@ -305,8 +323,14 @@ pub fn handle(core: &Core, method: &str, path: &[&str], q: &Query, b: &V) -> Res
                                 &p,
                                 crate::metadata::export(&img, &item["metadata_document"], b)?,
                             )?;
+                            let name = p.file_name().unwrap().to_string_lossy();
+                            #[cfg(target_os = "android")]
                             return Ok(
-                                json!({"saved_path":p,"filename":p.file_name().unwrap().to_string_lossy(),"width":img.width(),"height":img.height()}),
+                                json!({"file_url":format!("/api/local/metadata-exports/{name}"),"filename":name}),
+                            );
+                            #[cfg(not(target_os = "android"))]
+                            return Ok(
+                                json!({"saved_path":p,"filename":name,"width":img.width(),"height":img.height()}),
                             );
                         }
                         _ => return Err(Fault::bad("Invalid gallery action.")),

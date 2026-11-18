@@ -2974,6 +2974,7 @@ dependencies = [
  "hyper-openssl",
  "hyper-util",
  "image",
+ "jni 0.21.1",
  "libloading 0.8.9",
  "local-ip-address",
  "mime_guess",

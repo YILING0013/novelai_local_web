@@ -226,7 +226,6 @@ pub async fn updater_install(
     app: AppHandle,
     state: State<'_, UpdateState>,
     core: State<'_, crate::service::Shared>,
-    inference: State<'_, crate::inference::InferenceState>,
 ) -> Result<(), String> {
     {
         let mut inner = state.0.lock().map_err(|_| "UPDATE_LOCK_FAILED")?;
@@ -240,7 +239,7 @@ pub async fn updater_install(
     let operation = core.operation_gate.clone().try_write_owned();
     if operation.is_err()
         || core.tasks.is_busy()
-        || inference.is_busy().unwrap_or(true)
+        || core.inference.is_busy().unwrap_or(true)
         || app
             .webview_windows()
             .keys()

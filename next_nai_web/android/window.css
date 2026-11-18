@@ -1,0 +1,16 @@
+.android-app {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 100dvh;
+  padding: var(--safe-area-inset-top, env(safe-area-inset-top))
+    var(--safe-area-inset-right, env(safe-area-inset-right))
+    var(--safe-area-inset-bottom, env(safe-area-inset-bottom))
+    var(--safe-area-inset-left, env(safe-area-inset-left));
+}
+
+.android-navigation {
+  padding-top: var(--safe-area-inset-top, env(safe-area-inset-top));
+  padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom));
+}
