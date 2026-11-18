@@ -20,6 +20,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle state) {
         registerPlugin(LocalPlugin.class);
+        registerPlugin(UpdatePlugin.class);
         super.onCreate(state);
     }
 

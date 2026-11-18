@@ -15,6 +15,7 @@ import SignIn from '../desktop/SignIn';
 import { installTransport } from './transport';
 import { saveAs } from './save-file';
 import MobileTitleBar from './MobileTitleBar';
+import { AndroidUpdateProvider } from './AndroidUpdates';
 import '@fontsource/geist/400.css';
 import '@/app/globals.css';
 import '../desktop/window.css';
@@ -123,5 +124,5 @@ function Routes() {
 }
 
 createRoot(document.getElementById('root')).render(
-  <HashRouter><AppProviders><DesktopHistoryProvider><Routes /></DesktopHistoryProvider></AppProviders></HashRouter>,
+  <HashRouter><AppProviders><DesktopHistoryProvider><AndroidUpdateProvider><Routes /></AndroidUpdateProvider></DesktopHistoryProvider></AppProviders></HashRouter>,
 );

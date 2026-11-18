@@ -4,6 +4,7 @@
 
 ## 使用
 
+- 从 [Android 0.1.3 发布页](https://github.com/YILING0013/novelai_local_web/releases/tag/android-v0.1.3) 下载签名 APK。旧调试包使用不同签名，安装首个正式版前可先从调试包导出图库原图与项目。
 - 安装后可使用 NovelAI 官方 Persistent Token 或邮箱密码登录。订阅状态、Anlas 和 V5 额度来自官方账户。官方要求额外验证码时可使用 Persistent Token。
 - 从登录页打开「本机工具」，可在离线时浏览图库、编辑图片，以及使用已经下载的本地推理模型。在线生成、官方标签补充、机器翻译及模型下载需要网络。
 - 工作区沿用桌面版的绘画、局部重绘、漫画、参考图库、作品版本和元数据编辑。安卓本地推理使用 CPU。模型按需下载并校验。
@@ -23,7 +24,15 @@ npm.cmd ci
 npm.cmd run build:android
 ```
 
-Linux、macOS 将 `npm.cmd` 换成 `npm`。构建经 Gradle Wrapper 生成调试签名 APK，路径为 `android/app/build/outputs/apk/debug/app-debug.apk`。从仓库根目录可运行 `adb install -r android/app/build/outputs/apk/debug/app-debug.apk`。正式分发需要配置自己的 Android 发布签名。
+Linux、macOS 将 `npm.cmd` 换成 `npm`。构建经 Gradle Wrapper 生成调试签名 APK，路径为 `android/app/build/outputs/apk/debug/app-debug.apk`。从仓库根目录可运行 `adb install -r android/app/build/outputs/apk/debug/app-debug.apk`。
+
+## 应用更新与发布
+
+正式版在启动、回到前台和应用运行期间按六小时的间隔查询开源仓库。右上角「应用更新」可手动检查。新版出现后，用户可在应用内下载，看到进度，再由 Android 系统确认安装。安装前校验 GitHub Release 资产的 SHA-256、包名、版本及已安装应用的签名。调试包通过发布页获取正式版。
+
+正式打包设置 `NAI_LOCAL_ANDROID_KEYSTORE`、`NAI_LOCAL_ANDROID_STORE_PASSWORD`、`NAI_LOCAL_ANDROID_KEY_ALIAS` 和 `NAI_LOCAL_ANDROID_KEY_PASSWORD`，然后在 `next_nai_web` 运行 `npm run build:android -- :app:assembleRelease :app:lintRelease`。本机 Windows 开发工作区也可以从仓库根目录运行 `android/release.ps1`，读取工作区 `.tools/android-signing/novelai-local` 中受当前用户保护的发布签名。构建产物为 `android/app/build/outputs/apk/release/app-release.apk`。
+
+后续发布沿用同一签名和包名，递增 `android/app/build.gradle` 中的 `versionName` 和 `versionCode`。从对应提交构建后，用 Android SDK 的 `apksigner verify --print-certs` 核对签名，把 APK 命名为 `NovelAI-Local-Android-<版本>.apk`。在此仓库创建 `android-v<版本>` Release，带上上述 APK，并保留桌面 Release 的最新标记。客户端从 GitHub 的正式 Android 标签和 APK 资产读取版本及摘要。
 
 ## 验证
 

@@ -30,6 +30,31 @@ public class LocalAppTest {
     }
 
     @Test
+    public void updaterSelectsOnlyNewerSignedApkAssets() throws Exception {
+        JSONArray releases = new JSONArray("""
+                [
+                  {"tag_name":"v2.0.3","assets":[]},
+                  {"tag_name":"android-v1.0.0","draft":true,"assets":[]},
+                  {"tag_name":"android-v0.99.0","prerelease":true,"assets":[]},
+                  {"tag_name":"android-v0.12.0","assets":[{"name":"NovelAI-Local-Android-0.12.0.apk","state":"uploaded",
+                    "size":123,"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "browser_download_url":"https://example.invalid/NovelAI-Local-Android-0.12.0.apk"}]},
+                  {"tag_name":"android-v0.11.0","assets":[{"name":"NovelAI-Local-Android-0.11.0.apk","state":"uploaded",
+                    "size":123,"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "browser_download_url":"https://github.com/YILING0013/novelai_local_web/releases/download/android-v0.11.0/NovelAI-Local-Android-0.11.0.apk"}]}
+                ]
+                """);
+        UpdatePlugin.Release latest = UpdatePlugin.selectRelease(releases, "0.9.0");
+        assertNotNull(latest);
+        assertEquals("0.11.0", latest.version());
+        assertEquals(123, latest.size());
+        assertEquals(32, latest.checksum().length);
+        assertNull(UpdatePlugin.selectRelease(releases, "0.11.0"));
+        releases.getJSONObject(4).getJSONArray("assets").getJSONObject(0).remove("digest");
+        assertNull(UpdatePlugin.selectRelease(releases, "0.9.0"));
+    }
+
+    @Test
     public void galleryRoundTripAndProtectedPaths() throws Exception {
         AndroidCore.open(InstrumentationRegistry.getInstrumentation().getTargetContext());
         JSONObject file = new JSONObject().put("name", "android-fixture.png").put("data", IMAGE);

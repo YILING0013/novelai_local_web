@@ -11,6 +11,12 @@ const sdk = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
 const jdk = process.env.JAVA_HOME;
 const windows = process.platform === 'win32';
 if (!sdk || !jdk) throw new Error('Set ANDROID_HOME and JAVA_HOME before building.');
+if (process.argv.slice(2).some((task) => /(?:assemble|bundle|package)Release$/.test(task))) {
+  const signing = ['KEYSTORE', 'STORE_PASSWORD', 'KEY_ALIAS', 'KEY_PASSWORD'];
+  if (signing.some((name) => !process.env[`NAI_LOCAL_ANDROID_${name}`])) {
+    throw new Error('Release signing requires the four NAI_LOCAL_ANDROID signing variables.');
+  }
+}
 
 mkdirSync(generated, { recursive: true });
 // 每次只打包当前构建的资源，避免把上次构建的旧脚本混进 APK。

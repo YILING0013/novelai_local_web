@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import {
-  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton,
+  Alert, Badge, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton,
   LinearProgress, List, ListItemButton, ListItemIcon, ListItemText, Menu, MenuItem, Radio, Stack, Typography,
 } from '@mui/material';
-import { DarkModeOutlined, DownloadForOfflineOutlined, Language, LightModeOutlined, MoreVert } from '@mui/icons-material';
+import { DarkModeOutlined, DownloadForOfflineOutlined, Language, LightModeOutlined, MoreVert, SystemUpdateAltOutlined } from '@mui/icons-material';
 import { useI18n } from '@/i18n/I18nProvider';
 import { useAppTheme } from '@/providers/AppThemeProvider';
 import api from '@/utils/ApiClient';
 import inferenceMessages from '@/components/local-inference/inferenceMessages';
+import { useAndroidUpdates } from './AndroidUpdates';
 
 /** 左侧保留导航，账户、设置、主题、语言与下载任务集中在更多菜单。 */
 export default function MobileTitleBar({ leading, actions = [], title = 'NovelAI Local' }) {
@@ -18,6 +19,7 @@ export default function MobileTitleBar({ leading, actions = [], title = 'NovelAI
   const [taskError, setTaskError] = useState('');
   const { locale, setLocale, ready, t } = useI18n();
   const { mode, toggleTheme } = useAppTheme();
+  const updates = useAndroidUpdates();
   const zh = locale === 'zh-CN';
   const tasksLabel = zh ? '任务与下载' : 'Tasks & downloads';
 
@@ -42,7 +44,9 @@ export default function MobileTitleBar({ leading, actions = [], title = 'NovelAI
       {leading}
       <Box component="img" src="/logo.svg" alt="" sx={{ width: 24, height: 24 }} />
       <Typography variant="subtitle2" noWrap sx={{ flex: 1, minWidth: 0 }}>{title}</Typography>
-      <IconButton aria-label={zh ? '更多选项' : 'More options'} aria-haspopup="menu" aria-expanded={Boolean(anchor)} onClick={(event) => setAnchor(event.currentTarget)}><MoreVert /></IconButton>
+      <IconButton aria-label={zh ? '更多选项' : 'More options'} aria-haspopup="menu" aria-expanded={Boolean(anchor)} onClick={(event) => setAnchor(event.currentTarget)}>
+        <Badge color="primary" variant="dot" invisible={!updates.available}><MoreVert /></Badge>
+      </IconButton>
     </Stack>
     <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}>
       {actions.map(({ label, icon, onClick, disabled, selected }) => <MenuItem key={label} disabled={disabled} selected={selected} onClick={() => { setAnchor(null); void onClick(); }}>
@@ -52,6 +56,7 @@ export default function MobileTitleBar({ leading, actions = [], title = 'NovelAI
       <MenuItem onClick={() => { setAnchor(null); toggleTheme(); }}><ListItemIcon>{mode === 'light' ? <DarkModeOutlined /> : <LightModeOutlined />}</ListItemIcon><ListItemText>{t(mode === 'light' ? 'main.themeToDark' : 'main.themeToLight')}</ListItemText></MenuItem>
       <MenuItem onClick={() => { setAnchor(null); setLanguageOpen(true); }}><ListItemIcon><Language /></ListItemIcon><ListItemText>{zh ? '语言 / Language' : 'Language / 语言'}</ListItemText><Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>{zh ? '中文' : 'English'}</Typography></MenuItem>
       <MenuItem onClick={() => { setAnchor(null); setTasksOpen(true); }}><ListItemIcon><DownloadForOfflineOutlined /></ListItemIcon><ListItemText>{tasksLabel}</ListItemText></MenuItem>
+      <MenuItem onClick={() => { setAnchor(null); updates.open(); }}><ListItemIcon><SystemUpdateAltOutlined /></ListItemIcon><ListItemText>{updates.label}</ListItemText></MenuItem>
     </Menu>
     <Dialog open={languageOpen} onClose={() => setLanguageOpen(false)} fullWidth maxWidth="xs" aria-labelledby="language-dialog-title">
       <DialogTitle id="language-dialog-title">{t('common.language')}</DialogTitle>

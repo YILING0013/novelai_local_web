@@ -9,10 +9,22 @@ android {
         applicationId 'cc.idlecloud.nai.local'
         minSdk rootProject.ext.minSdkVersion
         targetSdk rootProject.ext.targetSdkVersion
-        versionCode 3
-        versionName '0.1.2'
+        versionCode 4
+        versionName '0.1.3'
         ndk { abiFilters 'arm64-v8a', 'x86_64' }
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+    }
+
+    signingConfigs {
+        release {
+            if (System.getenv('NAI_LOCAL_ANDROID_KEYSTORE')) {
+                storeFile file(System.getenv('NAI_LOCAL_ANDROID_KEYSTORE'))
+                storePassword System.getenv('NAI_LOCAL_ANDROID_STORE_PASSWORD')
+                keyAlias System.getenv('NAI_LOCAL_ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('NAI_LOCAL_ANDROID_KEY_PASSWORD')
+                storeType 'PKCS12'
+            }
+        }
     }
 
     buildTypes {
@@ -21,6 +33,9 @@ android {
             if (providers.gradleProperty('naiLayoutTest').isPresent()) {
                 applicationIdSuffix '.layouttest'
             }
+        }
+        release {
+            signingConfig signingConfigs.release
         }
     }
 
