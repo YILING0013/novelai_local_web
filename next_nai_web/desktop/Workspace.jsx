@@ -112,7 +112,7 @@ export default function Workspace({ local, onLogin, android = false, appVersion,
   };
   function render(id){
     const on=active===id;
-    if(id===ID.AI_PAINTING)return <Painting active={on} androidLayout={android} onOpenAccount={()=>setAccountOpen(true)}
+    if(id===ID.AI_PAINTING)return <Painting active={on} androidLayout={android}
       userId={account?.information?.email||''} accountSnapshot={account} workContext={work} onWorkContextChange={setWork} renderModeTools={modes} desktopEditor={bridge}/>;
     if(id===ID.GALLERY)return <Gallery androidLayout={android} source={gallerySource} onBusyChange={setGalleryBusy} onSourceChange={source=>setParams({page:ID.GALLERY,source})} workContext={work} onWorkContextChange={setWork}/>;
     if(id===ID.IMAGE_PROCESSING)return <Editor active={on} generatedItems={generated} getCurrentComicPage={()=>comic.current?.()} galleryRequest={incoming} onGalleryRequestHandled={()=>setIncoming(null)}/>;

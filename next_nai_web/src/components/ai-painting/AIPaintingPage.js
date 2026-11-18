@@ -314,8 +314,8 @@ const getResponsiveGenerateButtonContent = ({
 // 使用GenerationContext包装的AIPaintingPage内部组件
 const ImageProcessingWorkspace = dynamic(() => import('./ImageProcessing/ImageProcessingWorkspace'), { ssr: false });
 
-const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange, renderModeTools, desktopEditor, androidLayout = false, onOpenAccount }) => {
-  const { t, formatNumber, locale } = useI18n();
+const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange, renderModeTools, desktopEditor, androidLayout = false }) => {
+  const { t, formatNumber, formatDate, locale } = useI18n();
   const comicText = locale === 'en-US' ? {
     title: 'Comic maker', edit: 'Panel parameters', save: 'Save task', close: 'Back to canvas',
     generate: 'Generate panel', select: 'Select a panel', saved: 'Panel task saved',
@@ -1676,6 +1676,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
       }
       comicTargetRef.current = null;
       setComicSelectedTarget(null);
+      setComicEditorOpen(false);
       applyPaintingSnapshot(regularPaintingSnapshotRef.current);
     } else if (mode === 'comic') {
       regularPaintingSnapshotRef.current = getPaintingSnapshot();
@@ -2318,25 +2319,26 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
     return () => window.removeEventListener('desktop-before-update', block);
   }, [isGenerating, imageToolBusy, comicGenerationBusy, comicAIBusy, batchStatus.active, inpaintPreviewBatch.active]);
 
-  const renderAnlasStatus = (compact = false) => {
-    const subscription = liveAccountSnapshot?.subscription;
-    const tier = subscription?.tier;
-    const tierName = [t('main.local.notSubscribed'), 'Tablet', 'Scroll', 'Opus'][tier]
-      || (tier == null ? t('painting.workspace.anlas.unavailable') : t('main.local.tierValue', { tier }));
-    const subscriptionLabel = subscription?.active === false && tier > 0
-      ? `${tierName} · ${t('main.local.notSubscribed')}` : tierName;
-    const total = liveAccountSnapshot?.anlas?.total;
-    const displayTotal = total === null || total === undefined
-      ? t('painting.workspace.anlas.unavailable')
-      : formatNumber(total);
+  const { subscription, anlas } = liveAccountSnapshot || {};
+  const tier = subscription?.tier;
+  const unavailableAnlas = t('painting.workspace.anlas.unavailable');
+  const tierName = [t('main.local.notSubscribed'), 'Tablet', 'Scroll', 'Opus'][tier]
+    || (tier == null ? unavailableAnlas : t('main.local.tierValue', { tier }));
+  const subscriptionLabel = subscription?.active === false && tier > 0
+    ? `${tierName} · ${t('main.local.notSubscribed')}` : tierName;
+  const displayAnlas = (value) => value == null ? unavailableAnlas : formatNumber(value);
+  const displayTotal = displayAnlas(anlas?.total);
+
+  const renderAnlasStatus = (compact = false, iconOnly = false) => {
     return (
       <Tooltip title={t('painting.workspace.anlas.openDetails')} arrow>
         <Button
           size="small"
           onClick={() => setAnlasDialogOpen(true)}
+          aria-haspopup="dialog"
           aria-label={`${t('main.local.subscription')}: ${subscriptionLabel}; ${t('painting.workspace.anlas.balance')}: ${displayTotal}`}
           sx={{
-            minWidth: 0,
+            minWidth: iconOnly ? 40 : 0,
             minHeight: compact ? 44 : 36,
             px: compact ? 0.5 : 0.75,
             py: 0.5,
@@ -2354,24 +2356,21 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
             },
           }}
         >
-          <Typography component="span" variant="caption" sx={{ fontWeight: 600, color: subscription?.active ? 'primary.main' : 'text.secondary' }}>
-            {subscriptionLabel}
-          </Typography>
-          {!compact && <Typography
-            component="span"
-            variant="caption"
-            sx={{ color: 'text.secondary', fontWeight: 500, lineHeight: 1 }}
-          >
-            {t('painting.workspace.anlas.balance')}
-          </Typography>}
-          <Typography
-            component="span"
-            variant="body2"
-            sx={{ fontWeight: 700, fontSize: compact ? 12 : undefined, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}
-          >
-            {displayTotal}
-          </Typography>
-          <AnlasIcon sx={{ fontSize: compact ? 16 : 18, flexShrink: 0, color: 'primary.main' }} />
+          {iconOnly ? <Box component="span" sx={{ width: 24, height: 24, borderRadius: '50%', display: 'grid', placeItems: 'center', bgcolor: alpha(theme.palette.primary.main, .12) }}>
+            <AnlasIcon sx={{ fontSize: 17, color: 'primary.main' }} />
+          </Box> : <>
+            <Typography component="span" variant="caption" sx={{ fontWeight: 600, color: subscription?.active ? 'primary.main' : 'text.secondary' }}>
+              {subscriptionLabel}
+            </Typography>
+            {!compact && <Typography component="span" variant="caption" sx={{ color: 'text.secondary', fontWeight: 500, lineHeight: 1 }}>
+              {t('painting.workspace.anlas.balance')}
+            </Typography>}
+            <Typography component="span" variant="body2"
+              sx={{ fontWeight: 700, fontSize: compact ? 12 : undefined, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+              {displayTotal}
+            </Typography>
+            <AnlasIcon sx={{ fontSize: compact ? 16 : 18, flexShrink: 0, color: 'primary.main' }} />
+          </>}
         </Button>
       </Tooltip>
     );
@@ -2528,8 +2527,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
         }}
         onDropCapture={handlePageDrop}
       >
+        {/* 保留分镜参数状态，但关闭后整层退出布局，防止内部过渡控件拦住侧栏触摸。 */}
         {compactAndroid && leftPanelMode === 'comic' && <Dialog
           open={active && comicEditorOpen} keepMounted fullScreen onClose={closeComicEditor}
+          sx={{ '&.MuiModal-hidden': { display: 'none' } }}
           aria-labelledby="mobile-comic-editor-title">
           <DialogTitle id="mobile-comic-editor-title" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             {comicText.edit} {comicSelectedTarget && `#${comicSelectedTarget.panelNumber}`}
@@ -3326,14 +3327,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
           >
             <Box data-testid="mobile-generation-toolbar" sx={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'center', gap: compactAndroid ? 0 : 1, minWidth: 0 }}>
             {compactAndroid ? <>
-              <Tooltip title={t('painting.workspace.anlas.openDetails')} arrow>
-                <Button size="small" onClick={onOpenAccount} aria-label={t('painting.workspace.anlas.openDetails')}
-                  sx={{ minWidth: 40, minHeight: 44, px: .75, border: 1, borderColor: 'divider', bgcolor: alpha(theme.palette.primary.main, .055) }}>
-                  <Box component="span" sx={{ width: 24, height: 24, borderRadius: '50%', display: 'grid', placeItems: 'center', bgcolor: alpha(theme.palette.primary.main, .12) }}>
-                    <AnlasIcon sx={{ fontSize: 17 }} />
-                  </Box>
-                </Button>
-              </Tooltip>
+              {renderAnlasStatus(true, true)}
               <IconButton aria-label={locale === 'zh-CN' ? '生成工具' : 'Generation tools'} aria-haspopup="menu"
                 aria-expanded={Boolean(mobileGenerationMenuAnchor)} onClick={(event) => setMobileGenerationMenuAnchor(event.currentTarget)}
                 color={workspaceErrors.length ? 'error' : 'default'} sx={{ width: 40, height: 44, flexShrink: 0 }}>
@@ -3605,17 +3599,22 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
           onClear={clearWorkspaceErrors}
         />
       </Box>
-      <Dialog open={anlasDialogOpen} onClose={() => setAnlasDialogOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>{t('painting.workspace.anlas.title')}</DialogTitle>
+      <Dialog open={active && anlasDialogOpen} onClose={() => setAnlasDialogOpen(false)} maxWidth="xs" fullWidth
+        aria-labelledby="anlas-details-title">
+        <DialogTitle id="anlas-details-title">{t('painting.workspace.anlas.title')}</DialogTitle>
         <DialogContent>
           {liveAccountSnapshot?.stale === true && (
             <Alert severity="warning" sx={{ mb: 2 }}>{t('painting.workspace.anlas.stale')}</Alert>
           )}
           <Stack spacing={1.25}>
             {[
-              [t('painting.workspace.anlas.fixed'), liveAccountSnapshot?.anlas?.fixed],
-              [t('painting.workspace.anlas.purchased'), liveAccountSnapshot?.anlas?.purchased],
-              [t('painting.workspace.anlas.updatedAt'), liveAccountSnapshot?.refreshed_at],
+              [t('main.local.subscription'), subscriptionLabel],
+              [t('painting.workspace.anlas.total'), displayTotal],
+              [t('painting.workspace.anlas.fixed'), displayAnlas(anlas?.fixed)],
+              [t('painting.workspace.anlas.purchased'), displayAnlas(anlas?.purchased)],
+              [t('painting.workspace.anlas.updatedAt'), liveAccountSnapshot?.refreshed_at
+                ? formatDate(liveAccountSnapshot.refreshed_at, { dateStyle: 'medium', timeStyle: 'short' })
+                : ''],
             ].map(([label, value]) => (
               <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
                 <Typography color="text.secondary">{label}</Typography>
@@ -3657,10 +3656,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
 };
 
 // 包装了Context Provider的根组件
-const AIPaintingPage = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange, renderModeTools, desktopEditor, androidLayout, onOpenAccount }) => {
+const AIPaintingPage = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange, renderModeTools, desktopEditor, androidLayout }) => {
   return (
     <GenerationProvider>
-      <AIPaintingPageContent userId={userId} accountSnapshot={accountSnapshot} active={active} workContext={workContext} onWorkContextChange={onWorkContextChange} renderModeTools={renderModeTools} desktopEditor={desktopEditor} androidLayout={androidLayout} onOpenAccount={onOpenAccount} />
+      <AIPaintingPageContent userId={userId} accountSnapshot={accountSnapshot} active={active} workContext={workContext} onWorkContextChange={onWorkContextChange} renderModeTools={renderModeTools} desktopEditor={desktopEditor} androidLayout={androidLayout} />
     </GenerationProvider>
   );
 };

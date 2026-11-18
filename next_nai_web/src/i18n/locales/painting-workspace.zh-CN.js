@@ -139,7 +139,7 @@ const paintingWorkspacezhCN = {
         "unavailable": "不可用",
         "balance": "余额",
         "total": "Anlas 总数",
-        "title": "Anlas 点数",
+        "title": "订阅与 Anlas 点数",
         "stale": "当前账户快照可能已经过期。",
         "fixed": "固定 Anlas",
         "purchased": "购买 Anlas",

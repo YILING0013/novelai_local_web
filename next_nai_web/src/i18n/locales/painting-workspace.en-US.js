@@ -139,7 +139,7 @@ const paintingWorkspaceenUS = {
         "unavailable": "Unavailable",
         "balance": "Balance",
         "total": "Total Anlas",
-        "title": "Anlas balance",
+        "title": "Subscription and Anlas",
         "stale": "This account snapshot may be out of date.",
         "fixed": "Fixed Anlas",
         "purchased": "Purchased Anlas",
