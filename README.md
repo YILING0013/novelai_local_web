@@ -7,6 +7,7 @@
 <p align="center">在电脑或手机上使用自己的 NovelAI 账户创作，并在本机整理图片、作品和提示词。</p>
 
 <p align="center">
+  <a href="https://nai.idlecloud.cc">在线网站</a> ·
   <a href="https://github.com/YILING0013/novelai_local_web/releases/latest">下载 Windows 安装包</a> ·
   <a href="https://github.com/YILING0013/novelai_local_web/releases/tag/android-v0.1.3">下载 Android APK</a> ·
   <a href="#工作区与功能">界面与功能</a> ·
