@@ -1,6 +1,6 @@
 # Flask → Rust API 对照
 
-清单取自 678d0f7 的 Flask 装饰器；按方法和路径区分，共 65 项。此表标记实现位置，不表示每条接口的所有错误与边界条件都已对测。网页通过 HTTP 访问，桌面通过 local_request 或 naiasset 获取二进制。
+下表以 Flask 提交 `678d0f7` 的路由为基准，列出对应的 Rust 模块。Web 端通过 HTTP 调用，桌面端通过 `local_request` 调用，图片等二进制资源使用 `naiasset`。
 
 | 方法 | 路径 | Rust 模块 |
 |---|---|---|
