@@ -1,5 +1,6 @@
 package cc.idlecloud.nai.local;
 
+import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.webkit.WebResourceRequest;
@@ -17,11 +18,26 @@ import org.json.JSONObject;
 
 /** 加载 APK 内的页面，并在同一 WebView 来源下提供本地图库图片。 */
 public class MainActivity extends BridgeActivity {
+    private boolean restoring;
+
     @Override
     public void onCreate(Bundle state) {
         registerPlugin(LocalPlugin.class);
         registerPlugin(UpdatePlugin.class);
+        registerPlugin(MobileImageShare.class);
+        restoring = state != null;
         super.onCreate(state);
+        restoring = false;
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        // Capacitor 初始化桥接时也会将启动 Intent 交给这里。
+        if (!restoring && getBridge() != null) {
+            var share = (MobileImageShare) getBridge().getPlugin("NovelAIImageShare").getInstance();
+            share.accept(intent);
+        }
     }
 
     @Override

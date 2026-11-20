@@ -157,7 +157,8 @@ public class LocalPlugin extends Plugin {
         });
     }
 
-    private File transfer(String id) throws IOException {
+    /** 取指定桥接传输的缓存文件，供原生业务、保存和分享读取。 */
+    File transfer(String id) throws IOException {
         if (!id.matches("[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}")) throw new IOException("INVALID_TRANSFER");
         File directory = new File(getContext().getCacheDir(), "transfers");
         if (!directory.isDirectory() && !directory.mkdirs() && !directory.isDirectory()) throw new IOException("LOCAL_DIRECTORY_ERROR");

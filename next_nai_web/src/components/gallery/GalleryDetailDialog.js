@@ -92,7 +92,7 @@ export default function GalleryDetailDialog({ androidLayout = false, entryId, gr
     {loading ? <Box sx={{ flex: 1, display: 'grid', placeItems: 'center' }}><CircularProgress size={28} /></Box> : !entry ? <Alert severity="error" sx={{ m: 2 }}>{error}</Alert> :
       <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: { xs: 'column', md: 'row' }, overflow: 'hidden' }}>
         <Box sx={{ flex: { xs: `0 0 ${selectedText ? '28' : '40'}dvh`, md: '1 1 60%' }, minHeight: 0, minWidth: 0, bgcolor: '#101114', p: { xs: 0.5, md: 2 }, display: 'grid', placeItems: 'center' }}>
-          {entry.url ? <Box component="img" src={entry.url} alt={title} sx={{ width: '100%', height: '100%', minHeight: 0, objectFit: 'contain' }} /> : <ImageOutlined sx={{ fontSize: 48, color: '#777' }} />}
+          {entry.url ? <Box component="img" src={entry.url} alt={title} data-share-image-name={entry.filename} sx={{ width: '100%', height: '100%', minHeight: 0, objectFit: 'contain' }} /> : <ImageOutlined sx={{ fontSize: 48, color: '#777' }} />}
         </Box>
         <Box sx={{ flex: { xs: 1, md: '0 0 40%' }, width: { md: 460 }, minWidth: { xs: 0, md: 360 }, minHeight: 0, display: 'flex', flexDirection: 'column', borderLeft: { md: 1 }, borderColor: 'divider' }}>
           <Box sx={{ overflowY: 'auto', minHeight: 0, flex: 1, p: { xs: 1.5, md: 2 }, bgcolor: 'background.default' }}>

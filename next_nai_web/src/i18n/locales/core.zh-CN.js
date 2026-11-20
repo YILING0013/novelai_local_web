@@ -1,4 +1,10 @@
 const messages = {
+  imageShare: {
+    title: '分享图片',
+    tooLarge: '分享的图片超过 10 MB，已跳过。',
+    invalid: '无法读取分享中的图片。',
+    sendFailed: '无法分享这张图片。',
+  },
   "desktop": {
     "application": "桌面应用",
     "webOn": "Web 访问已开启",

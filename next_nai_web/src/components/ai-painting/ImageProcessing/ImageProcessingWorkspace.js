@@ -65,7 +65,9 @@ export default function ImageProcessingWorkspace({ active, generatedItems, galle
     setError('');
     (async () => {
       try {
-        if (galleryRequest.generatedItem) {
+        if (galleryRequest.file) {
+          setImportRequest({ id: galleryRequest.id, files: [galleryRequest.file] });
+        } else if (galleryRequest.generatedItem) {
           const item = galleryRequest.generatedItem;
           const blob = item.cachedBlob || await fetchUrlAsBlob(item.downloadSrc || item.originalSrc || item.src);
           const extension = blob.type === 'image/jpeg' ? 'jpg' : blob.type.split('/')[1];

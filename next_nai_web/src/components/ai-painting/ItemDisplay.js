@@ -892,7 +892,9 @@ const ItemDisplay = ({
 
                 <TransformComponent wrapperStyle={{ width: '100%', height: '100%' }} contentStyle={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', height: '100%' }}>
                   <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', height: '100%', position: 'relative' }}>
-                    <Image src={item.src} alt={t('painting.workspace.gallery.generatedImageAlt')} width={item.width || 512} height={item.height || 512} unoptimized={true} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '4px', boxShadow: theme.shadows[8] }} draggable={false} />
+                    <Image src={item.src} alt={t('painting.workspace.gallery.generatedImageAlt')} width={item.width || 512} height={item.height || 512}
+                      data-share-image-url={item.isComposited ? item.src : (item.downloadSrc || item.originalSrc || item.src)}
+                      unoptimized={true} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '4px', boxShadow: theme.shadows[8] }} draggable={false} />
                   </Box>
                 </TransformComponent>
               </>

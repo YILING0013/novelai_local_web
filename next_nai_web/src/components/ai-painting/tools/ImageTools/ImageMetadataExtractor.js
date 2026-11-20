@@ -46,6 +46,24 @@ const PNG_TEXT_KEYWORDS = new Set([
 ]);
 
 const decoderCache = new Map();
+const MAX_METADATA_BYTES = 4 * 1024 * 1024;
+
+// 文件大小无法约束压缩文本的展开量，同一轮读取使用共享预算。
+const createMetadataInflater = () => {
+  let remaining = MAX_METADATA_BYTES;
+  return (input) => {
+    const inflater = new pako.Inflate();
+    const collect = inflater.onData.bind(inflater);
+    inflater.onData = (chunk) => {
+      remaining -= chunk.byteLength;
+      if (remaining < 0) throw new RangeError('Image metadata exceeds the decompression limit');
+      collect(chunk);
+    };
+    inflater.push(input, true);
+    if (inflater.err || !inflater.result) throw new Error('Invalid compressed image metadata');
+    return inflater.result;
+  };
+};
 
 /**
  * 获取指定编码的 TextDecoder。
@@ -100,9 +118,10 @@ const readNullTerminatedString = (data, start = 0, encoding = 'latin1') => {
  * 解码 PNG iTXt 文本块。
  *
  * @param {Uint8Array} data PNG iTXt chunk 数据。
+ * @param {function} inflate 本次读取共用的限量解压函数。
  * @returns {{keyword:string,text:string}|null} 解码后的文本块。
  */
-const decodeITxtChunk = (data) => {
+const decodeITxtChunk = (data, inflate) => {
   const keyword = readNullTerminatedString(data, 0, 'latin1');
   if (!keyword.value || keyword.next + 2 > data.length) {
     return null;
@@ -119,7 +138,7 @@ const decodeITxtChunk = (data) => {
     if (!pako || compressionMethod !== 0) {
       return null;
     }
-    textBytes = pako.inflate(textBytes);
+    textBytes = inflate(textBytes);
   }
 
   return {
@@ -132,9 +151,10 @@ const decodeITxtChunk = (data) => {
  * 解码 PNG zTXt 文本块。
  *
  * @param {Uint8Array} data PNG zTXt chunk 数据。
+ * @param {function} inflate 本次读取共用的限量解压函数。
  * @returns {{keyword:string,text:string}|null} 解码后的文本块。
  */
-const decodeZTxtChunk = (data) => {
+const decodeZTxtChunk = (data, inflate) => {
   const keyword = readNullTerminatedString(data, 0, 'latin1');
   if (!keyword.value || keyword.next >= data.length || !pako) {
     return null;
@@ -145,7 +165,7 @@ const decodeZTxtChunk = (data) => {
     return null;
   }
 
-  const inflated = pako.inflate(data.slice(keyword.next + 1));
+  const inflated = inflate(data.slice(keyword.next + 1));
   return {
     keyword: keyword.value,
     text: decodeBytes(inflated, 'latin1'),
@@ -156,18 +176,19 @@ const decodeZTxtChunk = (data) => {
  * 解码 PNG 文本块。
  *
  * @param {{name:string,data:Uint8Array}} chunk PNG chunk。
+ * @param {function} inflate 本次读取共用的限量解压函数。
  * @returns {{keyword:string,text:string}|null} 解码后的文本块。
  */
-const decodePngTextChunk = (chunk) => {
+const decodePngTextChunk = (chunk, inflate) => {
   try {
     if (chunk.name === 'tEXt') {
       return pngChunkText ? pngChunkText.decode(chunk.data) : null;
     }
     if (chunk.name === 'iTXt') {
-      return decodeITxtChunk(chunk.data);
+      return decodeITxtChunk(chunk.data, inflate);
     }
     if (chunk.name === 'zTXt') {
-      return decodeZTxtChunk(chunk.data);
+      return decodeZTxtChunk(chunk.data, inflate);
     }
   } catch (error) {
     console.warn(`PNG ${chunk.name} 文本块解码失败:`, error);
@@ -189,11 +210,21 @@ const extractPngChunkCandidates = async (file) => {
 
   try {
     const buf = await file.arrayBuffer();
+    const view = new DataView(buf);
+    // 先验证各块确实落在文件内，避免第三方解析器按伪造的长度分配内存。
+    for (let offset = 8; offset < view.byteLength;) {
+      if (offset + 12 > view.byteLength) return [];
+      const end = offset + 12 + view.getUint32(offset);
+      if (end > view.byteLength) return [];
+      if (view.getUint32(offset + 4) === 0x49454e44) break;
+      offset = end;
+    }
     const chunks = extractChunks(new Uint8Array(buf));
+    const inflate = createMetadataInflater();
 
     return chunks
       .filter((chunk) => ['tEXt', 'iTXt', 'zTXt'].includes(chunk.name))
-      .map(decodePngTextChunk)
+      .map((chunk) => decodePngTextChunk(chunk, inflate))
       .filter(Boolean)
       .map((chunk) => ({
         keyword: chunk.keyword === NOVELAI_STEALTH_KEYWORD ? 'Comment' : chunk.keyword,
@@ -289,7 +320,11 @@ export const extractExifReaderCandidates = async (file) => {
   }
 
   try {
-    const tags = await ExifReader.load(file, { expanded: true, async: true });
+    const inflate = createMetadataInflater();
+    const tags = await ExifReader.load(file, {
+      expanded: true, async: true,
+      decompress: { maxDecompressedSize: MAX_METADATA_BYTES, deflate: async (input) => inflate(input) },
+    });
 
     return [
       ...collectGroupCandidates(tags.pngText, 'pngText', 35),
@@ -336,7 +371,7 @@ export function readStealthMetadata({ data, width, height }) {
   try {
     const gzipData = new Uint8Array(byteLength);
     for (let i = 0; i < byteLength; i++) gzipData[i] = readByte();
-    return JSON.parse(decodeBytes(pako.ungzip(gzipData), 'utf-8'));
+    return JSON.parse(decodeBytes(createMetadataInflater()(gzipData), 'utf-8'));
   } catch (error) {
     console.warn('NovelAI stealth 元数据读取失败:', error);
     return null;

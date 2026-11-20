@@ -1,7 +1,7 @@
-import { Suspense, lazy, useEffect, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { HashRouter, useLocation, useNavigate } from 'react-router-dom';
-import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, Snackbar } from '@mui/material';
 import { CollectionsOutlined } from '@mui/icons-material';
 import { App } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
@@ -16,12 +16,15 @@ import { installTransport, local, withTransfer } from './transport';
 import { saveAs } from './save-file';
 import MobileTitleBar from './MobileTitleBar';
 import { AndroidUpdateProvider } from './AndroidUpdates';
+import { imageShare, nextSharedImage } from './imageShare';
+import ImageShareGesture from './ImageShareGesture';
 import '@fontsource/geist/400.css';
 import '@/app/globals.css';
 import '../desktop/window.css';
 import './window.css';
 
 const Workspace = lazy(() => import('../desktop/Workspace'));
+const LocalSharedImageImport = lazy(() => import('./LocalSharedImageImport'));
 installTransport();
 window.novelaiSaveFile = saveAs;
 window.novelaiCopyImage = file => withTransfer(file, id => local.copyImage({ id }));
@@ -37,7 +40,47 @@ function Routes() {
   const [appVersion, setAppVersion] = useState('');
   const [checking, setChecking] = useState(pathname !== '/local');
   const auth = pathname !== '/main' && pathname !== '/local';
+  const [sharedImage, setSharedImage] = useState(null);
+  const [shareReady, setShareReady] = useState(true);
+  const [readingShare, setReadingShare] = useState(false);
+  const [shareError, setShareError] = useState('');
+  const [localImageRequest, setLocalImageRequest] = useState(null);
+  const closeSharedImage = useCallback(() => {
+    setSharedImage(null);
+    setShareReady(true);
+  }, []);
+  const editSharedImage = (file) => {
+    setLocalImageRequest({ id: crypto.randomUUID(), file });
+    closeSharedImage();
+    navigate('/local?page=image-processing');
+  };
   useEffect(() => { void App.getInfo().then(({ version }) => setAppVersion(version)); }, []);
+
+  useEffect(() => {
+    const subscription = imageShare.addListener('imageAvailable', () => setShareReady(true));
+    // 首次读取也能领取页面启动前到达的分享。
+    void subscription.then(() => setShareReady(true));
+    return () => { void subscription.then((listener) => listener.remove()); };
+  }, []);
+  useEffect(() => {
+    if (sharedImage || !shareReady || readingShare) return;
+    setShareReady(false);
+    setReadingShare(true);
+    void (async () => {
+      try {
+        let result = await nextSharedImage();
+        while (result.error) {
+          setShareError(result.error);
+          result = await nextSharedImage();
+        }
+        if (result.file) setSharedImage(result.file);
+      } catch {
+        setShareError('SHARED_IMAGE_INVALID');
+      } finally {
+        setReadingShare(false);
+      }
+    })();
+  }, [sharedImage, shareReady, readingShare]);
 
   useEffect(() => {
     if (!checking) return;
@@ -106,6 +149,12 @@ function Routes() {
   }, []);
 
   return <Box className="android-app" sx={{ bgcolor: 'background.default' }}>
+    <ImageShareGesture />
+    <Snackbar open={Boolean(shareError)} message={t(shareError === 'SHARED_IMAGE_TOO_LARGE' ? 'imageShare.tooLarge' : 'imageShare.invalid')}
+      autoHideDuration={4500} onClose={() => setShareError('')} />
+    {sharedImage && !checking && pathname !== '/main' && <Suspense fallback={null}>
+      <LocalSharedImageImport file={sharedImage} onClose={closeSharedImage} onEdit={editSharedImage} />
+    </Suspense>}
     {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
     {auth && <MobileTitleBar actions={[{
       label: locale === 'zh-CN' ? '本机工具' : 'Local tools', icon: <CollectionsOutlined />,
@@ -113,7 +162,9 @@ function Routes() {
     }]} />}
     <Suspense fallback={<CircularProgress sx={{ m: 'auto' }} />}>
       {checking ? <CircularProgress sx={{ m: 'auto' }} /> : auth ? <SignIn android onSuccess={() => navigate('/main', { replace: true })} />
-        : <Workspace android appVersion={appVersion} TitleBar={MobileTitleBar} local={pathname === '/local'} onLogin={() => navigate('/login', { replace: true })} />}
+        : <Workspace android appVersion={appVersion} TitleBar={MobileTitleBar} local={pathname === '/local'} onLogin={() => navigate('/login', { replace: true })}
+            sharedImage={sharedImage} onSharedImageHandled={closeSharedImage}
+            sharedImageRequest={localImageRequest} onSharedImageRequestHandled={() => setLocalImageRequest(null)} />}
     </Suspense>
     {previewUrl && <Dialog open onClose={() => setPreviewUrl('')} maxWidth="md">
       <DialogContent sx={{ p: 1, display: 'grid', placeItems: 'center' }}>

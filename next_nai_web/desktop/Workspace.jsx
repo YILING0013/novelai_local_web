@@ -25,7 +25,8 @@ const pages=[
   [ID.IMAGE_PROCESSING,'painting.workspace.tabs.imageProcessing',PhotoFilter],
   [ID.IMAGE_TAGGING,'pages.imageTagging',AutoAwesome],[ID.LOCAL_UPSCALING,'pages.localUpscaling',ZoomInMap],
   [ID.SETTINGS,'pages.settings',Settings]];
-export default function Workspace({ local, onLogin, android = false, appVersion, TitleBar = DesktopTitleBar }){
+export default function Workspace({ local, onLogin, android = false, appVersion, TitleBar = DesktopTitleBar,
+  sharedImage, onSharedImageHandled, sharedImageRequest, onSharedImageRequestHandled }) {
   const {t, locale}=useI18n(),{mode,toggleTheme,animationEnabled}=useAppTheme();
   const theme = useTheme();
   const narrow = useMediaQuery(theme.breakpoints.down('md'));
@@ -69,6 +70,9 @@ export default function Workspace({ local, onLogin, android = false, appVersion,
     setParams(gallery ? { page: ID.GALLERY, source: reference ? 'references' : id === ID.LOCAL_GALLERY ? 'outputs' : gallerySource } : {page:id});
     if (android) setDrawerOpen(false);
   },[android,gallerySource,setParams]);
+  useEffect(() => {
+    if (!local && sharedImage && active !== ID.AI_PAINTING) select(ID.AI_PAINTING);
+  }, [local, sharedImage, active, select]);
   useEffect(()=>{setVisited(list=>list.includes(active)?list:[...list,active]);},[active]);
   useEffect(()=>{if(!local)api.getSession().then(s=>{if(!s.authenticated)onLogin();else {setAccount(s.account_snapshot);api.getAccount().then(r=>setAccount(r.account_snapshot)).catch(e=>{if(e.status===401)onLogin()})}}).catch(e=>setError(e.message));},[local]); // window hand-off happens once
   const bridge=useMemo(()=>({share(items,reader){setGenerated(items);comic.current=reader},open(request){setIncoming(request);select(ID.IMAGE_PROCESSING)}}),[select]);
@@ -113,9 +117,11 @@ export default function Workspace({ local, onLogin, android = false, appVersion,
   function render(id){
     const on=active===id;
     if(id===ID.AI_PAINTING)return <Painting active={on} androidLayout={android}
-      userId={account?.information?.email||''} accountSnapshot={account} workContext={work} onWorkContextChange={setWork} renderModeTools={modes} desktopEditor={bridge}/>;
+      userId={account?.information?.email||''} accountSnapshot={account} workContext={work} onWorkContextChange={setWork} renderModeTools={modes} desktopEditor={bridge}
+      sharedImage={local ? null : sharedImage} onSharedImageHandled={onSharedImageHandled}/>;
     if(id===ID.GALLERY)return <Gallery androidLayout={android} source={gallerySource} onBusyChange={setGalleryBusy} onSourceChange={source=>setParams({page:ID.GALLERY,source})} workContext={work} onWorkContextChange={setWork}/>;
-    if(id===ID.IMAGE_PROCESSING)return <Editor active={on} generatedItems={generated} getCurrentComicPage={()=>comic.current?.()} galleryRequest={incoming} onGalleryRequestHandled={()=>setIncoming(null)}/>;
+    if(id===ID.IMAGE_PROCESSING)return <Editor active={on} generatedItems={generated} getCurrentComicPage={()=>comic.current?.()}
+      galleryRequest={sharedImageRequest || incoming} onGalleryRequestHandled={sharedImageRequest ? onSharedImageRequestHandled : () => setIncoming(null)}/>;
     if(id===ID.SETTINGS)return <Preferences active={on} pages={nav} onDirtyChange={setDirty} fixedOutputDirectory={android} mobileLayout={android}
       sectionRequest={sectionRequest} appVersion={appVersion} onBack={android ? closeSettings : undefined} onSectionChange={(section) => {
         if (section) setParams({ page: ID.SETTINGS, section }, { state: { settingsParent: true } });

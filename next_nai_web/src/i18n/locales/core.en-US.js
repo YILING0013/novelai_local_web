@@ -1,4 +1,10 @@
 const messages = {
+  imageShare: {
+    title: 'Share image',
+    tooLarge: 'Skipped a shared image larger than 10 MB.',
+    invalid: 'Could not read an image from this share.',
+    sendFailed: 'Could not share this image.',
+  },
   "desktop": {
     "application": "Desktop application",
     "webOn": "Web access on",

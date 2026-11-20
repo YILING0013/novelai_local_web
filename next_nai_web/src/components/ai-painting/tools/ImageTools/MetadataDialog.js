@@ -246,7 +246,7 @@ export default function MetadataDialog({ open, onClose, metadata, onApply, image
       }}>
         <Box sx={{ minWidth: 0, border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden', bgcolor: 'background.default', flexShrink: 0 }}>
           <Box sx={{ position: 'relative' }}>
-            <Box component="img" src={preview} alt={t('painting.tools.metadata.imagePreview')} draggable={false}
+            <Box component="img" src={preview} alt={t('painting.tools.metadata.imagePreview')} data-share-image-name={activeFile.name} draggable={false}
               sx={{ display: 'block', width: '100%', height: { xs: 'clamp(120px, 30dvh, 220px)', sm: 'clamp(140px, 38dvh, 300px)' }, objectFit: 'contain', p: 1 }} />
             <Tooltip title={t('painting.tools.metadata.imageTools')}>
               <Box component="span" sx={{ position: 'absolute', right: 8, top: 8, display: 'inline-flex' }}>
@@ -403,7 +403,7 @@ export default function MetadataDialog({ open, onClose, metadata, onApply, image
     </DialogContent>
     <DialogActions sx={{ px: { xs: 2, sm: 2.5 }, py: 1.5, gap: 1, flexShrink: 0 }}>
       <Button color="inherit" onClick={onClose}>{t('common.cancel')}</Button>
-      {showMetadata && <Button variant="contained" disabled={readingMetadata || !hasSelection} onClick={apply}>{t('painting.tools.metadata.importInformation')}</Button>}
+      {showMetadata && onApply && <Button variant="contained" disabled={readingMetadata || !hasSelection} onClick={apply}>{t('painting.tools.metadata.importInformation')}</Button>}
     </DialogActions>
   </Dialog>;
 }

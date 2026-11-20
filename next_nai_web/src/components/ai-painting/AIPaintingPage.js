@@ -314,7 +314,7 @@ const getResponsiveGenerateButtonContent = ({
 // 使用GenerationContext包装的AIPaintingPage内部组件
 const ImageProcessingWorkspace = dynamic(() => import('./ImageProcessing/ImageProcessingWorkspace'), { ssr: false });
 
-const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange, renderModeTools, desktopEditor, androidLayout = false }) => {
+const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange, renderModeTools, desktopEditor, androidLayout = false, sharedImage, onSharedImageHandled }) => {
   const { t, formatNumber, formatDate, locale } = useI18n();
   const comicText = locale === 'en-US' ? {
     title: 'Comic maker', edit: 'Panel parameters', save: 'Save task', close: 'Back to canvas',
@@ -1285,9 +1285,13 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
     };
   }, []);
 
-  const handleApplyPageMetadata = useCallback((filteredMetadata) => {
+  const closePageImageImport = useCallback(() => {
+    if (sharedImage && pageMetadataDialog.file === sharedImage) onSharedImageHandled();
     setPageMetadataDialog({ open: false, metadata: null });
+  }, [sharedImage, pageMetadataDialog.file, onSharedImageHandled]);
 
+  const handleApplyPageMetadata = useCallback((filteredMetadata) => {
+    closePageImageImport();
     if (!filteredMetadata) {
       return;
     }
@@ -1296,7 +1300,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
       successMessage: t('painting.workspace.notifications.imageMetadataApplied'),
       warningMessage: t('painting.workspace.errors.partialMetadataApply'),
     });
-  }, [applyMetadataToCurrentParams, t]);
+  }, [closePageImageImport, applyMetadataToCurrentParams, t]);
 
   const openImageImport = useCallback(async (imageFile) => {
     // 普通图片也能进入参考、重绘或编辑流程。
@@ -1311,6 +1315,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
     }
   }, [showNotification, t]);
 
+  useEffect(() => {
+    if (active && sharedImage && !pageMetadataDialog.open) void openImageImport(sharedImage);
+  }, [active, sharedImage, pageMetadataDialog.open, openImageImport]);
+
   const handlePageDrop = useCallback((event) => {
     if (!Array.from(event.dataTransfer?.types || []).includes('Files') || event.target?.closest?.('[data-drop-zone]')) return;
     event.preventDefault();
@@ -1320,7 +1328,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
   }, [openImageImport]);
 
   const handleUseDroppedImage = async (target, file) => {
-    setPageMetadataDialog({ open: false, metadata: null });
+    closePageImageImport();
     if (target === 'editor') {
       const request = { id: crypto.randomUUID(), generatedItem: { id: crypto.randomUUID(), cachedBlob: file, type: 'image' } };
       if (desktopEditor) desktopEditor.open(request);
@@ -3631,7 +3639,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
       <MetadataDialog
         params={generationParams}
         open={pageMetadataDialog.open}
-        onClose={() => setPageMetadataDialog({ open: false, metadata: null })}
+        onClose={closePageImageImport}
         metadata={pageMetadataDialog.metadata}
         imageFile={pageMetadataDialog.file}
         reading={pageMetadataDialog.reading}
@@ -3655,10 +3663,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
 };
 
 // 包装了Context Provider的根组件
-const AIPaintingPage = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange, renderModeTools, desktopEditor, androidLayout }) => {
+const AIPaintingPage = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange, renderModeTools, desktopEditor, androidLayout, sharedImage, onSharedImageHandled }) => {
   return (
     <GenerationProvider>
-      <AIPaintingPageContent userId={userId} accountSnapshot={accountSnapshot} active={active} workContext={workContext} onWorkContextChange={onWorkContextChange} renderModeTools={renderModeTools} desktopEditor={desktopEditor} androidLayout={androidLayout} />
+      <AIPaintingPageContent userId={userId} accountSnapshot={accountSnapshot} active={active} workContext={workContext} onWorkContextChange={onWorkContextChange} renderModeTools={renderModeTools} desktopEditor={desktopEditor} androidLayout={androidLayout} sharedImage={sharedImage} onSharedImageHandled={onSharedImageHandled} />
     </GenerationProvider>
   );
 };
