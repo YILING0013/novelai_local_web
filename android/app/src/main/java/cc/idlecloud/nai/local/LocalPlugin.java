@@ -1,9 +1,14 @@
 package cc.idlecloud.nai.local;
 
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Intent;
+import android.content.Context;
+import android.util.AtomicFile;
 import android.util.Base64;
 import androidx.activity.result.ActivityResult;
+import androidx.core.content.FileProvider;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -90,6 +95,47 @@ public class LocalPlugin extends Plugin {
         intent.setType(call.getString("mime", "application/octet-stream"));
         intent.putExtra(Intent.EXTRA_TITLE, call.getString("name", "image.png"));
         getActivity().runOnUiThread(() -> startActivityForResult(call, intent, "fileSelected"));
+    }
+
+    /** 将已暂存的 PNG 作为受控的内容 URI 交给系统剪贴板。 */
+    @PluginMethod
+    public void copyImage(PluginCall call) {
+        requests.execute(() -> {
+            try {
+                File source = transfer(call.getString("id", ""));
+                Context context = getContext();
+                File directory = new File(context.getCacheDir(), "clipboard");
+                if (!directory.isDirectory() && !directory.mkdirs() && !directory.isDirectory()) {
+                    throw new IOException("LOCAL_DIRECTORY_ERROR");
+                }
+                File image = new File(directory, "image.png");
+                synchronized (this) {
+                    AtomicFile destination = new AtomicFile(image);
+                    try (FileInputStream input = new FileInputStream(source)) {
+                        FileOutputStream output = destination.startWrite();
+                        try {
+                            AndroidCore.copy(input, output);
+                            destination.finishWrite(output);
+                        } catch (IOException error) {
+                            destination.failWrite(output);
+                            throw error;
+                        }
+                    }
+                    var uri = FileProvider.getUriForFile(context, context.getPackageName() + ".update-files", image);
+                    var clip = ClipData.newUri(context.getContentResolver(), "NovelAI Local", uri);
+                    getActivity().runOnUiThread(() -> {
+                        try {
+                            context.getSystemService(ClipboardManager.class).setPrimaryClip(clip);
+                            call.resolve();
+                        } catch (RuntimeException error) {
+                            call.reject("LOCAL_CLIPBOARD_FAILED");
+                        }
+                    });
+                }
+            } catch (IOException | RuntimeException error) {
+                call.reject("LOCAL_CLIPBOARD_FAILED");
+            }
+        });
     }
 
     @ActivityCallback

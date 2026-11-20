@@ -32,6 +32,8 @@ try {
   console.warn('png-chunk-text 未安装，PNG tEXt 兜底解码不可用');
 }
 
+export const NOVELAI_STEALTH_KEYWORD = 'NovelAI Stealth';
+
 const PNG_TEXT_KEYWORDS = new Set([
   'Comment',
   'Source',
@@ -194,10 +196,10 @@ const extractPngChunkCandidates = async (file) => {
       .map(decodePngTextChunk)
       .filter(Boolean)
       .map((chunk) => ({
-        keyword: chunk.keyword,
+        keyword: chunk.keyword === NOVELAI_STEALTH_KEYWORD ? 'Comment' : chunk.keyword,
         text: chunk.text,
         source: `png:${chunk.keyword}`,
-        weight: chunk.keyword === 'Comment' ? 25 : 10,
+        weight: chunk.keyword === NOVELAI_STEALTH_KEYWORD ? 45 : chunk.keyword === 'Comment' ? 25 : 10,
       }));
   } catch (error) {
     console.warn('PNG 文本块兜底提取失败:', error);
@@ -278,10 +280,10 @@ const collectGroupCandidates = (group, source, baseWeight) => {
 /**
  * 使用 ExifReader 读取标准 PNG/EXIF/XMP 元数据。
  *
- * @param {File} file 图像文件。
+ * @param {File|ArrayBuffer} file 图像文件或原始字节。
  * @returns {Promise<Array<{keyword:string,text:string,source:string,weight:number}>>} 候选元数据。
  */
-const extractExifReaderCandidates = async (file) => {
+export const extractExifReaderCandidates = async (file) => {
   if (!ExifReader) {
     return [];
   }
@@ -306,52 +308,38 @@ const extractExifReaderCandidates = async (file) => {
 };
 
 /**
- * 从 bit 流中读取 NovelAI stealth 数据。
+ * 按 NovelAI 官方脚本的 alpha.T 顺序读取隐写生成参数。
+ * @param {ImageData} imageData 行优先的原始 RGBA 像素。
+ * @returns {object|null} 完整的隐写 JSON，未检测到时为 null。
  */
-class BitDataReader {
-  /**
-   * @param {Array<number>} data LSB bit 列表。
-   */
-  constructor(data) {
-    this.data = data;
-    this.index = 0;
-  }
-
-  /**
-   * 读取一个字节。
-   *
-   * @returns {number} 读取到的字节。
-   */
-  readByte() {
+export function readStealthMetadata({ data, width, height }) {
+  const magic = 'stealth_pngcomp';
+  const availableBytes = Math.floor(width * height / 8);
+  if (availableBytes < magic.length + 4) return null;
+  let x = 0, y = 0;
+  const readByte = () => {
     let byte = 0;
-    for (let index = 0; index < 8; index += 1) {
-      byte |= (this.data[this.index++] || 0) << (7 - index);
+    for (let bit = 0; bit < 8; bit++) {
+      byte = (byte << 1) | (data[(y * width + x) * 4 + 3] & 1);
+      if (++y === height) { y = 0; x++; }
     }
     return byte;
+  };
+  for (let i = 0; i < magic.length; i++) {
+    if (readByte() !== magic.charCodeAt(i)) return null;
   }
+  let bitLength = 0;
+  for (let i = 0; i < 4; i++) bitLength = bitLength * 256 + readByte();
+  const byteLength = bitLength / 8;
+  if (!Number.isInteger(byteLength) || byteLength <= 0 || byteLength > availableBytes - magic.length - 4) return null;
 
-  /**
-   * 读取指定数量的字节。
-   *
-   * @param {number} count 字节数。
-   * @returns {Array<number>} 字节数组。
-   */
-  readBytes(count) {
-    const bytes = [];
-    for (let index = 0; index < count; index += 1) {
-      bytes.push(this.readByte());
-    }
-    return bytes;
-  }
-
-  /**
-   * 按大端读取无符号 32 位整数。
-   *
-   * @returns {number} 读取到的整数。
-   */
-  readUint32() {
-    const bytes = this.readBytes(4);
-    return new DataView(new Uint8Array(bytes).buffer).getUint32(0, false);
+  try {
+    const gzipData = new Uint8Array(byteLength);
+    for (let i = 0; i < byteLength; i++) gzipData[i] = readByte();
+    return JSON.parse(decodeBytes(pako.ungzip(gzipData), 'utf-8'));
+  } catch (error) {
+    console.warn('NovelAI stealth 元数据读取失败:', error);
+    return null;
   }
 }
 
@@ -377,32 +365,7 @@ const extractStealthMetadata = async (dataUrl) => {
     canvas.height = img.height;
     ctx.drawImage(img, 0, 0);
 
-    const imageData = ctx.getImageData(0, 0, img.width, img.height);
-    const lowestBits = [];
-
-    // NovelAI 官方脚本按 alpha.T 顺序打包；外层 x、内层 y 与该顺序一致。
-    for (let x = 0; x < img.width; x += 1) {
-      for (let y = 0; y < img.height; y += 1) {
-        const pixelIndex = (y * img.width + x) * 4;
-        lowestBits.push(imageData.data[pixelIndex + 3] & 1);
-      }
-    }
-
-    const magic = 'stealth_pngcomp';
-    const reader = new BitDataReader(lowestBits);
-    const magicString = String.fromCharCode(...reader.readBytes(magic.length));
-    if (magicString !== magic) {
-      return null;
-    }
-
-    const byteLength = reader.readUint32() / 8;
-    if (!Number.isInteger(byteLength) || byteLength <= 0) {
-      return null;
-    }
-
-    const gzipData = new Uint8Array(reader.readBytes(byteLength));
-    const jsonString = decodeBytes(pako.ungzip(gzipData), 'utf-8');
-    return JSON.parse(jsonString);
+    return readStealthMetadata(ctx.getImageData(0, 0, img.width, img.height));
   } catch (error) {
     console.warn('NovelAI stealth 元数据读取失败:', error);
     return null;

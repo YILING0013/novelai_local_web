@@ -1,6 +1,10 @@
 use crate::{desktop_inference, desktop_windows, files, service, updater, web};
 use serde_json::Value;
+#[cfg(windows)]
+use std::io::Write;
+use tauri::ipc::{InvokeBody, Request};
 use tauri::{Manager, State};
+use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::DialogExt;
 #[tauri::command]
 async fn local_request(
@@ -70,6 +74,129 @@ async fn native_save_file(
     .await
     .map_err(|e| e.to_string())?
 }
+/// 将当前 PNG 解码为 RGBA 并写入系统剪贴板。
+#[tauri::command]
+async fn native_copy_png(app: tauri::AppHandle, request: Request<'_>) -> Result<(), String> {
+    let InvokeBody::Raw(bytes) = request.body() else {
+        return Err("需要 PNG 图像内容".into());
+    };
+    let pixels = image::load_from_memory_with_format(bytes, image::ImageFormat::Png)
+        .map_err(|error| error.to_string())?
+        .into_rgba8();
+    let (width, height) = pixels.dimensions();
+    let image = tauri::image::Image::new_owned(pixels.into_raw(), width, height);
+    app.clipboard()
+        .write_image(&image)
+        .map_err(|error| error.to_string())
+}
+
+/// 将当前预览交给 Windows Shell 拖出，以文件复制形式保留图像字节与文件名。
+#[cfg(windows)]
+#[tauri::command]
+async fn native_drag_image(
+    window: tauri::WebviewWindow,
+    request: Request<'_>,
+) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::{
+        core::{Interface, PCWSTR},
+        Win32::{
+            System::{
+                Com::IDataObject,
+                Ole::{
+                    IDropSource, OleInitialize, OleUninitialize, DROPEFFECT_COPY, DROPEFFECT_NONE,
+                },
+            },
+            UI::{
+                Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON},
+                Shell::{
+                    BHID_DataObject, IDataObjectAsyncCapability, IShellItem,
+                    SHCreateItemFromParsingName, SHDoDragDrop,
+                },
+            },
+        },
+    };
+
+    let InvokeBody::Raw(bytes) = request.body() else {
+        return Err("需要图像文件内容".into());
+    };
+    let header = request
+        .headers()
+        .get("x-image-name")
+        .ok_or("缺少图像文件名")?;
+    let (_, filename) = url::form_urlencoded::parse(header.as_bytes())
+        .next()
+        .ok_or("缺少图像文件名")?;
+    if filename.is_empty()
+        || filename.ends_with(['.', ' '])
+        || filename
+            .chars()
+            .any(|c| c.is_control() || "<>:\"/\\|?*".contains(c))
+    {
+        return Err("无效图像文件名".into());
+    }
+
+    let directory = std::env::temp_dir().join(format!("yihan-rat-drag-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&directory).map_err(|e| e.to_string())?;
+    let path = directory.join(filename.as_ref());
+    let result = async {
+        std::fs::File::create_new(&path)
+            .and_then(|mut file| file.write_all(bytes))
+            .map_err(|e| e.to_string())?;
+        let drag_path: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+        let (send, receive) = tokio::sync::oneshot::channel();
+        let owner = window.clone();
+        window
+            .run_on_main_thread(move || {
+                let result = (|| {
+                    // WebView 保留 HTML 拖入，拖出时在同一窗口线程启动系统文件拖放。
+                    let hwnd = owner.hwnd().map_err(|e| e.to_string())?;
+                    unsafe {
+                        if GetAsyncKeyState(VK_LBUTTON.0.into()) >= 0 {
+                            return Ok(false);
+                        }
+                        OleInitialize(None).map_err(|e| e.to_string())?;
+                        let drag = (|| -> windows::core::Result<bool> {
+                            let item: IShellItem =
+                                SHCreateItemFromParsingName(PCWSTR(drag_path.as_ptr()), None)?;
+                            let data: IDataObject = item.BindToHandler(None, &BHID_DataObject)?;
+                            if let Ok(capability) = data.cast::<IDataObjectAsyncCapability>() {
+                                capability.SetAsyncMode(false)?;
+                            }
+                            let effect = SHDoDragDrop(
+                                Some(hwnd),
+                                &data,
+                                None::<&IDropSource>,
+                                DROPEFFECT_COPY,
+                            )?;
+                            Ok(effect != DROPEFFECT_NONE)
+                        })();
+                        OleUninitialize();
+                        drag.map_err(|e| e.to_string())
+                    }
+                })();
+                let _ = send.send(result);
+            })
+            .map_err(|e| e.to_string())?;
+        receive.await.map_err(|e| e.to_string())?
+    }
+    .await;
+    let cleanup = move || {
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&directory);
+    };
+    if matches!(result, Ok(true)) {
+        // 浏览器或聊天工具可能在放下文件后才打开路径，给接收方留出读取时间。
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(300)).await;
+            cleanup();
+        });
+    } else {
+        cleanup();
+    }
+    result.map(|_| ())
+}
+
 pub fn run() {
     tauri::Builder::default()
         .register_uri_scheme_protocol("naiasset", |ctx, req| {
@@ -182,6 +309,9 @@ pub fn run() {
                 web_status,
                 web_configure,
                 native_save_file,
+                native_copy_png,
+                #[cfg(windows)]
+                native_drag_image,
                 files::pick_files,
                 desktop_windows::desktop_switch_window,
                 desktop_windows::desktop_window_ready,

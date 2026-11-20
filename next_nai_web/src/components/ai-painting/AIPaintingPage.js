@@ -1319,8 +1319,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
     if (imageFile) void openImageImport(imageFile);
   }, [openImageImport]);
 
-  const handleUseDroppedImage = async (target) => {
-    const file = pageMetadataDialog.file;
+  const handleUseDroppedImage = async (target, file) => {
     setPageMetadataDialog({ open: false, metadata: null });
     if (target === 'editor') {
       const request = { id: crypto.randomUUID(), generatedItem: { id: crypto.randomUUID(), cachedBlob: file, type: 'image' } };

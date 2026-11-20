@@ -25,6 +25,8 @@ const METADATA_KEYS = [
   'sm',
   'dyn',
   'sm_dyn',
+  'variety',
+  'decrisp',
   'v4_prompt',
   'v4_negative_prompt',
 ];

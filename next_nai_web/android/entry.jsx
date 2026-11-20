@@ -12,7 +12,7 @@ import { useI18n } from '@/i18n/I18nProvider';
 import { DesktopHistoryProvider, useDesktopHistory } from '@/desktop/navigation';
 import api from '@/utils/ApiClient';
 import SignIn from '../desktop/SignIn';
-import { installTransport } from './transport';
+import { installTransport, local, withTransfer } from './transport';
 import { saveAs } from './save-file';
 import MobileTitleBar from './MobileTitleBar';
 import { AndroidUpdateProvider } from './AndroidUpdates';
@@ -24,6 +24,7 @@ import './window.css';
 const Workspace = lazy(() => import('../desktop/Workspace'));
 installTransport();
 window.novelaiSaveFile = saveAs;
+window.novelaiCopyImage = file => withTransfer(file, id => local.copyImage({ id }));
 
 function Routes() {
   const { pathname } = useLocation();

@@ -90,5 +90,6 @@
   "reference_img/z3swGOgzVCEGBJs1jrRDtvOAYHvi5Fk9.webp",
   "reference_img/zSe2WMOPk53zhQFLNlNf91xe6zOWW4j1.webp",
   "robots.txt",
-  "t5_tokenizer.json"
+  "t5_tokenizer.json",
+  "vendor/gilbert.LICENSE.txt"
 ]

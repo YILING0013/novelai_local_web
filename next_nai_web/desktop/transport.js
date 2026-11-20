@@ -9,6 +9,12 @@ function assetUrls(value) {
 }
 export function installTransport() {
   const fetchOriginal=window.fetch.bind(window);
+  window.novelaiCopyImage = async file => invoke('native_copy_png', await file.arrayBuffer());
+  if (navigator.userAgent.includes('Windows')) {
+    window.novelaiDragImage = async file => invoke('native_drag_image', await file.arrayBuffer(), {
+      headers: { 'x-image-name': `name=${encodeURIComponent(file.name)}` },
+    });
+  }
   document.addEventListener('click',async event=>{
     const input=event.target;
     if(!(input instanceof HTMLInputElement)||input.type!=='file'||input.disabled)return;

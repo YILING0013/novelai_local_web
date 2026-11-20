@@ -9,6 +9,10 @@ const NAI_JSON_KEYS = new Set([
   'sampler',
   'noise_schedule',
   'cfg_rescale',
+  'variety',
+  'skip_cfg_above_sigma',
+  'decrisp',
+  'dynamic_thresholding',
   'v4_prompt',
   'v4_negative_prompt',
 ]);
@@ -260,10 +264,23 @@ const parseNovelAIMetadata = (jsonData) => {
   if (source.noise_schedule !== undefined) parameters.noiseSchedule = source.noise_schedule;
   if (source.noiseSchedule !== undefined) parameters.noiseSchedule = source.noiseSchedule;
 
-  const smea = source.sm !== undefined ? toBoolean(source.sm) : toBoolean(source.smea);
-  const dyn = source.sm_dyn !== undefined ? toBoolean(source.sm_dyn) : toBoolean(source.dyn);
-  if (smea !== undefined) parameters.smea = smea;
-  if (dyn !== undefined) parameters.dyn = dyn;
+  const varietyThreshold = toFiniteNumber(source.skip_cfg_above_sigma);
+  const booleanParams = {
+    smea: source.sm !== undefined ? toBoolean(source.sm) : toBoolean(source.smea),
+    dyn: source.sm_dyn !== undefined ? toBoolean(source.sm_dyn) : toBoolean(source.dyn),
+    variety: toBoolean(source.variety) ?? (varietyThreshold === undefined ? undefined : varietyThreshold > 0),
+    decrisp: toBoolean(source.decrisp) ?? toBoolean(source.dynamic_thresholding),
+    legacy: toBoolean(source.legacy),
+    legacy_uc: toBoolean(source.legacy_uc) ?? toBoolean(source.v4_negative_prompt?.legacy_uc),
+    legacy_v3_extend: toBoolean(source.legacy_v3_extend),
+    prefer_brownian: toBoolean(source.prefer_brownian),
+    deliberate_euler_ancestral_bug: toBoolean(source.deliberate_euler_ancestral_bug),
+  };
+  // 官方图片用 null 表示关闭多样性，缺少字段时则保留当前设置。
+  if (booleanParams.variety === undefined && source.skip_cfg_above_sigma === null) booleanParams.variety = false;
+  for (const [key, value] of Object.entries(booleanParams)) {
+    if (value !== undefined) parameters[key] = value;
+  }
 
   const characterTabs = buildCharacterTabs(positiveCaption, negativeCaption);
   if (characterTabs.length > 0) {
@@ -318,8 +335,9 @@ const scoreMetadata = (metadata) => {
       score += 4;
     }
   });
-  if (metadata.smea !== undefined) score += 2;
-  if (metadata.dyn !== undefined) score += 2;
+  for (const key of ['smea', 'dyn', 'variety', 'decrisp']) {
+    if (metadata[key] !== undefined) score += 2;
+  }
   if (Array.isArray(metadata.characterTabs) && metadata.characterTabs.length > 0) {
     score += 8 + metadata.characterTabs.length;
   }
