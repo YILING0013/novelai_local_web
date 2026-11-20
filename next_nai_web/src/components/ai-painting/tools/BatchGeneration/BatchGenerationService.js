@@ -216,8 +216,8 @@ class BatchGenerationController {
             getLatestParams: this.control.params.getLatestParams
           };
         }
-      } catch (error) {
-        console.error('获取最新参数失败:', error);
+      } catch {
+        console.error('获取最新参数失败，继续使用上一组参数');
         // 如果获取最新参数失败，回退到原来的方法
       }
     }

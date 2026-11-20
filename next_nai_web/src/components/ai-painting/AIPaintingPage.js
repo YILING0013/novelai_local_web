@@ -1096,7 +1096,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
 
     // 设置全局错误处理器来捕获未处理的错误
     const handleGlobalError = (error) => {
-      console.error('捕获到未处理的错误:', error);
+      console.error('捕获到未处理的错误:', createPaintingErrorRecord(error));
       showNotification(
         getWorkspaceErrorMessage(t, error?.error || error),
         'error',
@@ -1198,7 +1198,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
       }
       return false;
     } catch (error) {
-      console.error('应用图像参数失败:', error);
+      console.error('应用图像参数失败:', createPaintingErrorRecord(error));
       showNotification(
         getWorkspaceErrorMessage(t, error, 'painting.workspace.errors.applyImageParametersFailed'),
         'error',
@@ -1243,7 +1243,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
       });
       return metadata;
     } catch (error) {
-      console.error('读取图像元数据失败:', error);
+      console.error('读取图像元数据失败:', createPaintingErrorRecord(error));
       updateGeneratedItem(item.id, {
         metadata: null,
         metadataStatus: 'error',
@@ -2012,7 +2012,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
           }
         } catch (error) {
           // 批量生成过程中的错误
-          console.error('批量处理过程中发生未捕获错误:', error);
+          console.error('批量处理过程中发生未捕获错误:', createPaintingErrorRecord(error));
           showNotification(
             getWorkspaceErrorMessage(t, error, 'painting.workspace.errors.batchGenerationFailed'),
             'error',
@@ -2048,7 +2048,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
 
       }
     } catch (error) {
-      console.error('图像生成过程中发生错误:', error);
+      console.error('图像生成过程中发生错误:', createPaintingErrorRecord(error));
 
       if (leftPanelMode === 'inpaint') {
         inpaintWorkspaceRef.current?.handleGenerationFailure?.();
@@ -2210,7 +2210,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
         try {
           return await handleSendCurrentItemToInpaint();
         } catch (error) {
-          console.error('发送到局部重绘失败:', error);
+          console.error('发送到局部重绘失败:', createPaintingErrorRecord(error));
           notify(
             getWorkspaceErrorMessage(t, error, 'painting.workspace.errors.sendToInpaintFailed'),
             'error',

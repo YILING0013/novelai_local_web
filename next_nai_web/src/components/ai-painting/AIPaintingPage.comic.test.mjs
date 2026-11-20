@@ -1,3 +1,4 @@
+import { createPaintingErrorRecord } from './Generation/errorRecords.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -16,7 +17,7 @@ test('浏览器错误的新记录和旧记录都使用工作区文案，批量�
   const handlerSource = source.slice(handlerStart, source.indexOf('\n\n    // 页面加载', handlerStart));
   const notices = [];
   const handle = runInNewContext(`${handlerSource}\nhandleGlobalError`, {
-    console: { error() {} }, t: (key) => key, getWorkspaceErrorMessage: () => 'generic',
+    console: { error() {} }, createPaintingErrorRecord, t: (key) => key, getWorkspaceErrorMessage: () => 'generic',
     getWorkspaceErrorMessageKey: () => 'painting.workspace.errors.generic', showNotification: (...args) => notices.push(args),
   });
   handle({ error: new TypeError('切页异常') });
@@ -73,7 +74,7 @@ function generationScenario({ count = 1, fail = false, saveError = null, cancel 
     comicText: { received: 'received', missing: 'missing' },
     t: (key) => key,
     apiClient: { cancelImageBatch: async (id) => cancelled.push(id) },
-    console: { error() {} },
+    console: { error() {} }, createPaintingErrorRecord,
     getWorkspaceErrorMessage: () => 'generation-failed',
     WORKSPACE_ERROR_KEYS: {},
     createWorkspaceError: (code) => Object.assign(new Error(code), { code }),
