@@ -67,3 +67,9 @@ test('空白、权重前缀和分隔符后不误查询，普通标签末尾补�
     text: 'blue hair, ', cursor: 11,
   });
 });
+
+test('跨行嵌套注释中内层结束后的文字不参与标签联想', () => {
+  const text = '/* first /* inner */\nlight, last */, blue_hair';
+  assert.equal(getPromptTagRange(text, text.indexOf('light') + 2), null);
+  assert.equal(getPromptTagRange(text, text.length).query, 'blue_hair');
+});

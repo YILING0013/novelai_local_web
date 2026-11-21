@@ -1,16 +1,17 @@
+import { getPromptCommentRanges } from './promptCommentRanges.mjs';
+
 export { weightUpText, weightDownText } from './promptWeights.mjs';
 
 /**
- * Comment out the selected text
- * @param {string} text - The full text
- * @param {number} start - Selection start position
- * @param {number} end - Selection end position
- * @returns {Object} - Updated text and new cursor position
+ * 将选区涉及的完整标签注释起来，保留之前已经注释的范围。
+ * @param {string} text 编辑器原始提示词。
+ * @param {number} start 选区起点。
+ * @param {number} end 选区终点。
+ * @returns {{text: string, start: number, end: number}} 更新后的文本与选区。
  */
 export const commentText = (text, start, end) => {
   if (start === end) return { text, start, end };
-  
-  const selectedText = text.substring(start, end);
+
   let termStart = start;
   while (termStart > 0 && text[termStart - 1] !== ',' && text[termStart - 1] !== '\n') {
     termStart--;
@@ -19,46 +20,43 @@ export const commentText = (text, start, end) => {
   while (termEnd < text.length && text[termEnd] !== ',' && text[termEnd] !== '\n') {
     termEnd++;
   }
-  const completeTerms = text.substring(termStart, termEnd);
-  const commentedTerms = `/*${completeTerms}*/`;
-  const newText = text.substring(0, termStart) + commentedTerms + text.substring(termEnd);
-  
+
+  // 分隔符可能在已有注释内部，扩到整块可以让取消注释恢复原样。
+  for (const range of getPromptCommentRanges(text)) {
+    if (range.start >= termEnd || range.end <= termStart) continue;
+    if (range.start <= termStart && range.end >= termEnd) {
+      return { text, start: range.start, end: range.end };
+    }
+    termStart = Math.min(termStart, range.start);
+    termEnd = Math.max(termEnd, range.end);
+  }
+
+  const commentedTerms = '/*' + text.slice(termStart, termEnd) + '*/';
   return {
-    text: newText,
+    text: text.slice(0, termStart) + commentedTerms + text.slice(termEnd),
     start: termStart,
-    end: termStart + commentedTerms.length
+    end: termStart + commentedTerms.length,
   };
 };
 
 /**
- * Remove comments from the selected text
- * @param {string} text - The full text
- * @param {number} start - Selection start position
- * @param {number} end - Selection end position
- * @returns {Object} - Updated text and new cursor position
+ * 移除选区内完整注释块的外层标记，保留原先独立注释的内层文字。
+ * @param {string} text 编辑器原始提示词。
+ * @param {number} start 选区起点。
+ * @param {number} end 选区终点。
+ * @returns {{text: string, start: number, end: number}} 更新后的文本与选区。
  */
 export const uncommentText = (text, start, end) => {
   if (start === end) return { text, start, end };
-  
-  const selectedText = text.substring(start, end);
-  const commentStartIndex = selectedText.indexOf('/*');
-  const commentEndIndex = selectedText.lastIndexOf('*/');
-  
-  if (commentStartIndex === -1 || commentEndIndex === -1) {
-    return { text, start, end };
+
+  let updated = text;
+  let removed = 0;
+  for (const range of getPromptCommentRanges(text).reverse()) {
+    if (range.start < start || range.end > end) continue;
+    updated = updated.slice(0, range.start) + updated.slice(range.start + 2, range.end - 2) + updated.slice(range.end);
+    removed += 4;
   }
-  
-  const commentedContent = selectedText.substring(commentStartIndex + 2, commentEndIndex);
-  const newSelectedText = selectedText.substring(0, commentStartIndex) + 
-                           commentedContent + 
-                           selectedText.substring(commentEndIndex + 2);
-  const newText = text.substring(0, start) + newSelectedText + text.substring(end);
-  
-  return {
-    text: newText,
-    start,
-    end: start + newSelectedText.length
-  };
+  return { text: updated, start, end: end - removed };
 };
 
 // Renamed and updated for consistency
@@ -277,27 +275,34 @@ export const processRandomPrompts = (text, randomPromptConfig) => {
   return processedText;
 };
 
+// 只清除完整注释；未配对的标记沿用原有的纯文本行为。
+const removePromptComments = (text) => {
+  let activeText = '';
+  let offset = 0;
+  for (const { start, end } of getPromptCommentRanges(text)) {
+    activeText += text.slice(offset, start);
+    offset = end;
+  }
+  return (activeText + text.slice(offset)).trim();
+};
+
 /**
- * Extract the active (non-commented) content from a prompt
- * @param {string} text - The prompt text
+ * 提取生效提示词，移除注释并按需展开随机词条。
+ * @param {string} text - 编辑器原始提示词。
  * @param {Object} options - 可选参数
  * @param {boolean} options.processRandomPrompts - 是否处理随机提示词
  * @param {Object} options.randomPromptConfig - 随机提示词配置
- * @returns {string} - The active content without comments
+ * @returns {string} - 不含注释的生效提示词，不修改编辑器原文。
  */
 export const extractActiveContent = (text, options = {}) => {
   if (!text) return '';
   
-  let processedText = text.replace(/\/\*[\s\S]*?\*\//g, '').trim();
-  
-  if (options && options.processRandomPrompts && options.randomPromptConfig) {
-    // 确保在调用 processRandomPrompts 之前，randomPromptConfig 是有效的
-    if (options.randomPromptConfig.categories || options.randomPromptConfig.collections) {
-      processedText = processRandomPrompts(processedText, options.randomPromptConfig);
-    }
+  const activeText = removePromptComments(text);
+  if (options?.processRandomPrompts && options.randomPromptConfig) {
+    // 随机词条本身也可能带注释；展开后只清理注释，不再次抽取随机内容。
+    return removePromptComments(processRandomPrompts(activeText, options.randomPromptConfig));
   }
-  
-  return processedText;
+  return activeText;
 };
 
 /**
@@ -311,25 +316,18 @@ export const formatPromptWithHighlighting = (text) => {
   
   const segments = [];
   let lastIndex = 0;
-  const commentRegex = /\/\*[\s\S]*?\*\//g;
+  const allMatches = getPromptCommentRanges(text).map(({ start, end }) => ({
+    start, end, text: text.slice(start, end), type: 'comment',
+  }));
+  // 注释优先于跨过注释边界的权重和随机语法。
+  const overlapsMark = (match) => allMatches.some(({ start, end, type }) =>
+    match.index < end && (match.index >= start || (type === 'comment' && match.index + match[0].length > start))
+  );
   let match;
-  const allMatches = [];
-  
-  while ((match = commentRegex.exec(text)) !== null) {
-    allMatches.push({
-      start: match.index,
-      end: match.index + match[0].length,
-      text: match[0],
-      type: 'comment'
-    });
-  }
-  
+
   const weightUpRegex = /\{([^{}]*)\}/g;
   while ((match = weightUpRegex.exec(text)) !== null) {
-    const isInComment = allMatches.some(
-      comment => comment.type === 'comment' && match.index >= comment.start && match.index < comment.end
-    );
-    if (!isInComment) {
+    if (!overlapsMark(match)) {
       allMatches.push({
         start: match.index,
         end: match.index + match[0].length,
@@ -341,10 +339,7 @@ export const formatPromptWithHighlighting = (text) => {
   
   const weightDownRegex = /\[([^\[\]]*)\]/g;
   while ((match = weightDownRegex.exec(text)) !== null) {
-    const isInOtherMark = allMatches.some(
-      mark => match.index >= mark.start && match.index < mark.end
-    );
-    if (!isInOtherMark) {
+    if (!overlapsMark(match)) {
       allMatches.push({
         start: match.index,
         end: match.index + match[0].length,
@@ -356,10 +351,7 @@ export const formatPromptWithHighlighting = (text) => {
   
   const numberWeightRegex = /(\d+(\.\d+)?)::(.*?)::/g;
   while ((match = numberWeightRegex.exec(text)) !== null) {
-    const isInOtherMark = allMatches.some(
-      mark => match.index >= mark.start && match.index < mark.end
-    );
-    if (!isInOtherMark) {
+    if (!overlapsMark(match)) {
       const weightValue = parseFloat(match[1]);
       const type = weightValue >= 1 ? 'weight-up' : 'weight-down';
       allMatches.push({

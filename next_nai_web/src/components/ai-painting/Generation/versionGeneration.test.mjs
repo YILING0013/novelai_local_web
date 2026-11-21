@@ -58,6 +58,60 @@ test('本地角色编辑数据保留名称和禁用角色，官方角色请求�
   assert.equal(disabled.characterPrompts, undefined);
 });
 
+
+test('本地图像请求过滤主提示词和角色的嵌套注释，作品仍保存编辑原文', () => {
+  const { buildGenerationRequest } = loadModule('./ImageGenerationService.js', {
+    '@/utils/ApiClient': {}, '@/utils/mediaAssets': {}, '../utils/modelUtils': modelUtils,
+    '../utils/novelAIRequestParams.mjs': { buildNovelAIImageRequestParams }, './errors': {},
+  });
+  const positivePrompt = 'garden /* trees /* hidden */ forest */';
+  const negativePrompt = 'blur /* fog /* hidden */ haze */';
+  const character = { prompt: 'cat /* dog /* hidden */ fox */', uc: 'hat /* cap /* hidden */ crown */',
+    center: { x: 0.5, y: 0.5 } };
+  for (const model of ['nai-diffusion-4-5-full', 'nai-diffusion-5-full']) {
+    const params = {
+      model, positivePrompt, negativePrompt,
+      characterControl: {
+        enabledCharacterCount: 1,
+        characterPrompts: [character],
+        v4_prompt_char_captions: [{ char_caption: character.prompt, centers: [character.center] }],
+        v4_negative_prompt_char_captions: [{ char_caption: character.uc, centers: [character.center] }],
+      },
+      version_context: { work_id: 'work', parent_version_id: 'parent' },
+      version_editor: { positivePrompt, negativePrompt, parameterState: { characterTabs: [character] } },
+    };
+    const original = structuredClone(params);
+    const request = buildGenerationRequest(params);
+    assert.equal(request.positivePrompt, 'garden');
+    assert.equal(request.negativePrompt, 'blur');
+    assert.equal(request.characterPrompts[0].prompt, 'cat');
+    assert.equal(request.characterPrompts[0].uc, 'hat');
+    assert.equal(request.v4_prompt_char_captions[0].char_caption, 'cat');
+    assert.equal(request.v4_negative_prompt_char_captions[0].char_caption, 'hat');
+    assert.deepEqual(request.version_editor, original.version_editor);
+    assert.deepEqual(params, original);
+  }
+});
+
+test('导演工具只用未注释的附加提示词', () => {
+  const { buildGenerationRequest } = loadModule('./ImageGenerationService.js', {
+    '@/utils/ApiClient': {}, '@/utils/mediaAssets': {}, '../utils/modelUtils': modelUtils,
+    '../utils/novelAIRequestParams.mjs': { buildNovelAIImageRequestParams }, './errors': {},
+  });
+  for (const [tool, prompt, expected] of [
+    ['emotion', 'happy face /* first /* nested */ last */', 'happy;; happy face'],
+    ['emotion', '/* first /* nested */ last */', 'happy'],
+    ['colorize', 'red hair /* first /* nested */ last */', 'red hair'],
+  ]) {
+    const request = buildGenerationRequest({
+      model: 'nai-diffusion-4-5-full',
+      imageToImage: { image: 'test', directorTools: { active: true, tool, params: { emotion: 'happy', prompt } } },
+    });
+    assert.equal(request.req_type, tool);
+    assert.equal(request.prompt, expected);
+  }
+});
+
 test('完整本机编辑态随生成传递，官方参考字段只取当前启用输入', () => {
   const { buildGenerationRequest } = loadModule('./ImageGenerationService.js', {
     '@/utils/ApiClient': {}, '@/utils/mediaAssets': {}, '../utils/modelUtils': modelUtils,

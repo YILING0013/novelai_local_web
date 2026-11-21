@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { getPromptCommentRanges } from './promptCommentRanges.mjs';
 import { getPreviewTagRanges, PROMPT_TEXT_STYLE } from './previewTags.mjs';
 
 test('词库查询保留括号限定词，大小写和下划线归一，保留原文范围', () => {
@@ -38,7 +39,7 @@ test('长自然语言仍保留供机器翻译，不受词库单条长度限制�
 });
 
 test('清理嵌套正负小数权重后拆中英文句号，排除 artist、注释、随机语法和无效符号', () => {
-  const text = '-1.2::{[(+1.5:蓝色天空)]}::。 (red_eyes:1.2), 1.2::artist:{name}::， (artist：name), 水彩画. 桜の花カタカナ， [long_hair], /* do not translate */ <ran_id="排除"/>, @@💥###, ((golden {light}))';
+  const text = '-1.2::{[(+1.5:蓝色天空)]}::。 (red_eyes:1.2), 1.2::artist:{name}::， (artist：name), 水彩画. 桜の花カタカナ， [long_hair], /* do not /* nested */ translate */ <ran_id="排除"/>, @@💥###, ((golden {light}))';
   const tags = getPreviewTagRanges(text);
   assert.deepEqual(tags.map(({ key }) => key), ['蓝色天空', 'red eyes', '水彩画', '桜の花カタカナ', 'long hair', 'golden light']);
   assert.deepEqual(tags.map(({ start, end }) => text.slice(start, end)), ['蓝色天空', 'red_eyes', '水彩画', '桜の花カタカナ', 'long_hair', 'golden {light']);
@@ -77,6 +78,7 @@ const { code } = transformSync(readFileSync(new URL('./EnhancedPreview.js', impo
 test('高亮预览保留空白、换行和随机语法', () => {
   const display = ({ component = 'div', children, title, ...props }) => React.createElement(component, {
     ...(typeof title === 'string' ? { title } : {}),
+    style: { textDecoration: props.sx?.textDecoration },
     ...(props['data-preview-translation'] ? { 'data-preview-translation': props['data-preview-translation'] } : {}),
   }, children);
   const dependencies = {
@@ -87,6 +89,7 @@ test('高亮预览保留空白、换行和随机语法', () => {
     '@mui/icons-material': new Proxy({}, { get: () => () => null }),
     '@/utils/ApiClient': { __esModule: true, default: {} },
     '@/i18n/I18nProvider': { useI18n: () => ({ t: (key) => key }) },
+    './promptCommentRanges.mjs': { getPromptCommentRanges },
     './previewTags.mjs': { getPreviewTagRanges, PROMPT_TEXT_STYLE },
   };
   const testModule = { exports: {} };
@@ -94,12 +97,13 @@ test('高亮预览保留空白、换行和随机语法', () => {
     assert.ok(name in dependencies, `Unexpected dependency: ${name}`);
     return dependencies[name];
   } });
-  const text = 'Blue_Hair, 1.2::red eyes::,\n /* 原始注释 */ <ran_id="人物"/>, <ran_sorting_id="组合"/>\n';
+  const text = 'Blue_Hair, 1.2::red eyes::,\n /* 原始 /* 内层 */ 注释 */ <ran_id="人物"/>, <ran_sorting_id="组合"/>\n';
   const result = renderToStaticMarkup(React.createElement(testModule.exports.default, {
     text, randomPromptConfig: null, tags: getPreviewTagRanges(text), translations: { 'blue hair': '蓝发', 'red eyes': '红眼' },
   }));
   const visibleText = result.replace(/<[^>]*>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&amp;/g, '&').replace(/\u200b$/, '');
   assert.equal(visibleText, text);
+  assert.match(result, /style="text-decoration:line-through">[^\n]*<span>注释<\/span> <span>\*\/<\/span><\/span>/);
   assert.match(result, /data-preview-translation="蓝发"/);
   assert.match(result, /data-preview-translation="红眼"/);
 });

@@ -10,6 +10,7 @@ import {
   sanitizeNovelAIV5GenerationParams,
   sanitizeNovelAIReferenceParams,
 } from '../utils/modelUtils';
+import { extractActiveContent } from '../PromptEditor/promptUtils.js';
 import { buildNovelAIImageRequestParams } from '../utils/novelAIRequestParams.mjs';
 import {
   createGenerationFailure,
@@ -31,6 +32,9 @@ const extractBase64FromDataUrl = (dataUrl) => {
  */
 function buildGenerationRequest(params) {
   const requestBody = buildNovelAIImageRequestParams(params, !isV4Model(params.model));
+  // 图库复用和手动版本也走这个出口，只过滤提交给生成器的字段。
+  requestBody.positivePrompt = extractActiveContent(requestBody.positivePrompt);
+  requestBody.negativePrompt = extractActiveContent(requestBody.negativePrompt);
 
   if (
     isNovelAIDirectorReferenceModel(params.model)
@@ -48,9 +52,18 @@ function buildGenerationRequest(params) {
   }
 
   if (params.characterControl?.enabledCharacterCount > 0) {
-    requestBody.characterPrompts = params.characterControl.characterPrompts || [];
-    requestBody.v4_prompt_char_captions = params.characterControl.v4_prompt_char_captions || [];
-    requestBody.v4_negative_prompt_char_captions = params.characterControl.v4_negative_prompt_char_captions || [];
+    requestBody.characterPrompts = (params.characterControl.characterPrompts || []).map((character) => {
+      const activeCharacter = { ...character };
+      for (const field of ['prompt', 'uc']) {
+        if (field in activeCharacter) activeCharacter[field] = extractActiveContent(activeCharacter[field]);
+      }
+      return activeCharacter;
+    });
+    for (const field of ['v4_prompt_char_captions', 'v4_negative_prompt_char_captions']) {
+      requestBody[field] = (params.characterControl[field] || []).map((caption) => ({
+        ...caption, char_caption: extractActiveContent(caption.char_caption),
+      }));
+    }
     requestBody.use_coords = params.characterControl.use_coords !== undefined
       ? params.characterControl.use_coords
       : Boolean(params.characterControl.aiDecidePosition);
@@ -86,11 +99,12 @@ function buildGenerationRequest(params) {
       requestBody.req_type = directorTools.tool;
       if (directorTools.tool === 'emotion') {
         const toolParams = directorTools.params || {};
-        requestBody.prompt = `${toolParams.emotion || ''}${toolParams.prompt ? `;; ${toolParams.prompt}` : ''}`;
+        const prompt = extractActiveContent(toolParams.prompt);
+        requestBody.prompt = `${toolParams.emotion || ''}${prompt ? `;; ${prompt}` : ''}`;
         if (toolParams.defry !== undefined) requestBody.defry = toolParams.defry;
       } else if (directorTools.tool === 'colorize') {
         const toolParams = directorTools.params || {};
-        requestBody.prompt = toolParams.prompt || '';
+        requestBody.prompt = extractActiveContent(toolParams.prompt);
         if (toolParams.intensity !== undefined) requestBody.defry = toolParams.intensity;
       }
     }

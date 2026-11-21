@@ -1,3 +1,5 @@
+import { getPromptCommentRanges } from './promptCommentRanges.mjs';
+
 /**
  * 提取可翻译文字并保留全文位置；词库命中的完整标签不拆句号，其余文字按中英文逗号、句号拆分。
  * @param {string} text 包含权重、注释和随机标签的原始提示词。
@@ -6,8 +8,12 @@
  */
 export function getPreviewTagRanges(text, { dictionaryOnly = false, dictionaryTranslations = {} } = {}) {
   // 使用等长空格遮住语法，所有下标始终对应 textarea 的 UTF-16 字符位置。
-  const masked = text
-    .replace(/\/\*[\s\S]*?(?:\*\/|$)|<[^>]*(?:>|$)/g, (value) => ' '.repeat(value.length))
+  let maskedComments = text;
+  for (const { start, end } of getPromptCommentRanges(text, true)) {
+    maskedComments = maskedComments.slice(0, start) + ' '.repeat(end - start) + maskedComments.slice(end);
+  }
+  const masked = maskedComments
+    .replace(/<[^>]*(?:>|$)/g, (value) => ' '.repeat(value.length))
     .replace(/[+-]?(?:\d+(?:\.\d+)?|\.\d+)\s*::/g, (value) => ' '.repeat(value.length))
     .replace(/([([{]\s*)[+-]?(?:\d+(?:\.\d+)?|\.\d+)\s*:/g,
       (value, opening) => opening + ' '.repeat(value.length - opening.length))

@@ -13,6 +13,7 @@ import {
   Shuffle as ShuffleIcon // 新增图标
 } from '@mui/icons-material';
 import { useI18n } from '@/i18n/I18nProvider';
+import { getPromptCommentRanges } from './promptCommentRanges.mjs';
 import { getPreviewTagRanges, PROMPT_TEXT_STYLE } from './previewTags.mjs';
 
 /** 保留原始字符并识别注释、权重和随机标签，返回可逐段渲染的高亮信息。 */
@@ -21,25 +22,18 @@ export const enhancedFormatPromptWithHighlighting = (text, randomPromptConfig = 
   
   const segments = [];
   let lastIndex = 0;
-  const allMatches = [];
-  const commentRegex = /\/\*[\s\S]*?\*\//g;
+  const allMatches = getPromptCommentRanges(text).map(({ start, end }) => ({
+    start, end, text: text.slice(start, end), type: 'comment',
+  }));
+  // 注释优先于跨过注释边界的权重和随机语法。
+  const overlapsMark = (match) => allMatches.some(({ start, end, type }) =>
+    match.index < end && (match.index >= start || (type === 'comment' && match.index + match[0].length > start))
+  );
   let match;
-  
-  while ((match = commentRegex.exec(text)) !== null) {
-    allMatches.push({
-      start: match.index,
-      end: match.index + match[0].length,
-      text: match[0],
-      type: 'comment'
-    });
-  }
-  
+
   const weightUpRegex = /\{([^{}]*)\}/g;
   while ((match = weightUpRegex.exec(text)) !== null) {
-    const isInComment = allMatches.some(
-      comment => comment.type === 'comment' && match.index >= comment.start && match.index < comment.end
-    );
-    if (!isInComment) {
+    if (!overlapsMark(match)) {
       allMatches.push({
         start: match.index,
         end: match.index + match[0].length,
@@ -51,10 +45,7 @@ export const enhancedFormatPromptWithHighlighting = (text, randomPromptConfig = 
   
   const weightDownRegex = /\[([^\[\]]*)\]/g;
   while ((match = weightDownRegex.exec(text)) !== null) {
-    const isInOtherMark = allMatches.some(
-      mark => match.index >= mark.start && match.index < mark.end
-    );
-    if (!isInOtherMark) {
+    if (!overlapsMark(match)) {
       allMatches.push({
         start: match.index,
         end: match.index + match[0].length,
@@ -66,10 +57,7 @@ export const enhancedFormatPromptWithHighlighting = (text, randomPromptConfig = 
   
   const numberWeightRegex = /([-]?\d+(\.\d+)?)::(.*?)::/g;
   while ((match = numberWeightRegex.exec(text)) !== null) {
-    const isInOtherMark = allMatches.some(
-      mark => match.index >= mark.start && match.index < mark.end
-    );
-    if (!isInOtherMark) {
+    if (!overlapsMark(match)) {
       const weightValue = parseFloat(match[1]);
       let type;
       if (weightValue < 0) {
@@ -93,10 +81,7 @@ export const enhancedFormatPromptWithHighlighting = (text, randomPromptConfig = 
   while ((match = randomTagRegex.exec(text)) !== null) {
     const categoryName = match[1];
     const categoryInfo = randomPromptConfig?.categories?.find(c => c.name === categoryName);
-    const isInOtherMark = allMatches.some(
-      mark => match.index >= mark.start && match.index < mark.end
-    );
-    if (!isInOtherMark) {
+    if (!overlapsMark(match)) {
       allMatches.push({
         start: match.index,
         end: match.index + match[0].length,
@@ -112,10 +97,7 @@ export const enhancedFormatPromptWithHighlighting = (text, randomPromptConfig = 
   while ((match = randomCollectionRegex.exec(text)) !== null) {
     const collectionName = match[1];
     const collectionInfo = randomPromptConfig?.collections?.find(c => c.name === collectionName);
-    const isInOtherMark = allMatches.some(
-      mark => match.index >= mark.start && match.index < mark.end
-    );
-    if (!isInOtherMark) {
+    if (!overlapsMark(match)) {
       allMatches.push({
         start: match.index,
         end: match.index + match[0].length,

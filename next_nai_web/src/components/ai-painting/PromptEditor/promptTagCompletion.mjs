@@ -1,3 +1,5 @@
+import { getPromptCommentRanges } from './promptCommentRanges.mjs';
+
 /**
  * 找出当前逗号或换行分段里的标签，保留空白、权重包装及后续文本。
  * @param {string} text 编辑器的完整文本。
@@ -13,7 +15,8 @@ export function getPromptTagRange(text, selectionStart, selectionEnd = selection
   if (selectionEnd > segmentEnd) return null;
 
   // 注释和随机标记可能自己包含逗号或换行，必须按全文判断所属范围。
-  for (const match of text.matchAll(/\/\*[\s\S]*?(?:\*\/|$)|<ran_(?:sorting_)?id\b[^>]*(?:>|$)/g)) {
+  if (getPromptCommentRanges(text, true).some(({ start, end }) => start < segmentEnd && end > segmentStart)) return null;
+  for (const match of text.matchAll(/<ran_(?:sorting_)?id\b[^>]*(?:>|$)/g)) {
     if (match.index < segmentEnd && match.index + match[0].length > segmentStart) return null;
   }
 
