@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   COMIC_LAYOUTS, COMIC_TEMPLATES, applyTemplate, convertPanelType, createComicPage,
-  createComicTemplate, createRectanglePanel, fitPanelImage, getComicLayoutSize, movePanel, movePanelEdge,
-  movePanelVertex, panelBounds, resizeComicPage, sectionBounds, splitPanel, comicContentBounds,
+  createComicTemplate, createRectanglePanel, fitPanelImage, getComicLayoutSize, isComicPanelInterior, movePanel, movePanelEdge,
+  movePanelVertex, panelBounds, placeComicPanelBadge, resizeComicPage, sectionBounds, splitPanel, splitPanelAlongPath, comicContentBounds,
 } from './comicDocument.mjs';
 import { createComicElement } from './comicElements.mjs';
 
@@ -225,6 +225,54 @@ test('经过两个角的斜切可生成三角框，后续继续切割仍保持�
   assert.equal(splitPanel(panel, { x: 0, y: 0 }, { x: 0, y: 1120 }), null);
   assert.equal(splitPanel(panel, { x: 40, y: 0 }, { x: 40, y: 1120 }), null);
   assert.equal(splitPanel(panel, panel.points[0], panel.points[0]), null);
+});
+
+test('直角折线保留左上小框和凹形大框，沿两条切口留白', () => {
+  const page = createComicPage();
+  const panel = page.panels[0];
+  const bounds = panelBounds(panel);
+  panel.image = fitPanelImage(panel, { dataUrl: 'original', width: 1000, height: 800 });
+  panel.task = { params: { prompt: 'keep only in the old frame' } };
+  const turn = { x: bounds.x + 200, y: bounds.y + 240 };
+  const path = [{ x: turn.x, y: bounds.y }, turn, { x: bounds.x, y: turn.y }];
+  const parts = splitPanelAlongPath(panel, path, 14);
+  const [small, large] = parts.sort((a, b) => panelBounds(a).width - panelBounds(b).width);
+  assert.deepEqual(panelBounds(small), { x: bounds.x, y: bounds.y, width: 193, height: 233 });
+  assert.equal(large.points.length, 6);
+  assert.ok(large.points.some((point) => point.x === turn.x + 7 && point.y === turn.y + 7));
+  assert.ok(parts.every((part) => part.id !== panel.id && part.task === null && part.layerId === panel.layerId));
+  assert.deepEqual(large.image, panel.image);
+  assert.ok(splitPanelAlongPath(large, [{ x: turn.x + 150, y: bounds.y },
+    { x: turn.x + 150, y: bounds.y + bounds.height }], 14));
+  const template = createComicTemplate({ ...page, panels: parts }, 0, '拐角分镜');
+  assert.deepEqual(template.panels.map(({ points }) => points.length).sort(), [4, 6]);
+});
+
+test('折线可以回到同一条边，但不能自交或穿过已有凹角', () => {
+  const panel = createComicPage().panels[0];
+  const { x, y } = panelBounds(panel);
+  const at = (dx, dy) => ({ x: x + dx, y: y + dy });
+  assert.ok(splitPanelAlongPath(panel, [at(110, 0), at(200, 180), at(300, 0)], 0));
+  assert.equal(splitPanelAlongPath(panel, [at(208, 0), at(468, 468), at(68, 468), at(468, 68), at(0, 118)]), null);
+  const large = splitPanelAlongPath(panel, [at(240, 0), at(240, 240), at(0, 240)], 0)
+    .find((part) => part.points.length === 6);
+  assert.equal(splitPanelAlongPath(large, [at(320, 0), at(110, 100), at(0, 340)], 0), null);
+});
+
+test('切出角落后编号各自留在实际画框内，狭窄的斜框会缩小底牌', () => {
+  const panel = createComicPage().panels[0];
+  const { x, y } = panelBounds(panel);
+  const parts = splitPanelAlongPath(panel, [{ x: x + 200, y }, { x: x + 200, y: y + 180 }, { x, y: y + 180 }]);
+  const thin = { points: [{ x: 0, y: 0 }, { x: 75, y: 41 }, { x: 66, y: 53 }, { x: 0, y: 16 }] };
+  const badges = [...parts, thin].map((frame) => {
+    const label = placeComicPanelBadge(frame, 29, 26);
+    for (const dx of [0, 29 * label.scale]) for (const dy of [0, 26 * label.scale]) {
+      assert.equal(isComicPanelInterior(frame, { x: label.x + dx, y: label.y + dy }), true);
+    }
+    return label;
+  });
+  assert.ok(Math.hypot(badges[0].x - badges[1].x, badges[0].y - badges[1].y) > 29);
+  assert.ok(badges[2].scale < 1);
 });
 
 test('拖拽矩形和顶点限制在所属半页，交叉边与零面积画框被拒绝', () => {

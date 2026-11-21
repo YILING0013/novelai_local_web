@@ -79,7 +79,7 @@ function createDisplay(source = 'default', locale = 'zh-CN') {
   const load = (code) => {
     const exports = {};
     runInNewContext(code, {
-      exports, React, CustomEvent,
+      exports, React, CustomEvent, localStorage: { getItem: key => key === 'novelai:inspiration-visible' ? 'true' : null },
       require: (name) => dependencies[name] || {},
       window: {
         innerWidth: 1200,
@@ -194,7 +194,7 @@ test('切换来源、刷新及离开生成页会撤销待确认图，来源切�
   display.props.active = false;
   assert.equal(dialog(display.render()).props.open, false);
   display.props.active = true;
-  imageButton(display.render()).props.onClick();
+  imageButton(await display.ready()).props.onClick();
   const applying = confirmButton(display.render()).props.onClick();
   display.emit('novelai:gallery-source', 'references');
   display.requests[0].resolve({ parameters: { seed: 1 }, prompt: 'old source', negative_prompt: '' });

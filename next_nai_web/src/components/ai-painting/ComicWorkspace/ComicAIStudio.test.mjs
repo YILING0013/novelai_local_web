@@ -213,9 +213,9 @@ test('自定义接口编排时显示所选模型，项目和编排请求不携�
   assert.ok(!JSON.stringify(scenario.getPage('page-one')).includes('proxy.example.test'));
 });
 
-test('仅贴原生prompt即可一键制作，保留权重和人物描述且不注入默认画风', async () => {
+test('选择原生提示词后保留权重和人物描述且不注入默认画风', async () => {
   const prompt = '1.25::artist:example::, watercolor, adult woman, red coat, rainy street';
-  const scenario = studioScenario({ input: { text: prompt } });
+  const scenario = studioScenario({ input: { inputType: 'prompt', text: prompt } });
   await scenario.controls.run('full');
   assert.equal(scenario.planRequests.length, 1);
   const sent = scenario.planRequests[0];

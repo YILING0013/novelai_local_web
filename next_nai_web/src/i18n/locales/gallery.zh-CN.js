@@ -1,5 +1,29 @@
 const gallery = {
   "gallery": {
+    "metadataEdit": {
+      "add": "添加",
+      "addField": "添加字段",
+      "addItem": "添加数组项",
+      "select": "选择字段",
+      "selectField": "选择 {field}",
+      "cancelSelection": "取消选择",
+      "removeSelected": "删除所选",
+      "selectedCount": "已选 {count} 项",
+      "fieldCount": "{count} 项",
+      "name": "字段名",
+      "type": "字段类型",
+      "duplicate": "已有同名字段",
+      "invalidName": "请输入 1–79 个 ASCII 字符，空格不能连续。",
+      "types": {
+        "string": "文本",
+        "number": "数字",
+        "boolean": "开关",
+        "object": "对象",
+        "array": "数组",
+        "null": "空值"
+      }
+    },
+
     "switchSource": "切换图库：{title}",
     "versionWorkspace": {
       "current": "{title} · 从 v{number} 继续",

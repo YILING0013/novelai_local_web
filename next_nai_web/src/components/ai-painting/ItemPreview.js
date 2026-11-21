@@ -10,21 +10,21 @@ import {
   Stack,
   Paper,
   Button,
-  Chip,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
   Slide,
+  useMediaQuery,
   Alert,
   Snackbar,
-  useMediaQuery,
 } from '@mui/material';
 import {
-  ContentCopy as CopyIcon,
   KeyboardArrowLeft as LeftIcon,
   KeyboardArrowRight as RightIcon,
+  PlayCircleFilled as PlayIcon,
   Collections as CollectionsIcon,
+  History as HistoryIcon,
   Delete as DeleteIcon,
   Download as DownloadIcon,
   DeleteSweep as DeleteSweepIcon,
@@ -35,21 +35,38 @@ import {
   ExpandLess as ExpandLessIcon,
 } from '@mui/icons-material';
 import { alpha, useTheme } from '@mui/material/styles';
+import { Sprout } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import {
-  createObjectUrlFromBlob,
   downloadBlobToFile,
   downloadUrlToFile,
   fetchUrlAsBlob,
-  revokeObjectUrl,
 } from '@/utils/mediaAssets';
 import { generateFileName, getImageSettings } from './tools/ImageTools/ImageSaveUtils';
 import { useI18n } from '@/i18n/I18nProvider';
+import ImagePrivacyCover, { imagePrivacySx } from './ImagePrivacyCover';
+import PreviewImageSettings from './PreviewImageSettings';
+import PreviewImageExport from './PreviewImageExport';
+import usePreviewImageDrag from './usePreviewImageDrag';
 
 const SlideUp = React.forwardRef(function SlideUp(props, ref) {
   return <Slide direction="up" ref={ref} {...props} />;
 });
+
+/** 历史条和历史窗口共用缩略图与长按拖拽；视频仍使用静态封面。 */
+function HistoryThumbnail({ item, alt, fit, privacyMode, drag }) {
+  const imageDrag = privacyMode ? null : drag;
+  return <>
+    <Box component="img" data-private-image
+      data-history-image-drag={imageDrag ? (imageDrag.armedMode ? 'ready' : 'idle') : undefined}
+      src={item.type === 'video' ? item.coverImage : item.src} alt={alt}
+      draggable={Boolean(imageDrag?.armedMode)}
+      onPointerDown={imageDrag?.onPointerDown} onDragStart={imageDrag?.onDragStart} onDragEnd={imageDrag?.onDragEnd}
+      sx={{ height: '100%', width: '100%', display: 'block', objectFit: fit, cursor: imageDrag?.armedMode ? 'grabbing' : undefined }} />
+    {privacyMode && <ImagePrivacyCover imageDrag={drag} />}
+  </>;
+}
 
 /**
  * 获取生成项目的 Seed，优先使用图片元数据，缺失时回退到轮询结果保存的 Seed。
@@ -86,6 +103,11 @@ const ItemPreview = ({
   onDeleteItem,
   onSeedCopyAndApply,
   onUseItemMetadata,
+  previewSettings,
+  getPreviewFile,
+  getItemPreviewFile,
+  quickImagePresets,
+  onPreviewSettingsChange,
 }) => {
   const { t } = useI18n();
   const theme = useTheme();
@@ -94,21 +116,14 @@ const ItemPreview = ({
   const selectedItemRef = useRef(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [historyCollapsed, setHistoryCollapsed] = useState(false);
+  const hasHistory = items.length > 0;
   const historyHidden = !isMobile && historyCollapsed;
-  const [copyingId, setCopyingId] = useState(null);
-  const [imageCopySupported, setImageCopySupported] = useState(false);
-  const [copyFailed, setCopyFailed] = useState(false);
-  useEffect(() => {
-    setImageCopySupported(Boolean(navigator.clipboard?.write && typeof ClipboardItem !== 'undefined'));
-  }, []);
+  const [notice, setNotice] = useState(null);
   const currentItem = items.find((item) => item.id === currentItemId) || null;
   const currentItemMetadata = currentItem?.metadataStatus === 'ready' && currentItem?.metadataSource === currentItem?.src
     ? currentItem.metadata
     : null;
   const currentSeed = getGeneratedItemSeed(currentItem, currentItemMetadata);
-  const formattedSeed = currentSeed.length > 9
-    ? `${currentSeed.slice(0, 3)}...${currentSeed.slice(-3)}`
-    : currentSeed;
   const showActionText = !isMobile;
 
   const getItemBlob = useCallback(async (item) => {
@@ -123,61 +138,34 @@ const ItemPreview = ({
     return fetchUrlAsBlob(item.downloadSrc || item.originalSrc || item.src);
   }, []);
 
-  const copyImageToClipboard = useCallback(async (item) => {
-    if (!item || !imageCopySupported) return;
+  const showExportNotice = (message, severity) => setNotice({ message, severity });
+  const historyDrag = usePreviewImageDrag({
+    enabled: items.length > 0,
+    getFile: getItemPreviewFile,
+    privacyMode: previewSettings.privacyMode,
+    onError: (error) => {
+      const key = ['invalidCustomMetadata', 'imageTooLarge'].includes(error.message) ? error.message : 'copyExportFailed';
+      showExportNotice(t(`painting.workspace.gallery.${key}`), 'error');
+    },
+  });
 
-    setCopyingId(item.id);
-    try {
-      const blob = await getItemBlob(item);
-      const pngBlob = blob.type === 'image/png'
-        ? blob
-        : await new Promise((resolve, reject) => {
-            const img = new Image();
-            const temporaryUrl = createObjectUrlFromBlob(blob);
-
-            if (!temporaryUrl) {
-              reject(new Error('COPY_PREVIEW_UNAVAILABLE'));
-              return;
-            }
-
-            img.onload = () => {
-              const canvas = document.createElement('canvas');
-              canvas.width = img.width;
-              canvas.height = img.height;
-              const ctx = canvas.getContext('2d');
-              ctx.drawImage(img, 0, 0);
-              canvas.toBlob((pngResult) => {
-                revokeObjectUrl(temporaryUrl);
-                if (pngResult) {
-                  resolve(pngResult);
-                  return;
-                }
-
-                reject(new Error('PNG_CONVERSION_FAILED'));
-              }, 'image/png');
-            };
-            img.onerror = () => {
-              revokeObjectUrl(temporaryUrl);
-              reject(new Error('IMAGE_READ_FAILED'));
-            };
-            img.src = temporaryUrl;
-          });
-      await navigator.clipboard.write([
-        new ClipboardItem({ 'image/png': pngBlob }),
-      ]);
-    } catch {
-      setCopyFailed(true);
-    } finally {
-      setCopyingId(null);
-    }
-  }, [getItemBlob, imageCopySupported]);
+  function dragForThumbnail(item) {
+    if (item.type === 'video') return null;
+    const mode = previewSettings.copyMode;
+    return {
+      armedMode: historyDrag.armedItemId === item.id ? historyDrag.armedMode : null,
+      onPointerDown: (event) => historyDrag.onPointerDown(event, mode, item),
+      onDragStart: (event) => historyDrag.onDragStart(event, mode, item),
+      onDragEnd: historyDrag.onDragEnd,
+    };
+  }
 
   const downloadItem = useCallback(async (item) => {
     if (!item) return;
 
     const settings = getImageSettings();
     const fileName = generateFileName(item, settings, {
-      extension: 'png',
+      extension: item.type === 'video' ? 'mp4' : 'png',
       fallbackName: item.seed || item.id || Date.now(),
     });
 
@@ -189,39 +177,38 @@ const ItemPreview = ({
     await downloadUrlToFile(item.downloadSrc || item.originalSrc || item.src, fileName);
   }, []);
 
-  const renderActionControl = ({ key, label, tooltip = label, icon, onClick, color = 'inherit', disabled = false }) => {
+  const renderActionControl = ({ key, label, icon, onClick, color = 'inherit', disabled = false }) => {
     if (showActionText) {
       return (
-        <Tooltip key={key} title={tooltip} arrow placement="top">
-          <span>
-            <Button
-              size="small"
-              color={color === 'error' ? 'error' : 'inherit'}
-              variant="text"
-              startIcon={icon}
-              onClick={onClick}
-              disabled={disabled}
-              sx={{
-                minWidth: 0,
-                px: 1,
-                py: 0.5,
-                borderRadius: 1.25,
-                color: color === 'error' ? theme.palette.error.main : theme.palette.text.secondary,
-                '&:hover': {
-                  bgcolor: alpha(color === 'error' ? theme.palette.error.main : theme.palette.primary.main, 0.08),
-                },
-              }}
-            >
-              {label}
-            </Button>
-          </span>
-        </Tooltip>
+        <Button
+          key={key}
+          size="small"
+          color={color === 'error' ? 'error' : 'inherit'}
+          variant="text"
+          startIcon={icon}
+          onClick={onClick}
+          disabled={disabled}
+          sx={{
+            minWidth: 0,
+            px: 1,
+            py: 0.5,
+            borderRadius: 1.25,
+            whiteSpace: 'nowrap',
+            flexShrink: 0,
+            color: color === 'error' ? theme.palette.error.main : theme.palette.text.secondary,
+            '&:hover': {
+              bgcolor: alpha(color === 'error' ? theme.palette.error.main : theme.palette.primary.main, 0.08),
+            },
+          }}
+        >
+          {label}
+        </Button>
       );
     }
 
     return (
-      <Tooltip key={key} title={tooltip} arrow placement="top">
-        <span>
+      <Tooltip key={key} title={label} arrow placement="top">
+        <span style={{ display: 'inline-flex', flexShrink: 0 }}>
           <IconButton
             aria-label={label}
             size="small"
@@ -229,6 +216,8 @@ const ItemPreview = ({
             onClick={onClick}
             disabled={disabled}
             sx={{
+              width: 36,
+              height: 36,
               color: color === 'error' ? theme.palette.error.main : theme.palette.text.secondary,
             }}
           >
@@ -253,7 +242,7 @@ const ItemPreview = ({
     for (const [index, item] of items.entries()) {
       const blob = await getItemBlob(item);
       const baseFileName = generateFileName(item, settings, {
-        extension: 'png',
+        extension: item.type === 'video' ? 'mp4' : 'png',
         fallbackName: item.seed || item.id || index,
       });
       const dotIndex = baseFileName.lastIndexOf('.');
@@ -317,15 +306,36 @@ const ItemPreview = ({
     }
   }, [currentItemId, historyHidden]);
 
+  const seedControl = currentSeed && (
+    <Tooltip title={t('painting.workspace.gallery.seedApplyHelp')} arrow placement="top">
+      <IconButton
+        color="primary"
+        size="small"
+        aria-label={t('painting.workspace.gallery.seedApplyHelp')}
+        onClick={() => { void onSeedCopyAndApply(currentSeed); }}
+        sx={{
+          width: { xs: 36, md: 32 },
+          height: { xs: 36, md: 32 },
+          flexShrink: 0,
+        }}
+      ><Sprout size={20} aria-hidden="true" /></IconButton>
+    </Tooltip>
+  );
+
   return (
-    <Box sx={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
-      <Box id="generation-history" hidden={historyHidden}>
-      {items.length > 0 ? (
+    <Box sx={{ position: 'relative', display: 'flex', flexDirection: 'column', minWidth: 0, flexShrink: 0 }}>
+      <Snackbar open={Boolean(notice)} autoHideDuration={3500} onClose={() => setNotice(null)}>
+        {notice && <Alert severity={notice.severity} onClose={() => setNotice(null)}>{notice.message}</Alert>}
+      </Snackbar>
+      <Box id="generation-history" hidden={historyHidden} sx={{ height: { xs: 64, sm: 72, md: 80 } }}>
+      {hasHistory && (
         <Box
           ref={scrollContainerRef}
           sx={{
-            height: { xs: 72, sm: 80 },
+            height: '100%',
             width: '100%',
+            minWidth: 0,
+            flex: 1,
             overflowX: 'auto',
             overflowY: 'hidden',
             '&::-webkit-scrollbar': { height: 6 },
@@ -336,7 +346,7 @@ const ItemPreview = ({
           <Stack
             direction="row"
             spacing={1}
-            sx={{ height: '100%', py: 1, px: 0.5, display: 'inline-flex', minWidth: 'fit-content' }}
+            sx={{ height: '100%', py: { xs: 0.5, md: 1 }, px: 0.5, display: 'inline-flex', minWidth: 'fit-content' }}
           >
             {/* 左导航 */}
             <Box sx={{ position: 'sticky', left: 0, zIndex: 2, display: 'flex', alignItems: 'center', pr: 0.5 }}>
@@ -355,9 +365,12 @@ const ItemPreview = ({
                 key={item.id}
                 ref={currentItemId === item.id ? selectedItemRef : null}
                 elevation={0}
-                onClick={() => onSelectItem(item)}
+                onClick={(event) => {
+                  if (!event.detail || !historyDrag.wasHeld(item)) onSelectItem(item);
+                }}
                 sx={{
                   position: 'relative',
+                  ...imagePrivacySx,
                   // 缩略图不随容器高度拉伸，横图、竖图都占用同样的正方形。
                   height: { xs: 56, sm: 64 },
                   width: { xs: 56, sm: 64 },
@@ -373,12 +386,18 @@ const ItemPreview = ({
                   '&:hover': { borderColor: theme.palette.primary.light },
                 }}
               >
-                <Box
-                  component="img"
-                  src={item.src}
-                  alt={t('painting.workspace.gallery.previewImageAlt', { id: item.id })}
-                  sx={{ height: '100%', width: '100%', display: 'block', objectFit: 'cover' }}
-                />
+                <HistoryThumbnail item={item} fit="cover" alt={t('painting.workspace.gallery.previewImageAlt', { id: item.id })}
+                  privacyMode={previewSettings.privacyMode} drag={dragForThumbnail(item)} />
+
+                {item.type === 'video' && (
+                  <Box sx={{
+                    position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+                    color: 'white', bgcolor: 'rgba(0,0,0,0.5)', borderRadius: '50%',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none',
+                  }}>
+                    <PlayIcon fontSize="large" />
+                  </Box>
+                )}
 
               </Paper>
             ))}
@@ -396,25 +415,21 @@ const ItemPreview = ({
             </Box>
           </Stack>
         </Box>
-      ) : (
-        <Box sx={{ height: { xs: 72, sm: 80 }, display: 'flex', justifyContent: 'center', alignItems: 'center', color: theme.palette.text.secondary, p: 1 }}>
-          <Typography variant="body2">{t('painting.workspace.gallery.previewEmpty')}</Typography>
-        </Box>
       )}
       </Box>
 
-      {(currentItem || !isMobile) && (
-        <Box
+      <Box
           sx={{
             flexShrink: 0,
-            mt: historyHidden ? 0 : 0.5,
-            px: 0.75,
-            py: 0.5,
+            mt: historyHidden ? 0 : { xs: 0.25, md: 0.5 },
+            px: { xs: 0, md: 0.75 },
+            py: { xs: 0, md: 0.5 },
             borderTop: historyHidden ? 0 : `1px solid ${theme.palette.divider}`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            gap: 1,
+            gap: { xs: 0.5, md: 1 },
+            minWidth: 0,
           }}
         >
           {!isMobile && (
@@ -431,6 +446,32 @@ const ItemPreview = ({
               </IconButton>
             </Tooltip>
           )}
+          <PreviewImageSettings settings={previewSettings} onChange={onPreviewSettingsChange} presets={quickImagePresets}
+            getCurrentImage={currentItem && currentItem.type !== 'video' ? () => getItemBlob(currentItem) : undefined} />
+          {hasHistory && (
+            <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0, pr: 0.5, borderRight: `1px solid ${theme.palette.divider}` }}>
+              <Tooltip title={t('gallery.sessionHistory')} arrow>
+                <IconButton
+                  size="small"
+                  aria-label={t('gallery.sessionHistory')}
+                  onClick={() => setGalleryOpen(true)}
+                  sx={{ color: 'text.secondary', width: { xs: 36, md: 32 }, height: { xs: 36, md: 32 } }}
+                >
+                  <HistoryIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title={t('painting.workspace.gallery.openGallery')} arrow>
+                <span><IconButton
+                  size="small"
+                  aria-label={t('painting.workspace.gallery.openGallery')}
+                   onClick={() => window.dispatchEvent(new CustomEvent('novelai:open-page', { detail: 'generation-gallery' }))}
+                  sx={{ color: 'text.secondary', width: { xs: 36, md: 32 }, height: { xs: 36, md: 32 } }}
+                >
+                  <CollectionsIcon fontSize="small" />
+                </IconButton></span>
+              </Tooltip>
+            </Box>
+          )}
           {currentItem ? <>
           <Stack
             direction="row"
@@ -439,77 +480,44 @@ const ItemPreview = ({
             sx={{
               minWidth: 0,
               flex: 1,
-              overflowX: 'auto',
-              overflowY: 'hidden',
+              overflowX: { xs: 'visible', md: 'auto' },
+              overflowY: { xs: 'visible', md: 'hidden' },
               '&::-webkit-scrollbar': { display: 'none' },
               scrollbarWidth: 'none',
             }}
           >
+            {/* 视频也使用默认预览区操作栏，避免必须打开图库才能删除当前视频。 */}
             {currentItemMetadata && renderActionControl({
               key: 'use-params',
               label: t('painting.workspace.gallery.useParameters'),
               icon: <TuneIcon sx={{ fontSize: 18 }} />,
               onClick: () => { void onUseItemMetadata(currentItem); },
             })}
-            {renderActionControl({
-              key: 'copy-image',
-              label: t('painting.workspace.gallery.copyImage'),
-              tooltip: t(imageCopySupported ? 'painting.workspace.gallery.copyImage' : 'painting.workspace.gallery.imageCopyUnavailable'),
-              icon: <CopyIcon sx={{ fontSize: 18 }} />,
-              onClick: () => { void copyImageToClipboard(currentItem); },
-              disabled: !imageCopySupported || copyingId === currentItem.id,
-            })}
-            {renderActionControl({
+            {currentItem.type === 'video' ? renderActionControl({
               key: 'download-item',
-              label: t('painting.workspace.gallery.downloadImage'),
+              label: t('painting.workspace.gallery.downloadVideo'),
               icon: <DownloadIcon sx={{ fontSize: 18 }} />,
               onClick: () => { void downloadItem(currentItem); },
-            })}
+            }) : ['copy', 'download'].map((action) => (
+              <PreviewImageExport key={`${currentItem.id}:${action}`} action={action} getFile={getPreviewFile}
+                defaultMode={previewSettings[`${action}Mode`]}  showText={showActionText}
+                onNotice={showExportNotice} privacyMode={previewSettings.privacyMode} />
+            ))}
+          </Stack>
+          {seedControl}
+          <Box sx={{ display: 'flex', flexShrink: 0, ml: 0.5, pl: 0.5, borderLeft: `1px solid ${theme.palette.divider}` }}>
             {renderActionControl({
               key: 'delete-item',
-              label: t('painting.workspace.gallery.deleteImage'),
+              label: currentItem.type === 'video'
+                ? t('painting.workspace.gallery.deleteVideo')
+                : t('painting.workspace.gallery.deleteImage'),
               icon: <DeleteIcon sx={{ fontSize: 18 }} />,
               onClick: () => onDeleteItem(currentItem.id),
               color: 'error',
             })}
-          </Stack>
-          {currentSeed && (
-            <Tooltip title={t('painting.workspace.gallery.seedApplyHelp')} arrow placement="top">
-              <Chip
-                clickable
-                color="primary"
-                variant="outlined"
-                size="small"
-                label={`Seed ${formattedSeed}`}
-                onClick={() => {
-                  void onSeedCopyAndApply(currentSeed);
-                }}
-                sx={{
-                  ml: 'auto',
-                  flexShrink: 0,
-                  fontWeight: 600,
-                  '& .MuiChip-label': {
-                    px: 1.25,
-                  },
-                }}
-              />
-            </Tooltip>
-          )}
+          </Box>
           </> : <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>{t('gallery.sessionHistory')}</Typography>}
-          {items.length > 0 && (
-            <Tooltip title={t('painting.workspace.gallery.openGallery')} arrow>
-              <IconButton
-                size="small"
-                aria-label={t('painting.workspace.gallery.openGallery')}
-                onClick={() => window.dispatchEvent(new CustomEvent('novelai:open-page', { detail: 'generation-gallery' }))}
-                sx={{ color: 'text.secondary', flexShrink: 0 }}
-              >
-                <CollectionsIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          )}
-        </Box>
-      )}
+      </Box>
 
       {/* 图库展开面板 */}
       <Dialog
@@ -528,9 +536,9 @@ const ItemPreview = ({
       >
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 1 }}>
           <Stack direction="row" spacing={1} alignItems="center">
-            <CollectionsIcon color="primary" />
+            <HistoryIcon color="primary" />
             <Typography variant="h6" fontWeight={600}>
-              {t('painting.workspace.gallery.title')}
+              {t('gallery.sessionHistory')}
             </Typography>
             <Typography variant="body2" color="text.secondary">
               {t('painting.workspace.gallery.itemCount', { count: items.length })}
@@ -560,6 +568,7 @@ const ItemPreview = ({
                   key={item.id}
                   sx={{
                     position: 'relative',
+                    ...imagePrivacySx,
                     borderRadius: 2,
                     overflow: 'hidden',
                     cursor: 'pointer',
@@ -575,17 +584,28 @@ const ItemPreview = ({
                       '& .gallery-overlay': { opacity: 1 },
                     } : undefined,
                   }}
-                  onClick={() => {
+                  onClick={(event) => {
+                    if (event.detail && historyDrag.wasHeld(item)) return;
                     onSelectItem(item);
                     setGalleryOpen(false);
                   }}
                 >
-                <Box
-                  component="img"
-                  src={item.src}
-                  alt={t('painting.workspace.gallery.galleryItemAlt', { index: index + 1 })}
-                  sx={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }}
-                />
+                {item.type === 'video' ? (
+                  <Box sx={{ position: 'relative', width: '100%', height: '100%', ...imagePrivacySx }}>
+                    <HistoryThumbnail item={item} fit="contain" alt={t('painting.workspace.gallery.galleryItemAlt', { index: index + 1 })}
+                      privacyMode={previewSettings.privacyMode} />
+                    <Box sx={{
+                      position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+                      color: 'white', bgcolor: 'rgba(0,0,0,0.5)', borderRadius: '50%',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none',
+                    }}>
+                      <PlayIcon sx={{ fontSize: 40 }} />
+                    </Box>
+                  </Box>
+                ) : (
+                  <HistoryThumbnail item={item} fit="contain" alt={t('painting.workspace.gallery.galleryItemAlt', { index: index + 1 })}
+                    privacyMode={previewSettings.privacyMode} drag={dragForThumbnail(item)} />
+                )}
 
                 {/* 悬停操作层 */}
                 <Box
@@ -593,6 +613,9 @@ const ItemPreview = ({
                   sx={{
                     position: 'absolute',
                     inset: 0,
+                    zIndex: 2,
+                    pointerEvents: 'none',
+                    '& button': { pointerEvents: 'auto' },
                     opacity: isMobile ? 1 : 0,
                     transition: 'opacity 0.2s',
                     background: `linear-gradient(to bottom, ${alpha('#000', isMobile ? 0.28 : 0.5)} 0%, transparent 40%, transparent 60%, ${alpha('#000', isMobile ? 0.28 : 0.4)} 100%)`,
@@ -621,7 +644,7 @@ const ItemPreview = ({
                     </IconButton>
                   </Tooltip>
 
-                  {itemMetadata && (
+                  {item.type !== 'video' && itemMetadata && (
                     <Button
                       size="small"
                       variant="contained"
@@ -665,14 +688,14 @@ const ItemPreview = ({
                       {itemSeed ? `seed: ${itemSeed}` : ''}
                     </Typography>
                     <Tooltip title={t('painting.workspace.gallery.download')} arrow placement="top">
-                      <IconButton
+                      <span style={{ display: 'inline-flex' }}><IconButton
                         aria-label={t('painting.workspace.gallery.download')}
                         size="small"
-                        onClick={(e) => handleDownloadSingle(e, item)}
+                         onClick={(e) => handleDownloadSingle(e, item)}
                         sx={{ color: 'white', p: 0.4, '&:hover': { bgcolor: alpha('#fff', 0.2) } }}
                       >
                         <DownloadIcon sx={{ fontSize: 18 }} />
-                      </IconButton>
+                      </IconButton></span>
                     </Tooltip>
                   </Stack>
                 </Box>
@@ -696,15 +719,12 @@ const ItemPreview = ({
             size="small"
             variant="contained"
             startIcon={<ArchiveIcon />}
-            onClick={handleDownloadAll}
+             onClick={handleDownloadAll}
           >
             {t('painting.workspace.gallery.downloadAllArchive')}
           </Button>
         </DialogActions>
       </Dialog>
-      <Snackbar open={copyFailed} autoHideDuration={6000} onClose={() => setCopyFailed(false)}>
-        <Alert severity="warning" onClose={() => setCopyFailed(false)}>{t('painting.workspace.gallery.imageCopyFailed')}</Alert>
-      </Snackbar>
     </Box>
   );
 };

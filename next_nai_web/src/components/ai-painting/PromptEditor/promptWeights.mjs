@@ -96,7 +96,7 @@ export function adjustPromptWeight(text, start, end, direction, defaultMode = 'n
     if (numeric) {
       const weight = Number((Number(numeric[1]) + direction / 10).toFixed(10));
       const prefix = weight === 1 ? '' : `${Number.isInteger(weight) ? weight.toFixed(1) : weight}::`;
-      replacement = weight === 1 ? numeric[2] : `${prefix}${numeric[2]}::`;
+      replacement = weight === 1 ? numeric[2].replace(/(\d) $/, '$1') : `${prefix}${numeric[2]}::`;
       prefixChange = prefix.length - numeric[1].length - 2;
     } else if (bracket || defaultMode === 'brackets') {
       const removeLayer = bracket && (direction > 0 ? term[0] === '[' : term[0] === '{');
@@ -104,7 +104,9 @@ export function adjustPromptWeight(text, start, end, direction, defaultMode = 'n
       prefixChange = removeLayer ? -1 : 1;
     } else {
       const prefix = `${(1 + direction / 10).toFixed(1)}::`;
-      replacement = `${prefix}${selected}::`;
+      // 避免画师名或标签末尾的数字紧贴结束符，被当作下一段权重。
+      const suffix = /\d$/.test(selected) ? ' ::' : '::';
+      replacement = `${prefix}${selected}${suffix}`;
       prefixChange = prefix.length;
     }
     updated = updated.slice(0, changeStart) + replacement + updated.slice(changeEnd);

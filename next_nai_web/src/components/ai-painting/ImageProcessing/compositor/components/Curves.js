@@ -5,16 +5,23 @@ import { useEditorText } from "./messages";
 import { useRef } from "react";
 import { RotateCcw } from "lucide-react";
 import { IconButton } from "./Controls";
+import { smoothCurveSegments } from "../lib/pixels";
 
 /** 编辑 RGB 总曲线或单色通道曲线；点击增加控制点，拖动调整，右键删除中间点。
  * @param {object} props 曲线控制点与预览、提交回调。
  * @returns {JSX.Element} 可拖动曲线编辑器。
  */
-export default function Curves({ points, onPreview, onCommit, onReset, channel = "RGB", color = "#c6dccb" }) {
+export default function Curves({ points, onPreview, onCommit, onReset, channel = "RGB", color = "#c6dccb", smooth = false }) {
   const text = useEditorText();
   const drag = useRef(null),
     latest = useRef(points);
   latest.current = points;
+  const path = `M${points[0][0]} ${255 - points[0][1]} ` + (smooth
+    ? smoothCurveSegments(points).map(([x0, , c0, c1, x1, y1]) => {
+      const step = (x1 - x0) / 3;
+      return `C${x0 + step} ${255 - c0} ${x1 - step} ${255 - c1} ${x1} ${255 - y1}`;
+    }).join(" ")
+    : points.slice(1).map(([x, y]) => `L${x} ${255 - y}`).join(" "));
   function position(event) {
     const box = event.currentTarget.getBoundingClientRect();
     return [
@@ -43,6 +50,7 @@ export default function Curves({ points, onPreview, onCommit, onReset, channel =
         viewBox="0 0 255 255"
         preserveAspectRatio="none"
         onPointerDown={(event) => {
+          if (!event.isPrimary || event.button !== 0) return;
           event.preventDefault();
           event.currentTarget.setPointerCapture(event.pointerId);
           const point = position(event);
@@ -110,10 +118,10 @@ export default function Curves({ points, onPreview, onCommit, onReset, channel =
           </g>
         ))}
         <line className="curve-diagonal" x1="0" y1="255" x2="255" y2="0" />
-        <polyline
+        <path
           className="curve-path"
           style={{ stroke: color }}
-          points={points.map(([x, y]) => `${x},${255 - y}`).join(" ")}
+          d={path}
         />
         {points.map(([x, y], index) => (
           <circle

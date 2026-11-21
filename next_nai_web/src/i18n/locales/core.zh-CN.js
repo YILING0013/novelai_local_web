@@ -59,6 +59,8 @@ const messages = {
     "languageAria": "选择界面语言"
   },
   "main": {
+    "resizeSidebar": "调整导航侧栏宽度",
+
     "navigation": "主导航",
     "showSidebarIcons": "显示图标菜单",
     "hideSidebar": "隐藏菜单",
@@ -184,6 +186,8 @@ const messages = {
     }
   },
   "settings": {
+    "showInspirationGallery": "显示灵感图库",
+
     "naming": {
       "seed": "种子号",
       "prompt32": "正面提示词前 32 位",
@@ -284,8 +288,8 @@ const messages = {
     "sidebarHint": "试色即时预览；保存后写入本地配置。",
     "sections": {
       "appearance": {
-        "title": "外观配色",
-        "description": "选择一套完整配色，立即预览背景、侧栏和按钮的变化。保存后保留。"
+        "title": "外观",
+        "description": "调整主题配色、页面强调色和界面动画。"
       },
       "pages": {
         "title": "页面颜色",
@@ -305,7 +309,7 @@ const messages = {
     "customizeScheme": "微调当前配色",
     "customizeHint": "预设已包含主题色。你也可以单独调整当前模式的颜色。",
     "pickColor": "选择{name}",
-    "storageImmediate": "存储位置和灵感来源修改后立即生效，其余选项请点击底部保存。",
+    "storageImmediate": "存储位置和灵感图库设置立即生效，其余选项请点击底部保存。",
     "unsaved": "有未保存的更改",
     "upToDate": "设置已保存",
     "discard": "撤销更改",

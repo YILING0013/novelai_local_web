@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, List, ListItemButton, MenuItem, Stack, Switch, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography, useMediaQuery, useTheme } from '@mui/material';
-import { Add, Close, DeleteOutline, ExpandMore, Refresh, SaveOutlined } from '@mui/icons-material';
+import { Add, Close, DeleteOutline, ExpandMore, Refresh, SaveOutlined, SettingsOutlined } from '@mui/icons-material';
 import apiClient from '@/utils/ApiClient';
 import { createClientId } from '@/utils/browserCapabilities.mjs';
 
@@ -15,11 +15,28 @@ const protocols = [
 const defaults = { provider: 'openai', baseUrl: protocols[0][2], model: '', storyModel: '', extractModel: '', formatModel: '', outputMode: 'schema', tokenParameter: 'max_completion_tokens', maxTokens: 8192, temperature: null, timeoutSeconds: 180 };
 
 /**
+ * 管理 Provider 入口和弹窗的显示，让关闭动画与漫画画布各自更新。
+ * @param {object} props 浏览器客户端、账号、语言及保存后的回调。
+ * @returns {React.ReactElement} Provider 设置按钮和按需挂载的弹窗。
+ */
+export function ComicProviderControl({ language, disabled, compact, onChange }) {
+  const [phase, setPhase] = useState('closed');
+  return <>
+    <Button size="small" startIcon={<SettingsOutlined />} disabled={disabled} aria-expanded={phase === 'open'}
+      onClick={() => { if (phase === 'closed') setPhase('open'); }} sx={{ minHeight: compact ? 44 : 32, flexShrink: 0, px: 1 }}>
+      {language === 'zh' ? 'Provider 设置' : 'Provider settings'}
+    </Button>
+    {phase !== 'closed' && <ComicLLMSettings open={phase === 'open'} language={language}
+      disabled={disabled} onChange={onChange} onClose={() => setPhase('closing')} onExited={() => setPhase('closed')} />}
+  </>;
+}
+
+/**
  * 用列表和详情管理多套文字模型接口，密钥独立提交且不回显。
  * @param {object} props 打开状态、语言、关闭与已保存配置回调。
  * @returns {React.ReactElement} Provider 设置窗口。
  */
-export default function ComicLLMSettings({ open, language, disabled, onClose, onChange, androidLayout = false }) {
+export default function ComicLLMSettings({ open, language, disabled, onClose, onExited, onChange, androidLayout = false }) {
   const mobile = useMediaQuery(useTheme().breakpoints.down(androidLayout ? 'md' : 'sm'));
   const [configuration, setConfiguration] = useState(null);
   const [saved, setSaved] = useState(null);
@@ -27,6 +44,7 @@ export default function ComicLLMSettings({ open, language, disabled, onClose, on
   const [credentials, setCredentials] = useState({});
   const [filter, setFilter] = useState('all');
   const [tests, setTests] = useState({});
+  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -36,7 +54,8 @@ export default function ComicLLMSettings({ open, language, disabled, onClose, on
   const selected = configuration?.providers.find((item) => item.id === selectedId);
   const settings = selected?.settings;
   const custom = selectedId !== 'novelai';
-  const locked = busy || disabled;
+  const closeDisabled = busy || disabled;
+  const locked = closeDisabled || loading;
   const keyChange = credentials[selectedId] || {};
   const matchingEndpoint = saved?.providers.some((item) => item.id === selectedId && item.settings.provider === settings?.provider && item.settings.baseUrl === settings?.baseUrl);
   const hasKey = Boolean(keyChange.apiKey || (!keyChange.clearApiKey && matchingEndpoint && selected?.hasApiKey));
@@ -44,12 +63,12 @@ export default function ComicLLMSettings({ open, language, disabled, onClose, on
   useEffect(() => {
     if (!open || configuration) return;
     let active = true;
-    setBusy(true);
+    setLoading(true);
     apiClient.request('/comic/llm-settings').then((result) => {
       if (!active) return;
-      setConfiguration(result.configuration); setSaved(result.configuration); setSelectedId(result.configuration.activeProviderId); onChange(result.settings); setBusy(false);
-    }).catch((cause) => { if (active) { setError(cause.data?.message || cause.data?.error || cause.message); setBusy(false); } })
-      .finally(() => { if (active) setBusy(false); });
+      setConfiguration(result.configuration); setSaved(result.configuration); setSelectedId(result.configuration.activeProviderId); onChange(result.settings); setLoading(false);
+    }).catch((cause) => { if (active) { setError(cause.data?.message || cause.data?.error || cause.message); setLoading(false); } })
+      .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [open, configuration, onChange]);
 
@@ -90,11 +109,11 @@ export default function ComicLLMSettings({ open, language, disabled, onClose, on
   }
 
   const visible = configuration?.providers.filter((item) => filter === 'all' || (filter === 'enabled' ? item.enabled : item.id !== 'novelai' && tests[item.id] !== 'passed')) || [];
-  return <Dialog open={open} onClose={locked ? undefined : onClose} fullScreen={mobile} fullWidth maxWidth="md" aria-labelledby="comic-provider-title" slotProps={{ paper: { sx: { height: mobile ? '100%' : 'min(780px, 90dvh)' } } }}>
+  return <Dialog open={open} onClose={closeDisabled ? undefined : onClose} fullScreen={mobile} fullWidth maxWidth="md" aria-labelledby="comic-provider-title" slotProps={{ transition: { onExited }, paper: { sx: { height: mobile ? '100%' : 'min(780px, 90dvh)' } } }}>
     <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1.5 }}>
       <Typography id="comic-provider-title" component="span" sx={{ fontSize: 18, fontWeight: 600, flex: 1 }}>{w('Provider 管理', 'Providers')}</Typography>
       <Tooltip title={w('重新读取', 'Reload')}><span><IconButton aria-label={w('重新读取 Provider', 'Reload providers')} disabled={locked || dirty} onClick={() => { setConfiguration(null); setError(''); setNotice(''); }}><Refresh /></IconButton></span></Tooltip>
-      <IconButton aria-label={w('关闭设置', 'Close settings')} disabled={locked} onClick={onClose}><Close /></IconButton>
+      <IconButton aria-label={w('关闭设置', 'Close settings')} disabled={closeDisabled} onClick={onClose}><Close /></IconButton>
     </DialogTitle>
     <DialogContent dividers sx={{ p: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {error && <Alert severity="error" sx={{ borderRadius: 0 }}>{error}</Alert>}
@@ -185,7 +204,7 @@ export default function ComicLLMSettings({ open, language, disabled, onClose, on
           </Box>
         </Box>
       </>}
-      {!configuration && <Box sx={{ p: 2 }}><Typography role="status">{busy ? w('读取中…', 'Loading…') : w('读取失败', 'Could not load settings')}</Typography></Box>}
+      {!configuration && <Box sx={{ p: 2 }}><Typography role="status">{loading ? w('读取中…', 'Loading…') : w('读取失败', 'Could not load settings')}</Typography></Box>}
     </DialogContent>
     <DialogActions sx={{ px: 2, py: 1.5, gap: 1 }}>
       {dirty && <Button disabled={locked} onClick={() => { setConfiguration(saved); setCredentials({}); setSelectedId(saved.activeProviderId); setError(''); setNotice(''); setConfirmDelete(false); }}>{w('撤销修改', 'Discard changes')}</Button>}

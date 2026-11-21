@@ -117,6 +117,87 @@ function signedArea(points) {
   }, 0) / 2;
 }
 
+const GEOMETRY_EPSILON = 0.00001;
+
+function sideOfLine(start, end, point) {
+  return (end.x - start.x) * (point.y - start.y) - (end.y - start.y) * (point.x - start.x);
+}
+
+function onSegment(start, end, point) {
+  return Math.abs(sideOfLine(start, end, point)) <= GEOMETRY_EPSILON
+    && point.x >= Math.min(start.x, end.x) - GEOMETRY_EPSILON && point.x <= Math.max(start.x, end.x) + GEOMETRY_EPSILON
+    && point.y >= Math.min(start.y, end.y) - GEOMETRY_EPSILON && point.y <= Math.max(start.y, end.y) + GEOMETRY_EPSILON;
+}
+
+function segmentsIntersect(a, b, c, d) {
+  return onSegment(a, b, c) || onSegment(a, b, d) || onSegment(c, d, a) || onSegment(c, d, b)
+    || (sideOfLine(a, b, c) > 0) !== (sideOfLine(a, b, d) > 0)
+      && (sideOfLine(c, d, a) > 0) !== (sideOfLine(c, d, b) > 0);
+}
+
+/**
+ * 判断点是否严格位于画框内，边界点交给切割吸附处理。
+ * @param {object} panel 具有凸形或凹形轮廓的画框。
+ * @param {{x:number,y:number}} point 页面坐标。
+ * @returns {boolean} 点在画框内部时为 true。
+ */
+export function isComicPanelInterior(panel, point) {
+  let inside = false;
+  for (const [index, start] of panel.points.entries()) {
+    const end = panel.points[(index + 1) % panel.points.length];
+    if (onSegment(start, end, point)) return false;
+    if ((start.y > point.y) !== (end.y > point.y)
+      && point.x < start.x + (end.x - start.x) * (point.y - start.y) / (end.y - start.y)) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * 在实际画框内放置编号。正常画框沿用左上角位置，凹形或窄框改用能容纳编号的内部位置。
+ * @param {object} panel 画框轮廓。
+ * @param {number} width 编号底牌的原始宽度。
+ * @param {number} height 编号底牌的原始高度。
+ * @returns {{x:number,y:number,scale:number}|null} 底牌左上角和缩放。没有有效内部区域时返回 null。
+ */
+export function placeComicPanelBadge(panel, width, height) {
+  const bounds = panelBounds(panel);
+  const edges = panel.points.map((start, index) => [start, panel.points[(index + 1) % panel.points.length]]);
+  const radius = Math.hypot(width, height) / 2;
+  let best = null;
+  const check = (x, y) => {
+    const point = { x, y };
+    if (!isComicPanelInterior(panel, point)) return null;
+    let clearance = Infinity;
+    for (const [start, end] of edges) {
+      const dx = end.x - start.x, dy = end.y - start.y;
+      const lengthSquared = dx * dx + dy * dy;
+      const fraction = lengthSquared ? Math.max(0, Math.min(1, ((x - start.x) * dx + (y - start.y) * dy) / lengthSquared)) : 0;
+      clearance = Math.min(clearance, Math.hypot(x - start.x - fraction * dx, y - start.y - fraction * dy));
+    }
+    // 用最远的底牌角验证留量，底牌整块都在边框内。
+    const scale = Math.min(1, clearance / (radius + 0.5));
+    const placement = { x: x - width * scale / 2, y: y - height * scale / 2, scale };
+    if (!best || placement.scale > best.scale) best = placement;
+    return scale === 1 ? placement : null;
+  };
+
+  const top = bounds.y + 7 + height / 2;
+  const topLeft = check(bounds.x + 7 + width / 2, top);
+  if (topLeft) return topLeft;
+  const levels = [...new Set(panel.points.map(({ y }) => y))].sort((a, b) => a - b);
+  const rows = [top, ...levels.slice(1).map((y, index) => (levels[index] + y) / 2)].sort((a, b) => a - b);
+  for (const y of rows) {
+    const crossings = edges.flatMap(([a, b]) => (a.y > y) !== (b.y > y)
+      ? [a.x + (b.x - a.x) * (y - a.y) / (b.y - a.y)] : []).sort((a, b) => a - b);
+    for (let index = 0; index + 1 < crossings.length; index += 2) {
+      const left = crossings[index], middle = (left + crossings[index + 1]) / 2;
+      const placed = check(Math.min(left + radius + 7, middle), y) || check(middle, y);
+      if (placed) return placed;
+    }
+  }
+  return best;
+}
+
 function clipPolygon(points, start, end, offset, side) {
   const dx = end.x - start.x;
   const dy = end.y - start.y;
@@ -158,16 +239,16 @@ function isUsablePolygon(points, minimumSize = 12) {
   if (points.length < 3 || Math.abs(signedArea(points)) < minimumSize * minimumSize) return false;
   const bounds = panelBounds(points);
   if (bounds.width < minimumSize || bounds.height < minimumSize) return false;
-  let direction = 0;
   for (let index = 0; index < points.length; index += 1) {
     const a = points[index];
     const b = points[(index + 1) % points.length];
     const c = points[(index + 2) % points.length];
     if (Math.hypot(a.x - b.x, a.y - b.y) < minimumSize / 12) return false;
-    const cross = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x);
-    if (Math.abs(cross) < 0.00001) continue;
-    if (direction && Math.sign(cross) !== direction) return false;
-    direction = Math.sign(cross);
+    if (onSegment(a, b, c) || onSegment(b, c, a)) return false;
+    for (let other = index + 2; other < points.length; other += 1) {
+      if (index === 0 && other === points.length - 1) continue;
+      if (segmentsIntersect(a, b, points[other], points[(other + 1) % points.length])) return false;
+    }
   }
   return true;
 }
@@ -283,10 +364,92 @@ export function resizeComicPage(page, width, height) {
 export function splitPanel(panel, start, end, gutter = 14, nextOrder = (panel.order ?? 0) + 1) {
   if (Math.hypot(end.x - start.x, end.y - start.y) < 1) return null;
   const halves = [clipPolygon(panel.points, start, end, gutter / 2, 1), clipPolygon(panel.points, start, end, -gutter / 2, -1)];
+  return createSplitPanels(panel, halves, nextOrder);
+}
+
+function createSplitPanels(panel, halves, nextOrder) {
   if (!halves.every((points) => isUsablePolygon(points))) return null;
   // 两块都使用新编号，旧画框尚未返回的生成结果就不会被填进切割后的画框。
   const order = panel.order ?? 0;
   return halves.map((points, index) => ({ ...panel, id: createClientId(), layerId: panel.layerId || (panel.type === 'overlay' ? 'overlays' : 'panels'), order: index === 0 ? order : (order + nextOrder) / 2, points, image: panel.image ? { ...panel.image } : null, task: null }));
+}
+
+// 折线从边界进入、在框内转折，再从边界离开，途中不能穿出凹角或沿边走。
+function cutStaysInside(panel, path) {
+  return path.slice(1).every((end, index) => {
+    const start = path[index];
+    if (!isComicPanelInterior(panel, { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 })) return false;
+    return panel.points.every((a, edgeIndex) => {
+      const b = panel.points[(edgeIndex + 1) % panel.points.length];
+      return !segmentsIntersect(start, end, a, b)
+        || (index === 0 && onSegment(a, b, start))
+        || (index === path.length - 2 && onSegment(a, b, end));
+    });
+  });
+}
+
+/**
+ * 沿连接画框两处边界的折线切割，保留原图构图并沿切口留白。
+ * @param {object} panel 要切割的画框。
+ * @param {Array<{x:number,y:number}>} path 按顺序排列的边界起点、转折点和边界终点。
+ * @param {number} gutter 沟槽宽度，单位为页面像素。
+ * @param {number} nextOrder 同层下一项的顺序号。
+ * @returns {Array<object>|null} 两个新画框；路径穿出、自交或产生过小画框时返回 null。
+ */
+export function splitPanelAlongPath(panel, path, gutter = 14, nextOrder = (panel.order ?? 0) + 1) {
+  const border = panel.points;
+  const boundaryPosition = (point) => border.findIndex((start, index) => onSegment(start, border[(index + 1) % border.length], point));
+  function walkBorder(start, end) {
+    const edge = boundaryPosition(start);
+    const endEdge = boundaryPosition(end);
+    if (edge < 0 || endEdge < 0) return null;
+    const arc = [];
+    const nextVertex = border[(edge + 1) % border.length];
+    const sameEdgeForward = edge === endEdge && Math.hypot(end.x - nextVertex.x, end.y - nextVertex.y)
+      < Math.hypot(start.x - nextVertex.x, start.y - nextVertex.y);
+    if (sameEdgeForward) return arc;
+    for (let step = 1; step <= border.length; step += 1) {
+      const index = (edge + step) % border.length;
+      const point = border[index];
+      if (Math.hypot(point.x - end.x, point.y - end.y) <= GEOMETRY_EPSILON) break;
+      if (Math.hypot(point.x - start.x, point.y - start.y) > GEOMETRY_EPSILON) arc.push(point);
+      if (index === endEdge) break;
+    }
+    return arc;
+  }
+
+  if (path.length < 2 || !cutStaysInside(panel, path)) return null;
+  const halves = [];
+  for (const cutPath of [path, path.slice().reverse()]) {
+    const arc = walkBorder(cutPath.at(-1), cutPath[0]);
+    if (!arc) return null;
+    const outline = [...cutPath, ...arc];
+    if (!isUsablePolygon(outline)) return null;
+    if (!gutter) { halves.push(outline); continue; }
+
+    // 只把切口边向两块内部各移半个沟槽。相邻边求交，保留转折和原有外框。
+    const direction = Math.sign(signedArea(outline));
+    const edges = outline.map((point, index) => {
+      const next = outline[(index + 1) % outline.length];
+      const dx = next.x - point.x, dy = next.y - point.y;
+      const offset = index < cutPath.length - 1 ? direction * gutter / (2 * Math.hypot(dx, dy)) : 0;
+      return { x: point.x - dy * offset, y: point.y + dx * offset, dx, dy };
+    });
+    const inset = edges.map((edge, index) => {
+      const previous = edges[(index + edges.length - 1) % edges.length];
+      const determinant = previous.dx * edge.dy - previous.dy * edge.dx;
+      if (Math.abs(determinant) <= GEOMETRY_EPSILON) return { x: edge.x, y: edge.y };
+      const along = ((edge.x - previous.x) * previous.dy - (edge.y - previous.y) * previous.dx) / determinant;
+      return { x: edge.x + along * edge.dx, y: edge.y + along * edge.dy };
+    });
+    const reversedEdge = inset.some((start, index) => {
+      const end = inset[(index + 1) % inset.length];
+      return (end.x - start.x) * edges[index].dx + (end.y - start.y) * edges[index].dy <= 0;
+    });
+    if (reversedEdge || !cutStaysInside(panel, inset.slice(0, cutPath.length))) return null;
+    halves.push(inset);
+  }
+  return createSplitPanels(panel, halves, nextOrder);
 }
 
 /**
@@ -311,7 +474,7 @@ export function createRectanglePanel(page, section, start, end) {
 }
 
 /**
- * 移动画框顶点并保持凸形，防止边线交叉后无法继续切割。
+ * 移动画框顶点，防止外框边线交叉。
  * @param {object} panel 当前画框。
  * @param {number} index 要移动的顶点索引。
  * @param {object} point 新位置。
@@ -324,7 +487,7 @@ export function movePanelVertex(panel, index, point, bounds) {
 }
 
 /**
- * 同时移动一条边的两个端点，保持画框凸形和半页边界。
+ * 同时移动一条边的两个端点，避免边线交叉并保持在半页内。
  * @param {object} panel 当前画框。
  * @param {number} index 边的起点索引。
  * @param {{x:number,y:number}} delta 页面坐标中的移动距离。

@@ -110,6 +110,20 @@ function validatePage(page, allowWorkflow = true) {
         const asset = state[key];
         if (asset && (!image(asset.dataUrl) || !finite(asset.width) || asset.width <= 0 || !finite(asset.height) || asset.height <= 0)) throw new Error('Invalid comic AI image.');
       }
+      if (state.ocr !== undefined) {
+        const ocr = state.ocr;
+        const original = state.originalImage;
+        if (!ocr || !original || !['native', 'webgpu', 'wasm'].includes(ocr.backend) || !Array.isArray(ocr.lines) || ocr.lines.length > 100
+          || ocr.lines.some((line) => {
+            const bounds = line?.bounds;
+            return !bounds || ![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isInteger)
+              || bounds.x < 0 || bounds.y < 0 || bounds.width <= 0 || bounds.height <= 0
+              || bounds.x + bounds.width > original.width || bounds.y + bounds.height > original.height
+              || typeof line.text !== 'string' || !finite(line.confidence) || line.confidence < 0 || line.confidence > 1
+              || !['horizontal-tb', 'vertical-rl'].includes(line.direction);
+          })) throw new Error('Invalid comic OCR result.');
+      }
+      if (state.ocrError !== undefined && typeof state.ocrError !== 'string') throw new Error('Invalid comic OCR error.');
       if (state.assignments) {
         if (typeof state.assignments !== 'object' || Array.isArray(state.assignments) || Object.keys(state.assignments).length > 100) throw new Error('Invalid comic AI assignment.');
         for (const value of Object.values(state.assignments)) {

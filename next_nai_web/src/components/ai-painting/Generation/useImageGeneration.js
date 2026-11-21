@@ -22,14 +22,14 @@ const createIdleStatus = () => ({
   terminalGenerationFailed: false,
 });
 
-const useImageGeneration = () => {
+const useImageGeneration = (prepareResult = null) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStatus, setGenerationStatus] = useState(createIdleStatus);
   const [batchStatus, setBatchStatus] = useState(batchController.getStatus());
   const generatingRef = useRef(false);
   const batchIdRef = useRef('');
 
-  const startGeneration = useCallback(async (params) => {
+  const startGeneration = useCallback(async (params, { previewOnly = false } = {}) => {
     if (generatingRef.current) return null;
     generatingRef.current = true;
     setIsGenerating(true);
@@ -41,7 +41,8 @@ const useImageGeneration = () => {
     });
 
     try {
-      const result = await generateImage(params);
+      const rawResult = await generateImage(params);
+      const result = prepareResult && rawResult.success && !previewOnly ? await prepareResult(rawResult) : rawResult;
       if (!result.success) {
         throw createGenerationError(
           normalizeGenerationErrorCode(result, GENERATION_ERROR_CODES.GENERATION_FAILED),
@@ -60,6 +61,7 @@ const useImageGeneration = () => {
         progress: 100,
         model: result.model || params.model || null,
       });
+      if (result.autoWatermarkFailed) window.dispatchEvent(new Event('novelai:auto-watermark-failed'));
       if (params.version_context && result.version && params.onVersionCreated) params.onVersionCreated(result.version);
       if (result.versionError && typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('novelai:version-save-failed'));
@@ -67,7 +69,7 @@ const useImageGeneration = () => {
       return {
         id: `${Date.now()}-${params.index ?? 0}`,
         src: result.imageUrl || result.image,
-        originalSrc: result.downloadUrl || result.imageUrl || result.image,
+        originalSrc: result.originalImageUrl || result.downloadUrl || result.imageUrl || result.image,
         downloadSrc: result.downloadUrl || result.imageUrl || result.image,
         cachedBlob: result.cachedBlob || null,
         saveError: result.saveError || null,
@@ -106,7 +108,7 @@ const useImageGeneration = () => {
       generatingRef.current = false;
       setIsGenerating(false);
     }
-  }, []);
+  }, [prepareResult]);
 
   const startBatchGeneration = useCallback(async (params, onImageGenerated, onBatchError) => {
     const batchSize = Math.min(8, Math.max(1, Number.parseInt(params.batchSize, 10) || 1));

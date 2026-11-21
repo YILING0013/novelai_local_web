@@ -2,6 +2,7 @@
 
 import React from 'react';
 import NextImage from 'next/image';
+import { imageDropHighlight } from './imageDropHighlight';
 import ImageEditor from '../../ImageEditor/index';
 import LockableSlider from '@/components/muiWrappers/LockableSlider';
 import {
@@ -47,6 +48,11 @@ const Img2ImgPanel = ({
   const { t } = useI18n();
   return (
     <Accordion 
+      data-drop-zone="img2img"
+      onDragOver={handleDragOver}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
       expanded={expandedPanels.img2img} 
       onChange={(_, isExpanded) => onExpandedPanelsChange('img2img', isExpanded)}
       disableGutters
@@ -71,6 +77,7 @@ const Img2ImgPanel = ({
           px: 0,
           py: 0,
           bgcolor: 'transparent',
+          ...(isDragging && imageDropHighlight),
           '&.Mui-expanded': { minHeight: 44 },
           '& .MuiAccordionSummary-content, & .MuiAccordionSummary-content.Mui-expanded': { margin: 0 },
         }}
@@ -92,7 +99,6 @@ const Img2ImgPanel = ({
         
         {!imagePreview ? (
           <Box
-            data-drop-zone="img2img"
             sx={{
               mt: 1,
               height: 100,
@@ -107,10 +113,6 @@ const Img2ImgPanel = ({
               cursor: 'pointer'
             }}
             onClick={() => fileInputRef.current.click()}
-            onDragOver={handleDragOver}
-            onDragEnter={handleDragEnter}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
           >
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <UploadIcon sx={{ mb: 1, color: isDragging ? 'primary.main' : 'text.secondary' }} />

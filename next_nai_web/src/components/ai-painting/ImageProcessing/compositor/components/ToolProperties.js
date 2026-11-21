@@ -16,7 +16,7 @@ const names = { brush: "画笔", eraser: "橡皮擦", clone: "仿制图章", blu
 export default function ToolProperties({
   tool, brush, setBrush, openBrushSettings, mosaicSize, setMosaicSize,
   shape, setShape, shapeOptions, setShapeOptions, textOptions, setTextOptions,
-  color, setColor, backColor, setBackColor, layer, updateLayer,
+  color, setColor, backColor, setBackColor, layer, updateLayer, textInputRef, previewLayer, finishPreview,
   selectionShape, setSelectionShape, selectionMode, setSelectionMode,
   tolerance, setTolerance, cropRatio, setCropRatio,
 }) {
@@ -100,9 +100,16 @@ export default function ToolProperties({
       {tool === "text" && <>
         <p className={styles.note}>{text("拖动创建任意大小的文字框；单击空白处创建默认框，双击已有文字编辑。文字在框内自动换行，超出高度的部分裁切。")}</p>
         {textLayer && <>
-          <textarea key={`${textLayer.id}-${textLayer.text}`} aria-label={text("工具文字内容")} defaultValue={textLayer.text} rows={4} onBlur={(event) => {
-            if (event.target.value !== textLayer.text) updateLayer({ text: event.target.value }, "修改文字");
-          }} />
+          <textarea ref={textInputRef} aria-label={text("工具文字内容")} value={textLayer.text} readOnly={textLayer.locked} rows={4}
+            onChange={(event) => previewLayer({ text: event.target.value })}
+            onBlur={finishPreview}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                event.currentTarget.blur();
+              }
+            }}
+          />
           <div className={styles.columns}>
             <NumberField label={text("文字框宽度")} value={textLayer.width} min={1} max={8192} suffix="px" onChange={(width) => updateLayer({ width }, "调整文字框")} />
             <NumberField label={text("文字框高度")} value={textLayer.height} min={1} max={8192} suffix="px" onChange={(height) => updateLayer({ height }, "调整文字框")} />

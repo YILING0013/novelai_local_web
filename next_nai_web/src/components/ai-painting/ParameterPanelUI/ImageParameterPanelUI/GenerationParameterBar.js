@@ -19,7 +19,7 @@ import { useI18n } from '@/i18n/I18nProvider';
  * @param {object} props 当前参数、模型限制和现有参数修改回调。
  * @returns {React.ReactElement} 参数条及其编辑浮层。
  */
-export default function GenerationParameterBar({ params, maxSteps, isV5Medium, handleParamChange, handleSeedChange, handleClearSeed, handleSmeaChange, handleDynChange, handleResetParamsConfirm }) {
+export default function GenerationParameterBar({ params, maxSteps, isV5Medium, handleParamChange, handleSeedChange, handleClearSeed, handleSmeaChange, handleDynChange, handleResetParamsConfirm, onExportParameters }) {
   const { t } = useI18n();
   const id = useId();
   const [editor, setEditor] = useState(null);
@@ -187,6 +187,7 @@ export default function GenerationParameterBar({ params, maxSteps, isV5Medium, h
               handleParamChange={handleParamChange}
               handleSmeaChange={handleSmeaChange}
               handleDynChange={handleDynChange}
+              onExportParameters={onExportParameters}
               handleResetParamsConfirm={() => { closeEditor(); handleResetParamsConfirm(); }}
             />
           </Box>

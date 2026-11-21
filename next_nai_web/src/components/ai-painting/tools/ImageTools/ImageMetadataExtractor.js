@@ -1,6 +1,7 @@
 const {
   normalizeExifText,
   parseMetadataCandidates,
+  parseMetadataDocument,
 } = require('./metadataParserCore');
 
 let pako;
@@ -412,9 +413,10 @@ const extractStealthMetadata = async (dataUrl) => {
  *
  * @param {File} file 图像文件。
  * @param {string} dataUrl 图像 data URL，用于读取 stealth alpha 数据。
- * @returns {Promise<object|null>} 可应用到 UI 的参数对象，未识别时返回 null。
+ * @param {boolean} asFields 是否按原字段名返回，供元数据编辑器使用。
+ * @returns {Promise<object|null>} 原字段或可应用的生成参数；未识别到生成参数时返回 null。
  */
-export const extractImageMetadata = async (file, dataUrl) => {
+export const extractImageMetadata = async (file, dataUrl, asFields = false) => {
   if (!file) {
     return null;
   }
@@ -434,5 +436,5 @@ export const extractImageMetadata = async (file, dataUrl) => {
     });
   }
 
-  return parseMetadataCandidates(candidates);
+  return asFields ? parseMetadataDocument(candidates) : parseMetadataCandidates(candidates);
 };

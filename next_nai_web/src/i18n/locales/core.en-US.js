@@ -59,6 +59,8 @@ const messages = {
     "languageAria": "Choose interface language"
   },
   "main": {
+    "resizeSidebar": "Resize navigation sidebar",
+
     "navigation": "Main navigation",
     "showSidebarIcons": "Show icon menu",
     "hideSidebar": "Hide menu",
@@ -184,6 +186,8 @@ const messages = {
     }
   },
   "settings": {
+    "showInspirationGallery": "Show inspiration gallery",
+
     "naming": {
       "seed": "Seed",
       "prompt32": "First 32 prompt characters",
@@ -285,7 +289,7 @@ const messages = {
     "sections": {
       "appearance": {
         "title": "Appearance",
-        "description": "Choose a complete palette to preview backgrounds, the sidebar, and buttons instantly. Save to keep it."
+        "description": "Adjust the theme, page accent colors, and interface animation."
       },
       "pages": {
         "title": "Page colors",
@@ -305,7 +309,7 @@ const messages = {
     "customizeScheme": "Customize this palette",
     "customizeHint": "Each preset includes an accent color. Fine-tune the colors for the current mode here.",
     "pickColor": "Choose {name}",
-    "storageImmediate": "Storage and inspiration source changes apply immediately. Save other options using the footer.",
+    "storageImmediate": "Storage and inspiration gallery changes apply immediately. Save other options using the footer.",
     "unsaved": "Unsaved changes",
     "upToDate": "Settings saved",
     "discard": "Discard",

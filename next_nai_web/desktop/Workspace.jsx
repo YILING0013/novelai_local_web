@@ -1,3 +1,4 @@
+import { NavigationResizeHandle, useNavigationWidth } from '@/components/ResizableNavigation';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -41,7 +42,10 @@ export default function Workspace({ local, onLogin, android = false, appVersion,
   const [gallerySource, setGallerySource] = useState(requestedSource);
   const [galleryBusy, setGalleryBusy] = useState(false);
   useEffect(() => { if (active === ID.GALLERY && !galleryBusy) setGallerySource(requestedSource); }, [active, galleryBusy, requestedSource]);
-  const [visited,setVisited]=useState([active]),[rail,setRail]=useState(true),[account,setAccount]=useState(null),[accountOpen,setAccountOpen]=useState(false);
+  const [visited,setVisited]=useState([active]),[account,setAccount]=useState(null),[accountOpen,setAccountOpen]=useState(false);
+  const navigation = useNavigationWidth();
+  const rail = navigation.desktopDrawerWidth > 0;
+  const expandedRail = navigation.desktopDrawerWidth >= 160;
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -90,7 +94,7 @@ export default function Workspace({ local, onLogin, android = false, appVersion,
   },[select,generated.length,dirty,local,visited,android,setParams]);
   const nav=pages.filter(([id])=>!local||id!==ID.AI_PAINTING).map(([id,labelKey,Icon])=>({id,labelKey,title:t(labelKey),Icon,icon:<Icon/>,color:readPageColor(localStorage,id)}));
   const action=(label,click,icon,current)=><Tooltip title={label}><IconButton size="small" aria-label={label} aria-current={current?'page':undefined} onClick={click}>{icon}</IconButton></Tooltip>;
-  const modes=(selected,onChange)=>paintHost&&createPortal(<PaintingModeNavigation selected={selected} expanded={androidDrawer} onChange={(modeId)=>{
+  const modes=(selected,onChange)=>paintHost&&createPortal(<PaintingModeNavigation selected={selected} expanded={androidDrawer || expandedRail} onChange={(modeId)=>{
     onChange(modeId);
     if (androidDrawer) setDrawerOpen(false);
   }}/>,paintHost);
@@ -134,11 +138,11 @@ export default function Workspace({ local, onLogin, android = false, appVersion,
   const toggleLabel = t(androidDrawer ? (drawerOpen ? 'main.closeDrawer' : 'main.openDrawer') : rail ? 'main.hideSidebar' : 'main.showSidebarIcons');
   const leading = <Tooltip title={toggleLabel}><IconButton size="small" aria-label={toggleLabel}
     aria-controls="main-navigation" aria-expanded={androidDrawer ? drawerOpen : rail}
-    onClick={()=>androidDrawer ? setDrawerOpen(v=>!v) : setRail(v=>!v)}>
+    onClick={()=>androidDrawer ? setDrawerOpen(v=>!v) : navigation.saveDesktopDrawerWidth(rail ? 0 : 64)}>
     <PanelLeft size={18} strokeWidth={1.7}>{!android && !rail&&<path d="M5 3h4v18H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" fill="currentColor" stroke="none"/>}</PanelLeft>
   </IconButton></Tooltip>;
   const localTitle = locale === 'zh-CN' ? '本机工具' : 'Local workspace';
-  const sidebarWidth = androidDrawer ? 'min(320px, calc(100vw - 32px))' : 64;
+  const sidebarWidth = androidDrawer ? 'min(320px, calc(100vw - 32px))' : navigation.desktopDrawerWidth;
   const localTabs = [
     [ID.LOCAL_GALLERY, 'gallery.outputsTitle'], [ID.REFERENCE_GALLERY, 'gallery.referencesTitle'],
     [ID.IMAGE_TAGGING, 'pages.imageTagging'], [ID.LOCAL_UPSCALING, 'pages.localUpscaling'],
@@ -163,10 +167,11 @@ export default function Workspace({ local, onLogin, android = false, appVersion,
       {localTabs.map(([id, key]) => <Tab key={id} value={id} label={t(key)} disabled={galleryBusy && [ID.LOCAL_GALLERY, ID.REFERENCE_GALLERY].includes(id)} />)}
     </Tabs>}
     <Box sx={{flex:1,minHeight:0,display:'flex',overflow:android?'hidden':undefined}}>
+    {!androidDrawer && (!android || !local) && <NavigationResizeHandle {...navigation} />}
     {android ? !local && <Drawer variant={androidDrawer ? 'temporary' : 'permanent'} open={androidDrawer ? drawerOpen : rail}
       onClose={()=>setDrawerOpen(false)} ModalProps={{ keepMounted: true }}
       slotProps={{ paper: { id: 'main-navigation', component: 'nav', 'aria-label': t('main.navigation') } }}
-      sx={{ width: androidDrawer ? sidebarWidth : rail ? 64 : 0, flexShrink: 0, '& .MuiDrawer-paper': {
+      sx={{ width: androidDrawer ? sidebarWidth : navigation.desktopDrawerWidth, flexShrink: 0, '& .MuiDrawer-paper': {
         width: sidebarWidth, visibility: !androidDrawer && !rail ? 'hidden' : undefined, boxSizing: 'border-box',
         overflowX: 'hidden', scrollbarWidth: androidDrawer ? 'auto' : 'none',
         boxShadow: 'none', borderRadius: 0, borderRight: 1, borderColor: 'divider', bgcolor: 'background.drawer',
@@ -186,18 +191,18 @@ export default function Workspace({ local, onLogin, android = false, appVersion,
               sx={{ minHeight: androidDrawer ? 56 : 44, px: androidDrawer ? 1.5 : 1, borderRadius: 1.5, bgcolor: id===active ? 'action.selected' : 'transparent',
                 '&::before': id===active ? { content: '""', position: 'absolute', left: 0, top: '22%', height: '56%', width: 2, bgcolor: color, borderRadius: 1 } : {} }}>
               <ListItemIcon sx={{ minWidth: androidDrawer ? 44 : 0, mx: androidDrawer ? 0 : 'auto', color: id===active ? color : 'text.secondary' }}>{icon}</ListItemIcon>
-              {androidDrawer && <ListItemText primary={title} primaryTypographyProps={{ fontSize: 16, fontWeight: id===active ? 650 : 500 }} />}
+              {(androidDrawer || expandedRail) && <ListItemText primary={title} primaryTypographyProps={{ fontSize: 16, fontWeight: id===active ? 650 : 500 }} />}
             </ListItemButton>
           </Tooltip>
           {id===ID.AI_PAINTING && <Box ref={setPaintHost} role="group" aria-label={title}
             sx={{ display: id===active?'flex':'none', flexDirection: 'column', gap: .25, mt: .5, py: .5, px: .25, borderRadius: 1.5, bgcolor: alpha(theme.palette.primary.main,.07) }}/>}
         </Box>)}
       </List>
-    </Drawer> : rail&&<Box id="main-navigation" component="nav" aria-label={t('main.navigation')} sx={{width:64,overflowY:'auto',flexShrink:0,bgcolor:'background.drawer',borderRight:1,borderColor:'divider'}}>
+    </Drawer> : rail&&<Box id="main-navigation" component="nav" aria-label={t('main.navigation')} sx={{width:sidebarWidth,overflowY:'auto',flexShrink:0,bgcolor:'background.drawer',borderRight:1,borderColor:'divider'}}>
       <List sx={{px:1,pt:'5px'}}>{nav.filter(p=>p.id!==ID.SETTINGS).map(({id,title,Icon,color})=><Box key={id} sx={{mb:.5}}>
         <Tooltip title={title} placement="right" arrow><ListItemButton aria-label={title} aria-current={id===active?'page':undefined} onClick={()=>select(id)}
           sx={{height:44,minHeight:44,px:1,borderRadius:1.5,position:'relative',bgcolor:id===active?'action.selected':'transparent','&::before':id===active?{content:'""',position:'absolute',left:0,top:'22%',height:'56%',width:2,bgcolor:color,borderRadius:1}:{}}}>
-          <ListItemIcon sx={{minWidth:0,mx:'auto',color:id===active?color:'text.secondary'}}><Icon/></ListItemIcon></ListItemButton></Tooltip>
+          <ListItemIcon sx={{minWidth:0,mx:'auto',color:id===active?color:'text.secondary'}}><Icon/></ListItemIcon>{expandedRail && <ListItemText primary={title}/>}</ListItemButton></Tooltip>
         {id===ID.AI_PAINTING&&<Box ref={setPaintHost} sx={{display:id===active?'flex':'none',flexDirection:'column',gap:.25,mt:.5,p:.25,borderRadius:1.5,bgcolor:theme=>alpha(theme.palette.primary.main,.07)}}/>}</Box>)}</List>
       </Box>}
       <Box component="main" sx={{minWidth:0,minHeight:0,flex:1,overflow:'hidden',contain:android?'layout':undefined}}>

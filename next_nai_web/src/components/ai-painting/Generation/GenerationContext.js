@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { applyAutomaticWatermark } from '../ImageProcessing/quickImageAdjustments';
 import useImageGeneration from './useImageGeneration';
 import { revokeObjectUrl } from '@/utils/mediaAssets';
 
@@ -23,7 +24,7 @@ export const GenerationProvider = ({ children }) => {
     batchStatus,
     startBatchGeneration,
     cancelBatchGeneration,
-  } = useImageGeneration();
+  } = useImageGeneration(applyAutomaticWatermark);
   const [generatedItems, setGeneratedItems] = useState([]);
   const [currentItem, setCurrentItem] = useState(null);
   const generatedItemsRef = useRef([]);
@@ -66,7 +67,7 @@ export const GenerationProvider = ({ children }) => {
 
   const generatePreview = useCallback(async (params) => {
     resetGeneration();
-    const imageResult = await startGeneration(params);
+    const imageResult = await startGeneration(params, { previewOnly: true });
     return imageResult ? { ...imageResult, type: 'image' } : null;
   }, [resetGeneration, startGeneration]);
 

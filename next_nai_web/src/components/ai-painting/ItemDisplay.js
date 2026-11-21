@@ -1,36 +1,36 @@
-/* eslint-disable @next/next/no-img-element */
 // ItemDisplay.js
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, useContext } from 'react';
 import {
   Box,
-  ButtonBase,
-  Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions,
   IconButton,
   Tooltip,
   Paper,
   Typography,
   Fade,
-  ButtonGroup,
-  Button,
-  LinearProgress,
-  ListItemIcon,
-  ListItemText,
   Menu,
   MenuItem,
+  ListItemText,
+  ButtonBase,
+  useMediaQuery,
+  Button,
+  LinearProgress,
   CircularProgress,
   Snackbar,
   Alert,
-  useMediaQuery,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
   useTheme,
 } from '@mui/material';
 import {
   SaveAlt as SaveIcon,
-  ImportExport as ImportExportIcon,
   AddPhotoAlternate as AddPhotoIcon,
-  Brush as BrushIcon,
   PhotoFilter as PhotoFilterIcon,
+  CloudUpload as CloudUploadIcon,
   ZoomIn as ZoomInIcon,
   ZoomOut as ZoomOutIcon,
   RestartAlt as ResetIcon,
@@ -38,19 +38,25 @@ import {
   ChevronLeft as ChevronLeftIcon,
   ChevronRight as ChevronRightIcon,
   Refresh as RefreshIcon,
+  ImageOutlined as ImageOutlinedIcon,
+  FolderOpenOutlined,
   AutoAwesome as AutoAwesomeIcon,
   OpenInFull as OpenInFullIcon,
-  MoreHoriz as MoreHorizIcon,
+  Lock as LockIcon,
+  LockOpen as LockOpenIcon,
+  Send as SendIcon,
+  Tune as TuneIcon,
 } from '@mui/icons-material';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import Image from 'next/image';
+import ImagePrivacyCover, { imagePrivacySx } from './ImagePrivacyCover';
 import { useGeneration } from './Generation/GenerationContext';
 import { getImageSettings, generateFileName } from './tools/ImageTools/ImageSaveUtils';
 import { downloadBlobToFile, downloadUrlToFile } from '@/utils/mediaAssets';
 import { useI18n } from '@/i18n/I18nProvider';
+import { forwardPaintingPanelError } from './Generation/errorRecords.mjs';
 import GallerySourceSelect from '@/components/gallery/GallerySourceSelect';
 import apiClient from '@/utils/ApiClient';
-import { forwardPaintingPanelError } from './Generation/errorRecords.mjs';
 
 const REFERENCE_METADATA_URL = '/metadata.json';
 const REFERENCE_IMAGE_BASE_URL = '/reference_img';
@@ -415,7 +421,6 @@ ReferenceImageGallery.displayName = 'ReferenceImageGallery';
 // --- Main ItemDisplay Component ---
 
 const ItemDisplay = ({
-  androidLayout = false,
   item,
   active = true,
   onActionButtonClick,
@@ -426,21 +431,35 @@ const ItemDisplay = ({
   onApplyImageParameters,
   onError = null,
   disableVibeAction = false,
+  hideVibeAction = false,
+  hideImg2ImgAction = false,
+  showReferenceAction = false,
+  disableReferenceAction = false,
+  privacyMode = false,
+  imageDrag = null,
   onImageTool = null,
   imageToolsDisabled = false,
   enhanceDisabled = false,
+  onAdjustImage = null,
+  adjustmentPreview = null,
 }) => {
   const { t } = useI18n();
   const theme = useTheme();
-  const narrow = useMediaQuery(theme.breakpoints.down('md'));
-  const compactAndroid = androidLayout && narrow;
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const [imageActionsAnchor, setImageActionsAnchor] = useState(null);
+  const [canvasLocked, setCanvasLocked] = useState(false);
+  const [canvasViewVersion, setCanvasViewVersion] = useState(0);
+  const [measuredImage, setMeasuredImage] = useState(null);
   const [hoverToolbar, setHoverToolbar] = useState(false);
   const [hoverImage, setHoverImage] = useState(false);
-  const [imageActionsAnchor, setImageActionsAnchor] = useState(null);
-  useEffect(() => { setImageActionsAnchor(null); }, [active, item?.id]);
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'success' });
-  const wrapperRef = useRef(null);
+  const zoomRef = useRef(null);
+  const previewPan = useRef(null);
   const { isGenerating, generationStatus } = useGeneration();
+  const imageWidth = item?.width || 512;
+  const imageHeight = item?.height || 512;
+  const imageRatio = measuredImage && measuredImage.src === item?.src ? measuredImage.ratio : imageWidth / imageHeight;
+  const directImageDrag = privacyMode ? null : imageDrag;
 
   const [referenceImages, setReferenceImages] = useState([]);
   const [loadingReferenceImages, setLoadingReferenceImages] = useState(false);
@@ -454,6 +473,17 @@ const ItemDisplay = ({
   const parameterRequest = useRef(0);
   const referenceActionRef = useRef(null);
   const [pendingReferenceImage, setPendingReferenceImage] = useState(null);
+  const [showInspiration, setShowInspiration] = useState(false);
+  useEffect(() => {
+    const update = () => setShowInspiration(localStorage.getItem('novelai:inspiration-visible') === 'true');
+    update();
+    window.addEventListener('novelai:inspiration-visibility', update);
+    window.addEventListener('storage', update);
+    return () => {
+      window.removeEventListener('novelai:inspiration-visibility', update);
+      window.removeEventListener('storage', update);
+    };
+  }, []);
   const clearReferenceSelection = useCallback(() => {
     parameterRequest.current += 1;
     referenceActionRef.current = null;
@@ -461,39 +491,69 @@ const ItemDisplay = ({
     setSelectedReferenceImage(null);
     setLoadingImageParams(false);
   }, []);
-  useEffect(() => { clearReferenceSelection(); }, [active, item?.id, inspirationSource, clearReferenceSelection]);
-  useEffect(() => () => { parameterRequest.current += 1; referenceActionRef.current = null; }, []);
 
+  useEffect(() => {
+    clearReferenceSelection();
+  }, [active, item?.id, inspirationSource, showInspiration, clearReferenceSelection]);
 
+  useEffect(() => {
+    setImageActionsAnchor(null);
+    if (isMobile) {
+      setHoverToolbar(false);
+      setHoverImage(false);
+    }
+  }, [isMobile, item?.id]);
+
+  const isVideo = item?.type === 'video';
   const sourcePixels = Number(item?.width) * Number(item?.height);
   const upscaleCost = sourcePixels > 0
     ? [1048576, 1747627, 2446678, 3145728].findIndex((limit) => sourcePixels <= limit) + 1
     : 0;
-  const upscaleLabel = t(upscaleCost ? 'painting.workspace.imageTools.upscaleCost' : 'painting.workspace.imageTools.upscale', { cost: upscaleCost });
+  const upscaleLabel = upscaleCost
+    ? t('painting.workspace.imageTools.upscaleCost', {
+      cost: t('painting.workspace.imageTools.approximateAmount', { cost: upscaleCost }),
+    })
+    : t('painting.workspace.imageTools.upscale');
   const toolbarPaperSx = {
     pointerEvents: 'auto',
-    p: 0.5,
+    p: { xs: 0.25, md: 0.5 },
     backgroundColor: theme.palette.background.paper + '99',
     backdropFilter: 'blur(5px)',
     border: `1px solid ${theme.palette.divider}`,
     display: 'flex',
-    flexWrap: 'wrap',
-    gap: 0.5,
+    flexWrap: { xs: 'nowrap', md: 'wrap' },
+    flexShrink: { xs: 0, md: 1 },
+    gap: { xs: 0, md: 0.5 },
     borderRadius: 2,
   };
   const toolbarButtonSx = {
+    width: { xs: 35, sm: 40, md: 34 },
+    height: { xs: 40, md: 34 },
+    '& .MuiSvgIcon-root': { fontSize: { xs: 21, md: 24 } },
     color: theme.palette.text.primary,
     '&:hover': { backgroundColor: theme.palette.action.hover },
     '&.Mui-disabled': { color: theme.palette.action.disabled, pointerEvents: 'auto' },
   };
 
-  const toolbarButtons = useMemo(() => [
-    { icon: <AddPhotoIcon />, tooltip: t('painting.workspace.gallery.useForImg2Img'), action: 'use-as-input' },
-    { icon: <BrushIcon />, tooltip: t('painting.workspace.gallery.sendToInpaint'), action: 'use-as-inpaint' },
-    { icon: <ImportExportIcon />, tooltip: disableVibeAction ? t('painting.workspace.errors.v5VibeUnsupported') : t('painting.workspace.gallery.useForVibe'), action: 'use-as-vibe', disabled: disableVibeAction },
-    { icon: <PhotoFilterIcon />, tooltip: t('painting.workspace.gallery.sendToImageProcessing'), action: 'use-as-image-processing' },
+  const sendActions = [
+    { tooltip: t('painting.workspace.gallery.sendToImageProcessing'), action: 'use-as-image-processing' },
+    { tooltip: t('painting.workspace.gallery.sendToInpaint'), action: 'use-as-inpaint' },
+  ];
+  const useActions = [
+    ...(!hideImg2ImgAction ? [{ tooltip: t('painting.workspace.gallery.useForImg2Img'), action: 'use-as-input' }] : []),
+    ...(!hideVibeAction ? [
+      { tooltip: t('painting.workspace.gallery.useForVibe'), action: 'use-as-vibe', disabled: disableVibeAction },
+    ] : []),
+    ...(showReferenceAction ? [
+      { tooltip: t('painting.workspace.gallery.useForReference'), action: 'use-as-reference', disabled: disableReferenceAction },
+    ] : []),
+  ];
+  const toolbarButtons = [
+    ...(useActions.length ? [{ icon: <PhotoFilterIcon />, tooltip: t('painting.workspace.gallery.useFor'), action: 'use', options: useActions }] : []),
+    { icon: <SendIcon />, tooltip: t('painting.workspace.gallery.sendTo'), action: 'send', options: sendActions },
     { icon: <SaveIcon />, tooltip: t('painting.workspace.gallery.saveProject'), action: 'save', disabled: false },
-  ], [disableVibeAction, t]);
+  ];
+  const menuButton = toolbarButtons.find((button) => button.action === imageActionsAnchor?.action);
 
   const showNotification = useCallback((message, severity = 'success') => {
     setNotification({ open: true, message, severity });
@@ -618,10 +678,10 @@ const ItemDisplay = ({
   }, [fetchImageParameters]);
 
   useEffect(() => {
-    if (!item && sourceReady) {
+    if (active && showInspiration && !item && sourceReady) {
       fetchReferenceImages();
     }
-  }, [item, sourceReady, fetchReferenceImages]);
+  }, [active, showInspiration, item, sourceReady, fetchReferenceImages]);
 
   const handleCloseNotification = () => {
     setNotification({ ...notification, open: false });
@@ -672,7 +732,7 @@ const ItemDisplay = ({
   };
 
   const handleKeyDown = useCallback((event) => {
-    if (!item || event.defaultPrevented || event.target?.closest?.('[role="dialog"]')) return;
+    if (!item || adjustmentPreview || event.defaultPrevented || event.target?.closest?.('[role="dialog"]')) return;
     const activeElement = document.activeElement;
     // 检查焦点是否在输入框内，如果是，则不响应导航键
     const isInputFocused = activeElement && (activeElement.tagName.toLowerCase() === 'input' || activeElement.tagName.toLowerCase() === 'textarea' || activeElement.isContentEditable);
@@ -684,7 +744,7 @@ const ItemDisplay = ({
       case 'Delete': event.preventDefault(); onDeleteItem(); break;
       default: break;
     }
-  }, [item, onPreviousItem, onNextItem, onDeleteItem]);
+  }, [item, adjustmentPreview, onPreviousItem, onNextItem, onDeleteItem]);
 
   useEffect(() => {
     // 仅在有选中项目时才添加键盘事件监听
@@ -697,8 +757,8 @@ const ItemDisplay = ({
   return (
     <Box
       sx={{ position: 'relative', width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'hidden', outline: 'none' }}
-      onMouseEnter={() => { setHoverToolbar(true); setHoverImage(true); }}
-      onMouseLeave={() => { setHoverToolbar(false); setHoverImage(false); }}
+      onMouseEnter={() => { if (!isMobile) { setHoverToolbar(true); setHoverImage(true); } }}
+      onMouseLeave={() => { if (!isMobile) { setHoverToolbar(false); setHoverImage(false); } }}
     >
       <Snackbar open={notification.open} autoHideDuration={4000} onClose={handleCloseNotification} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
         <Alert onClose={handleCloseNotification} severity={notification.severity} sx={{ width: '100%' }}>
@@ -762,72 +822,110 @@ const ItemDisplay = ({
       )}
 
       {item ? (
-        // 渲染图片查看器
-          <TransformWrapper ref={wrapperRef} initialScale={1} minScale={0.5} maxScale={4} centerOnInit={true} centerZoomedOut={false} limitToBounds={false} doubleClick={{ disabled: true }} panning={{ disabled: false }} velocityAnimation={{ disabled: true }} alignmentAnimation={{ disabled: true }}>
-            {({ zoomIn, zoomOut, resetTransform }) => (
-              <>
+        isVideo ? (
+          // 渲染视频播放器
+          <Box sx={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', ...imagePrivacySx }}>
+            <video
+              data-private-image
+              src={item.src}
+              controls
+              autoPlay
+              loop
+              style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: '4px', boxShadow: theme.shadows[8] }}
+            />
+            {privacyMode && <ImagePrivacyCover key={item.id} />}
+          </Box>
+        ) : (
+          // 渲染图片查看器
+          <>
                 <Fade in={hoverToolbar} timeout={200}>
-                  <ButtonGroup
-                    orientation="vertical"
-                    variant="contained"
-                    size="small"
-                    color="primary"
+                  <Paper
+                    elevation={0}
                     sx={{
+                      ...toolbarPaperSx,
                       position: 'absolute',
-                      bottom: 16,
-                      right: 16,
+                      bottom: { xs: 8, md: 16 },
+                      right: { xs: 8, md: 16 },
+                      flexDirection: { xs: 'row', md: 'column' },
                       zIndex: 100,
-                      opacity: 0.7,
+                      opacity: { xs: 1, md: 0.7 },
                       '&:hover': { opacity: 1 }
                     }}
                   >
-                    <IconButton aria-label={t('painting.workspace.gallery.zoomIn')} onClick={() => zoomIn()}><ZoomInIcon fontSize="small" /></IconButton>
-                    <IconButton aria-label={t('painting.workspace.gallery.zoomOut')} onClick={() => zoomOut()}><ZoomOutIcon fontSize="small" /></IconButton>
-                    <IconButton aria-label={t('painting.workspace.gallery.resetView')} onClick={() => resetTransform()}><ResetIcon fontSize="small" /></IconButton>
-                  </ButtonGroup>
+                    {!canvasLocked && <>
+                      <IconButton sx={toolbarButtonSx} aria-label={t('painting.workspace.gallery.zoomIn')} onClick={() => zoomRef.current?.zoomIn()}><ZoomInIcon fontSize="small" /></IconButton>
+                      <IconButton sx={toolbarButtonSx} aria-label={t('painting.workspace.gallery.zoomOut')} onClick={() => zoomRef.current?.zoomOut()}><ZoomOutIcon fontSize="small" /></IconButton>
+                      <IconButton sx={toolbarButtonSx} aria-label={t('painting.workspace.gallery.resetView')} onClick={() => zoomRef.current?.resetTransform()}><ResetIcon fontSize="small" /></IconButton>
+                    </>}
+                    {!adjustmentPreview && <Tooltip title={t(canvasLocked ? 'painting.workspace.gallery.unlockCanvas' : 'painting.workspace.gallery.lockCanvas')}>
+                      <IconButton sx={toolbarButtonSx} aria-label={t(canvasLocked ? 'painting.workspace.gallery.unlockCanvas' : 'painting.workspace.gallery.lockCanvas')}
+                        aria-pressed={canvasLocked} onClick={() => {
+                          if (!canvasLocked) setCanvasViewVersion((version) => version + 1);
+                          setCanvasLocked(!canvasLocked);
+                        }}>
+                        {canvasLocked ? <LockIcon fontSize="small" /> : <LockOpenIcon fontSize="small" />}
+                      </IconButton>
+                    </Tooltip>}
+                  </Paper>
                 </Fade>
 
                 <Box sx={{
-                  position: 'absolute', top: isGenerating ? 80 : compactAndroid ? 8 : 16, left: compactAndroid ? 8 : 16, right: compactAndroid ? 8 : 16,
-                  zIndex: 100, display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start',
-                  justifyContent: 'space-between', gap: 1, pointerEvents: 'none',
+                  position: 'absolute', top: isGenerating ? 80 : { xs: 8, md: 16 },
+                  left: { xs: 8, md: 16 }, right: { xs: 8, md: 16 },
+                  zIndex: 100, display: 'flex', flexWrap: { xs: 'nowrap', md: 'wrap' }, alignItems: 'flex-start',
+                  justifyContent: 'space-between', gap: { xs: 0.5, md: 1 }, pointerEvents: 'none',
                 }}>
-                  {onImageTool && (
-                    <Fade in={compactAndroid || hoverToolbar} timeout={200}>
+                  {(onAdjustImage || onImageTool) && (
+                    <Fade in={hoverToolbar || Boolean(adjustmentPreview)} timeout={200}>
                       <Paper elevation={0} sx={toolbarPaperSx}>
-                      <Tooltip title={!upscaleCost
-                        ? t(sourcePixels > 0 ? 'painting.workspace.imageTools.upscaleTooLarge' : 'painting.workspace.imageTools.sourceDimensionsUnavailable')
-                        : upscaleLabel} arrow placement="bottom">
-                        <span>
-                          <IconButton aria-label={upscaleLabel} size="small" sx={toolbarButtonSx}
-                            disabled={isGenerating || imageToolsDisabled || !upscaleCost}
-                            onClick={() => onImageTool('upscale')}>
-                            <OpenInFullIcon />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                      <Tooltip title={t('painting.workspace.imageTools.enhance')} arrow placement="bottom">
-                        <span>
-                          <IconButton aria-label={t('painting.workspace.imageTools.enhance')} size="small" sx={toolbarButtonSx}
-                            disabled={isGenerating || imageToolsDisabled || enhanceDisabled}
-                            onClick={() => onImageTool('enhance')}>
-                            <AutoAwesomeIcon />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
+                        {onImageTool && <>
+                        <Tooltip title={!upscaleCost
+                          ? t(sourcePixels > 0 ? 'painting.workspace.imageTools.upscaleTooLarge' : 'painting.workspace.imageTools.sourceDimensionsUnavailable')
+                          : upscaleLabel} arrow placement="bottom">
+                          <span>
+                            <IconButton aria-label={upscaleLabel} size="small" sx={toolbarButtonSx}
+                              disabled={Boolean(adjustmentPreview) || isGenerating || imageToolsDisabled || !upscaleCost}
+                              onClick={() => onImageTool('upscale')}>
+                              <OpenInFullIcon />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                        <Tooltip title={t('painting.workspace.imageTools.enhance')} arrow placement="bottom">
+                          <span>
+                            <IconButton aria-label={t('painting.workspace.imageTools.enhance')} size="small" sx={toolbarButtonSx}
+                              disabled={Boolean(adjustmentPreview) || isGenerating || imageToolsDisabled || enhanceDisabled}
+                              onClick={() => onImageTool('enhance')}>
+                              <AutoAwesomeIcon />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                        </>}
+                        {onAdjustImage && <Tooltip title={t('painting.workspace.adjustment.title')} arrow placement="bottom">
+                          <IconButton aria-label={t('painting.workspace.adjustment.title')} aria-pressed={Boolean(adjustmentPreview)}
+                            size="small" sx={{ ...toolbarButtonSx, color: adjustmentPreview ? 'primary.main' : toolbarButtonSx.color }}
+                            onClick={() => {
+                              if (!adjustmentPreview) setCanvasLocked(false);
+                              onAdjustImage();
+                            }}><TuneIcon /></IconButton>
+                        </Tooltip>}
                       </Paper>
                     </Fade>
                   )}
-                  <Fade in={compactAndroid || hoverToolbar} timeout={200}>
+                  <Fade in={hoverToolbar} timeout={200}>
                     <Paper elevation={0} sx={{ ...toolbarPaperSx, ml: 'auto' }}>
-                    {toolbarButtons.filter((button) => !compactAndroid || button.action === 'save').map((button) => (
+                    {toolbarButtons.map((button) => (
                       <Tooltip key={button.action} title={button.tooltip} arrow placement="bottom">
                         <span>
                           <IconButton
                             aria-label={button.tooltip}
                             size="small"
-                            onClick={() => handleButtonClick(button.action)}
-                            disabled={button.disabled}
+                            aria-haspopup={button.options ? 'menu' : undefined}
+                            aria-expanded={button.options ? menuButton?.action === button.action : undefined}
+                            onClick={(event) => {
+                              if (button.options) setImageActionsAnchor({ element: event.currentTarget, action: button.action });
+                              else void handleButtonClick(button.action);
+                            }}
+                            disabled={Boolean(adjustmentPreview) || button.disabled}
                             sx={toolbarButtonSx}
                           >
                             {button.icon}
@@ -835,21 +933,29 @@ const ItemDisplay = ({
                         </span>
                       </Tooltip>
                     ))}
-                    {compactAndroid && <IconButton aria-label={t('painting.workspace.gallery.moreActions')}
-                      aria-haspopup="menu" aria-expanded={Boolean(imageActionsAnchor)} sx={toolbarButtonSx}
-                      onClick={(event) => setImageActionsAnchor(event.currentTarget)}><MoreHorizIcon /></IconButton>}
                     </Paper>
                   </Fade>
                 </Box>
-                {compactAndroid && <Menu anchorEl={imageActionsAnchor} open={active && Boolean(imageActionsAnchor)} onClose={() => setImageActionsAnchor(null)}
-                  anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'top', horizontal: 'right' }}>
-                  {toolbarButtons.filter((button) => button.action !== 'save').map((button) => <MenuItem key={button.action} disabled={button.disabled}
-                    sx={{ minHeight: 44, whiteSpace: 'normal' }} onClick={() => { setImageActionsAnchor(null); void handleButtonClick(button.action); }}>
-                    <ListItemIcon>{button.icon}</ListItemIcon><ListItemText>{button.tooltip}</ListItemText>
-                  </MenuItem>)}
-                </Menu>}
 
-                {generatedItemsCount > 1 && (
+                <Menu
+                  anchorEl={imageActionsAnchor?.element}
+                  open={Boolean(menuButton)}
+                  onClose={() => setImageActionsAnchor(null)}
+                  anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                  transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                  slotProps={{ paper: { sx: { maxWidth: 'calc(100vw - 24px)' } }, list: { 'aria-label': menuButton?.tooltip } }}
+                >
+                  {menuButton?.options.map((button) => (
+                    <MenuItem key={button.action} disabled={button.disabled} sx={{ minHeight: 44, whiteSpace: 'normal' }} onClick={() => {
+                      setImageActionsAnchor(null);
+                      void handleButtonClick(button.action);
+                    }}>
+                      <ListItemText>{button.tooltip}</ListItemText>
+                    </MenuItem>
+                  ))}
+                </Menu>
+
+                {generatedItemsCount > 1 && !adjustmentPreview && (
                   <>
                     <Fade in={hoverImage} timeout={200}>
                       <IconButton
@@ -890,17 +996,72 @@ const ItemDisplay = ({
                   </>
                 )}
 
+                {/* 锁定时中断旧缩放动画，解锁时沿用已适应的画布。 */}
+                <TransformWrapper key={canvasViewVersion} ref={zoomRef} initialScale={1} minScale={0.5} maxScale={4}
+                  disabled={canvasLocked} centerOnInit centerZoomedOut={false} limitToBounds={false}
+                  panning={{ excluded: ['image-privacy-cover', 'image-adjustment-canvas'] }} pinch={{ excluded: ['image-privacy-cover', 'image-adjustment-canvas'] }}
+                  doubleClick={{ disabled: true }} velocityAnimation={{ disabled: true }} alignmentAnimation={{ disabled: true }}>
                 <TransformComponent wrapperStyle={{ width: '100%', height: '100%' }} contentStyle={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', height: '100%' }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', height: '100%', position: 'relative' }}>
-                    <Image src={item.src} alt={t('painting.workspace.gallery.generatedImageAlt')} width={item.width || 512} height={item.height || 512}
-                      data-share-image-url={item.isComposited ? item.src : (item.downloadSrc || item.originalSrc || item.src)}
-                      unoptimized={true} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '4px', boxShadow: theme.shadows[8] }} draggable={false} />
+                  <Box
+                    sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', height: '100%', containerType: 'size' }}
+                    onClick={(event) => {
+                      if (event.detail && event.target.closest('[data-preview-image-drag]') && imageDrag?.wasHeld()) return;
+                      // 触屏只由图片点击切换，避免浏览器补发的鼠标进入事件提前反转状态。
+                      if (isMobile && !adjustmentPreview) {
+                        setHoverToolbar((visible) => !visible);
+                        setHoverImage((visible) => !visible);
+                      }
+                    }}
+                  >
+                    {/* 原图与调整预览共用显示尺寸，预览的采样分辨率不参与布局。 */}
+                    <Box draggable={Boolean(directImageDrag?.armedMode)} data-preview-image-drag={directImageDrag ? (directImageDrag.armedMode ? 'ready' : 'idle') : undefined}
+                      onMouseDown={directImageDrag ? (event) => {
+                        // 缩放容器会取消 mousedown 的默认行为。左键先等待长按，短拖由下面的指针事件平移。
+                        if (event.button === 0) event.stopPropagation();
+                      } : undefined}
+                      onPointerDown={directImageDrag ? (event) => {
+                        directImageDrag.onPointerDown(event, directImageDrag.mode);
+                        const state = zoomRef.current?.instance.transformState;
+                        if (event.button === 0 && event.pointerType !== 'touch' && !canvasLocked && state) {
+                          previewPan.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY,
+                            positionX: state.positionX, positionY: state.positionY, scale: state.scale };
+                        }
+                      } : undefined}
+                      onPointerMove={directImageDrag ? (event) => {
+                        const pan = previewPan.current;
+                        if (!pan || pan.pointerId !== event.pointerId || !(event.buttons & 1) || directImageDrag.wasHeld()) return;
+                        const dx = event.clientX - pan.x, dy = event.clientY - pan.y;
+                        if (!event.currentTarget.hasPointerCapture(event.pointerId)) {
+                          if (Math.hypot(dx, dy) <= 7) return;
+                          event.currentTarget.setPointerCapture(event.pointerId);
+                        }
+                        zoomRef.current?.setTransform(pan.positionX + dx, pan.positionY + dy, pan.scale, 0);
+                      } : undefined}
+                      onPointerUp={() => { previewPan.current = null; }}
+                      onPointerCancel={() => { previewPan.current = null; }}
+                      onDragStart={directImageDrag ? (event) => directImageDrag.onDragStart(event, directImageDrag.mode) : undefined}
+                      onDragEnd={directImageDrag?.onDragEnd}
+                      sx={{
+                        position: 'relative', width: `min(${imageWidth}px, 100cqw, ${100 * imageRatio}cqh)`, aspectRatio: String(imageRatio),
+                        borderRadius: '4px', boxShadow: theme.shadows[8], cursor: directImageDrag?.armedMode ? 'grabbing' : undefined, ...imagePrivacySx,
+                        '&:has(> [data-adjustment-preview-ready="true"]) > img': { visibility: 'hidden' },
+                      }}>
+                      <Image data-private-image data-share-image-url={privacyMode ? undefined : (item.isComposited ? item.src : (item.downloadSrc || item.originalSrc || item.src))}
+                        src={item.src} alt={t('painting.workspace.gallery.generatedImageAlt')} width={imageWidth} height={imageHeight}
+                        unoptimized draggable={false} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', borderRadius: 'inherit' }}
+                        onLoad={({ currentTarget }) => {
+                          const ratio = currentTarget.naturalWidth / currentTarget.naturalHeight;
+                          if (ratio !== imageWidth / imageHeight) setMeasuredImage({ src: item.src, ratio });
+                        }} />
+                      {adjustmentPreview}
+                      {privacyMode && <ImagePrivacyCover key={item.id} imageDrag={imageDrag} />}
+                    </Box>
                   </Box>
                 </TransformComponent>
-              </>
-            )}
-          </TransformWrapper>
-      ) : (
+                </TransformWrapper>
+          </>
+        )
+      ) : showInspiration ? (
         <ReferenceImageGallery
           referenceImages={referenceImages}
           loadingReferenceImages={loadingReferenceImages}
@@ -912,6 +1073,11 @@ const ItemDisplay = ({
           onSourceChange={changeInspirationSource}
           hasMore={hasMoreReferences}
           onLoadMore={() => fetchReferenceImages(referenceImages.length)}
+        />
+      ) : (
+        <ImageOutlinedIcon
+          titleAccess={t('painting.workspace.gallery.previewEmpty')}
+          sx={{ fontSize: { xs: 64, md: 96 }, color: 'text.secondary', opacity: 0.55 }}
         />
       )}
       <Dialog open={Boolean(pendingReferenceImage)} onClose={clearReferenceSelection} maxWidth="xs" fullWidth

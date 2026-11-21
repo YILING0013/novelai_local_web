@@ -53,9 +53,10 @@ export async function loadImage(src) {
 /** 用浏览器滤镜与像素算法生成调色副本，不修改原图。
  * @param {HTMLCanvasElement} source 原始图像。
  * @param {object} values 调色参数。
+ * @param {boolean} smoothCurves 是否使用平滑曲线。
  * @returns {HTMLCanvasElement} 调色结果。
  */
-export function adjustedCanvas(source, values) {
+export function adjustedCanvas(source, values, smoothCurves = false) {
   const a = { ...DEFAULT_ADJUSTMENTS, ...values };
   const canvas = canvasOf(source.width, source.height),
     ctx = canvas.getContext("2d");
@@ -107,7 +108,7 @@ export function adjustedCanvas(source, values) {
   ) {
     const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
     dehazePixels(pixels.data, canvas.width, canvas.height, a.dehaze);
-    adjustPixels(pixels.data, canvas.width, canvas.height, a);
+    adjustPixels(pixels.data, canvas.width, canvas.height, a, smoothCurves);
     applyLutPixels(pixels.data, a.lut, a.lutStrength);
     detailPixels(pixels.data, canvas.width, canvas.height, a);
     if (a.bloom) {
@@ -381,29 +382,42 @@ export async function renderDocument(doc, overrides = new Map()) {
   return renderGroup(null);
 }
 
+function* layersAtPoint(doc, point) {
+  for (const layer of [...doc.layers].reverse()) {
+    if (!layer.visible || layer.type === "group" || layer.type === "adjustment") continue;
+    const p = localPoint(point, layer);
+    if (p.x < 0 || p.y < 0 || p.x >= layer.width || p.y >= layer.height) continue;
+    let parent = doc.layers.find((l) => l.id === layer.parentId),
+      hidden = false,
+      locked = layer.locked;
+    while (parent) {
+      if (!parent.visible) hidden = true;
+      if (parent.locked) locked = true;
+      parent = doc.layers.find((l) => l.id === parent.parentId);
+    }
+    if (!hidden) yield { layer, point: p, locked };
+  }
+}
+
+/** 文字工具按旋转后的整块文字框命中，框内的空白也可点击。
+ * @param {object} doc 当前文档。
+ * @param {object} point 画布坐标。
+ * @returns {{layer: object, locked: boolean}|undefined} 最上层的可见文字框及其锁定状态。
+ */
+export function hitTextLayer(doc, point) {
+  for (const { layer, locked } of layersAtPoint(doc, point)) {
+    if (layer.type === "text") return { layer, locked };
+  }
+}
+
 /** 从顶层向下命中可见图层，忽略透明像素和锁定图层。
  * @param {object} doc 文档。
  * @param {object} point 画布坐标。
  * @returns {Promise<object|undefined>} 命中图层。
  */
 export async function hitLayer(doc, point) {
-  for (const layer of [...doc.layers].reverse()) {
-    if (
-      !layer.visible ||
-      layer.locked ||
-      ["group", "adjustment"].includes(layer.type)
-    )
-      continue;
-    let parent = doc.layers.find((l) => l.id === layer.parentId),
-      hidden = false;
-    while (parent) {
-      if (!parent.visible || parent.locked) hidden = true;
-      parent = doc.layers.find((l) => l.id === parent.parentId);
-    }
-    if (hidden) continue;
-    const p = localPoint(point, layer);
-    if (p.x < 0 || p.y < 0 || p.x >= layer.width || p.y >= layer.height)
-      continue;
+  for (const { layer, point: p, locked } of layersAtPoint(doc, point)) {
+    if (locked) continue;
     const surface = await layerSurface(layer, doc.layers.filter((item) => item.type === "adjustment" && item.targetId === layer.id));
     const alpha = surface
       .getContext("2d")

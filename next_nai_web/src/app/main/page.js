@@ -1,4 +1,5 @@
 "use client";
+import { NavigationResizeHandle, useNavigationWidth } from '@/components/ResizableNavigation';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -101,14 +102,9 @@ export default function MainPage() {
   const [accountSnapshot, setAccountSnapshot] = useState(null);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   // 桌面导航分为隐藏、图标、完整三档；移动端仍使用原来的抽屉。
-  const [desktopDrawerMode, setDesktopDrawerMode] = useState('hidden');
-  const openDrawer = isMobile ? mobileDrawerOpen : desktopDrawerMode === 'expanded';
-  const sidebarWidth = isMobile ? drawerWidth
-    : desktopDrawerMode === 'hidden' ? 0
-      : openDrawer ? 208 : closedDrawerWidth;
-  const sidebarHandleWidth = desktopDrawerMode === 'compact' ? 34 : openDrawer ? 28 : 16;
-  const sidebarHandleInset = desktopDrawerMode === 'hidden' ? 0 : sidebarHandleWidth - 14;
-  const sidebarEdgeCurve = `M${sidebarHandleInset + 0.5} 0 C${sidebarHandleInset + 0.5} 24 ${sidebarHandleWidth - 0.5} 32 ${sidebarHandleWidth - 0.5} 56 C${sidebarHandleWidth - 0.5} 80 ${sidebarHandleInset + 0.5} 88 ${sidebarHandleInset + 0.5} 112`;
+  const navigation = useNavigationWidth();
+  const openDrawer = isMobile ? mobileDrawerOpen : navigation.desktopDrawerWidth >= 160;
+  const sidebarWidth = isMobile ? drawerWidth : navigation.desktopDrawerWidth;
   const [openPages, setOpenPages] = useState([]);
   const [workContext, setWorkContext] = useState(null);
   const [activePage, setActivePage] = useState(null);
@@ -321,57 +317,12 @@ export default function MainPage() {
           </Toolbar>
         </AppBar>
 
-          {!isMobile && (
-            <Box sx={{
-              position: 'fixed', left: Math.max(0, sidebarWidth - sidebarHandleInset - 1), top: '66.6667%',
-              transform: 'translateY(-50%)', zIndex: theme.zIndex.drawer + 1,
-              width: sidebarHandleWidth, height: 112,
-              display: 'flex', alignItems: 'center', pointerEvents: 'none',
-              transition: theme.transitions.create('left', {
-                duration: animationEnabled ? theme.transitions.duration.standard : 0,
-                easing: theme.transitions.easing.sharp,
-              }),
-              '& .MuiIconButton-root': {
-                width: openDrawer ? 24 : 16,
-                height: 32, p: 0, borderRadius: 1, color: 'text.secondary', pointerEvents: 'auto',
-                '& .MuiSvgIcon-root': { fontSize: 18 },
-                '&:hover': { color: 'text.primary', bgcolor: 'action.hover' },
-              },
-            }}>
-              {/* 曲线从抽屉边缘平滑伸出，背景与菜单相接。 */}
-              <Box component="svg" viewBox={`0 0 ${sidebarHandleWidth} 112`} aria-hidden="true"
-                sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', overflow: 'visible' }}>
-                <path d={`${sidebarEdgeCurve} Z`} fill={theme.palette.background.drawer} />
-                <path d={sidebarEdgeCurve} fill="none" stroke={theme.palette.divider} vectorEffect="non-scaling-stroke" />
-              </Box>
-              {desktopDrawerMode !== 'hidden' && (
-                <Tooltip title={t(openDrawer ? 'main.showSidebarIcons' : 'main.hideSidebar')} placement="right" arrow disableInteractive>
-                  <IconButton
-                    aria-label={t(openDrawer ? 'main.showSidebarIcons' : 'main.hideSidebar')}
-                    aria-controls="main-navigation"
-                    aria-expanded={openDrawer}
-                    onClick={() => setDesktopDrawerMode(openDrawer ? 'compact' : 'hidden')}
-                  ><ChevronLeftIcon fontSize="small" /></IconButton>
-                </Tooltip>
-              )}
-              {desktopDrawerMode === 'compact' && <Divider orientation="vertical" sx={{ height: 14, position: 'relative' }} />}
-              {desktopDrawerMode !== 'expanded' && (
-                <Tooltip title={t(desktopDrawerMode === 'hidden' ? 'main.showSidebarIcons' : 'main.expandSidebar')} placement="right" arrow disableInteractive>
-                  <IconButton
-                    aria-label={t(desktopDrawerMode === 'hidden' ? 'main.showSidebarIcons' : 'main.expandSidebar')}
-                    aria-controls="main-navigation"
-                    aria-expanded={false}
-                    onClick={() => setDesktopDrawerMode(desktopDrawerMode === 'hidden' ? 'compact' : 'expanded')}
-                  ><ChevronRightIcon fontSize="small" /></IconButton>
-                </Tooltip>
-              )}
-            </Box>
-          )}
+          {!isMobile && <NavigationResizeHandle {...navigation} />}
         <Drawer variant={isMobile ? 'temporary' : 'permanent'} open={isMobile ? openDrawer : true}
           onClose={() => setMobileDrawerOpen(false)} slotProps={{ paper: { id: 'main-navigation', component: 'nav', 'aria-label': t('main.navigation') } }} sx={{
             width: sidebarWidth, flexShrink: 0,
             '& .MuiDrawer-paper': {
-              width: sidebarWidth, visibility: !isMobile && desktopDrawerMode === 'hidden' ? 'hidden' : undefined, boxSizing: 'border-box',
+              width: sidebarWidth, visibility: !isMobile && sidebarWidth === 0 ? 'hidden' : undefined, boxSizing: 'border-box',
               transition: theme.transitions.create(['width', 'background-color'], {
                 easing: theme.transitions.easing.sharp,
                 duration: animationEnabled ? theme.transitions.duration.standard : 0,

@@ -22,8 +22,6 @@ import MobileSettingsList from './MobileSettingsList';
 
 const sections = [
   { id: 'appearance', icon: <PaletteOutlined /> },
-  { id: 'pages', icon: <TuneOutlined /> },
-  { id: 'interface', icon: <SpeedOutlined /> },
   { id: 'gallery', icon: <FolderOpenOutlined /> },
 ];
 
@@ -75,6 +73,8 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
   const [pageColors, setPageColors] = useState(() => Object.fromEntries(pages.map((page) => [
     page.id, localStorage.getItem(getPageColorStorageKey(page.id)) || page.color,
   ])));
+  const [inspirationVisible, setInspirationVisible] = useState(false);
+  useEffect(() => { setInspirationVisible(localStorage.getItem('novelai:inspiration-visible') === 'true'); }, []);
   const [imageSettings, setImageSettings] = useState(() => ({
     outputDirectory: '',
     inspirationSource: 'default',
@@ -362,35 +362,38 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
                 </Box>
               </AccordionDetails>
             </Accordion>
-          </Stack>}
-
-          {section === 'pages' && <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
-            {pages.map((page) => <Paper key={page.id} variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-              <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 2 }}>
-                {page.icon}
-                <Typography variant="subtitle2">{page.labelKey ? t(page.labelKey) : page.title}</Typography>
+            <Accordion disableGutters sx={{ border: 1, borderColor: 'divider', borderRadius: '8px !important', bgcolor: 'background.paper' }}>
+              <AccordionSummary expandIcon={<ExpandMore />}><Typography variant="subtitle2">{t('settings.pageColors')}</Typography></AccordionSummary>
+              <AccordionDetails>
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
+                  {pages.map((page) => <Box key={page.id}>
+                    <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 1 }}>
+                      {page.icon}
+                      <Typography variant="subtitle2">{page.labelKey ? t(page.labelKey) : page.title}</Typography>
+                    </Stack>
+                    <ColorField label={t('settings.primaryColor')} value={pageColors[page.id] || page.color}
+                      onChange={(color) => setPageColors({ ...pageColors, [page.id]: color })} />
+                  </Box>)}
+                </Box>
+              </AccordionDetails>
+            </Accordion>
+            <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 }, borderRadius: 2 }}>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2}>
+                <Box><Typography variant="subtitle1">{t('settings.interfaceAnimation')}</Typography>
+                  <Typography variant="body2" color="text.secondary">{t('settings.animationDescription')}</Typography></Box>
+                <Switch checked={animationEnabled} inputProps={{ 'aria-label': t('settings.interfaceAnimation') }}
+                  onChange={(event) => setThemeDraft({ ...themeSettings, animationEnabled: event.target.checked })} />
               </Stack>
-              <ColorField label={t('settings.primaryColor')} value={pageColors[page.id] || page.color}
-                onChange={(color) => setPageColors({ ...pageColors, [page.id]: color })} />
-            </Paper>)}
-          </Box>}
-
-          {section === 'interface' && <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 }, borderRadius: 2 }}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2}>
-              <Box><Typography variant="subtitle1">{t('settings.interfaceAnimation')}</Typography>
-                <Typography variant="body2" color="text.secondary">{t('settings.animationDescription')}</Typography></Box>
-              <Switch checked={animationEnabled} inputProps={{ 'aria-label': t('settings.interfaceAnimation') }}
-                onChange={(event) => setThemeDraft({ ...themeSettings, animationEnabled: event.target.checked })} />
-            </Stack>
-            <Box sx={{ mt: 4, maxWidth: 520 }}>
-              <Typography id="animation-duration-label" variant="body2">{t('settings.transitionSpeed', { speed: animationSpeed })}</Typography>
-              <Slider value={animationSpeed} min={100} max={500} step={50} disabled={!animationEnabled}
-                aria-labelledby="animation-duration-label" valueLabelDisplay="auto"
-                onChange={(_, value) => setThemeDraft({ ...themeSettings, animationSpeed: value })}
-                marks={[{ value: 100, label: t('common.fast') }, { value: 500, label: t('common.slow') }]}
-                sx={{ width: 'calc(100% - 24px)', mx: 1.5, mt: 2 }} />
-            </Box>
-          </Paper>}
+              <Box sx={{ mt: 2, maxWidth: 520 }}>
+                <Typography id="animation-duration-label" variant="body2">{t('settings.transitionSpeed', { speed: animationSpeed })}</Typography>
+                <Slider value={animationSpeed} min={100} max={500} step={50} disabled={!animationEnabled}
+                  aria-labelledby="animation-duration-label" valueLabelDisplay="auto"
+                  onChange={(_, value) => setThemeDraft({ ...themeSettings, animationSpeed: value })}
+                  marks={[{ value: 100, label: t('common.fast') }, { value: 500, label: t('common.slow') }]}
+                  sx={{ width: 'calc(100% - 24px)', mx: 1.5, mt: 2 }} />
+              </Box>
+            </Paper>
+          </Stack>}
 
           {section === 'gallery' && <Stack spacing={2.5}>
             <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
@@ -402,6 +405,12 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
                 const path = await chooseDirectory();
                 if (path) setImageSettings(current => ({ ...current, outputDirectory: path }));
               }} sx={{ mb: 2 }}>{locale === 'zh-CN' ? '选择本机文件夹' : 'Choose folder on this PC'}</Button>}
+              <FormControlLabel labelPlacement="start" sx={{ m: 0, justifyContent: 'space-between' }}
+                label={t('settings.showInspirationGallery')} control={<Switch checked={inspirationVisible} onChange={(_, checked) => {
+                  localStorage.setItem('novelai:inspiration-visible', String(checked));
+                  window.dispatchEvent(new Event('novelai:inspiration-visibility'));
+                  setInspirationVisible(checked);
+                }} />} />
               <GallerySourceSelect value={imageSettings.inspirationSource}
                 onChange={(value) => setImageSettings({ ...imageSettings, inspirationSource: value })} />
               <Alert severity="info" sx={{ mt: 2 }}>{t('librarySettings.localOnly')}</Alert>

@@ -2,7 +2,7 @@
 
 import { createClientId } from '@/utils/browserCapabilities.mjs';
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   MousePointer2,
   SquareDashed,
@@ -77,6 +77,7 @@ import {
   makeDocument,
   validateDocument,
   descendantIds,
+  layerBounds,
   localPoint,
   BLENDS,
   DEFAULT_ADJUSTMENTS,
@@ -88,6 +89,7 @@ import {
   layerSurface,
   placeLayer,
   hitLayer,
+  hitTextLayer,
   selectionOutline,
 } from "../lib/renderer";
 import { floodMask, alphaBounds, morphology } from "../lib/pixels";
@@ -136,6 +138,7 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
   const [mosaicSize, setMosaicSize] = useState(16);
   const [shapeOptions, setShapeOptions] = useState({ ...DEFAULT_SHAPE_OPTIONS });
   const [textOptions, setTextOptions] = useState({ fontFamily: "Arial", fontSize: 72, fontWeight: "400", lineHeight: 1.2, align: "left" });
+  const [textEditRequest, setTextEditRequest] = useState(null);
   const [shape, setShape] = useState("roundRect"),
     [selectionShape, setSelectionShape] = useState("rect"),
     [selectionMode, setSelectionMode] = useState("replace");
@@ -165,6 +168,7 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
   const [historyLimit, setHistoryLimit] = useState(DEFAULT_HISTORY_LIMIT);
   const [position, setPosition] = useState({ x: 0, y: 0 }),
     [snapped, setSnapped] = useState([]);
+  const [rotationSnapped, setRotationSnapped] = useState(false);
   const [newOptions, setNewOptions] = useState({
     name: english ? "Untitled" : "未命名",
     width: 1600,
@@ -181,6 +185,9 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
   const panelLayout = usePanelLayout(setToast);
   const focusPanel = panelLayout.selectPanel;
   const previousTool = useRef(tool);
+  const editorRef = useRef(null),
+    menuRef = useRef(null),
+    textInputRef = useRef(null);
   const stageRef = useRef(null),
     boardRef = useRef(null),
     canvasRef = useRef(null),
@@ -210,6 +217,39 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
     setModal(null);
     setSearch("");
   }, []);
+
+  useLayoutEffect(() => {
+    if (textEditRequest) textInputRef.current?.focus();
+  }, [textEditRequest]);
+
+  useLayoutEffect(() => {
+    const popup = menuRef.current;
+    if (!menu || !active || !popup) return;
+    if (menu.point) {
+      const area = editorRef.current.getBoundingClientRect();
+      const { width, height } = popup.getBoundingClientRect();
+      const x = menu.point.x - area.left;
+      const y = menu.point.y - area.top;
+      // 优先从指针向右下展开，靠近边缘时向内翻转并限制在编辑器内。
+      popup.style.left = `${Math.max(8, Math.min(area.width - width - 8, x + width + 8 <= area.width ? x : x - width))}px`;
+      popup.style.top = `${Math.max(8, Math.min(area.height - height - 8, y + height + 8 <= area.height ? y : y - height))}px`;
+    }
+    popup.querySelector("button:not(:disabled)")?.focus({ preventScroll: true });
+    const dismissOutside = (event) => {
+      if (!popup.contains(event.target) && !menu.anchor.contains(event.target)) setMenu(null);
+    };
+    const dismiss = () => setMenu(null);
+    document.addEventListener("pointerdown", dismissOutside, true);
+    window.addEventListener("resize", dismiss);
+    return () => {
+      document.removeEventListener("pointerdown", dismissOutside, true);
+      window.removeEventListener("resize", dismiss);
+    };
+  }, [menu, active]);
+
+  useEffect(() => {
+    setMenu(null);
+  }, [active, activeId, modal]);
 
   // 切换工具时激活属性标签；初次载入保留用户保存的活动标签。
   useEffect(() => {
@@ -450,7 +490,7 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
   function undo(redo = false) {
     const activeStroke = gesture.current;
     if (["paint", "text-box"].includes(activeStroke?.kind) ||
-        (activeStroke?.kind === "loading" && (activeStroke.pendingPoints || activeStroke.textBox))) {
+        (activeStroke?.kind === "loading" && activeStroke.pendingPoints)) {
       // 尚未松开的笔画不属于历史；先取消它，避免松开后把已撤销的内容重新提交。
       cancelGesture();
       setToast("已取消当前笔画，历史记录未改变；再次撤销可返回上一步。");
@@ -1031,30 +1071,30 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
       pressure: event.pointerType === "pen" ? event.pressure : 1,
     };
   }
-  /** 选中文字并把输入焦点交给属性面板，单击和双击复用同一编辑入口。
-   * @param {object} target 可编辑文字图层。
-   */
   function editTextLayer(target) {
     setSelected([target.id]);
+    setMaskEditing(false);
     setTool("text");
-    focusPanel("properties");
+    panelLayout.updatePanel("properties", { hidden: false });
     setPanel(true);
-    requestAnimationFrame(() => {
-      document.querySelector('textarea[aria-label={labelText("工具文字内容")}], textarea[aria-label={labelText("文字内容")}]')?.focus();
-    });
+    setFullscreen(false);
+    setTextEditRequest({ id: target.id });
   }
   async function pointerDown(event) {
     if (!doc || busy || event.button === 2 || modal || gesture.current) return;
+    const handle = event.target.dataset.handle;
     if (
       event.target.closest("button,input,select") &&
-      !event.target.dataset.handle
+      !handle
     )
       return;
+    // 捕获指针会阻止浏览器自动失焦，先结束文字输入再取变换前的文档。
+    if (document.activeElement === textInputRef.current) textInputRef.current?.blur();
     event.preventDefault();
     setMenu(null);
     event.currentTarget.setPointerCapture(event.pointerId);
     const point = canvasPoint(event),
-      base = doc;
+      base = docRef.current;
     if (tool === "hand" || space.current || event.button === 1) {
       gesture.current = {
         kind: "pan",
@@ -1070,7 +1110,7 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
       return;
     }
     if (
-      !event.target.dataset.handle &&
+      !handle &&
       (point.x < 0 ||
         point.y < 0 ||
         point.x > doc.width ||
@@ -1097,16 +1137,9 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
       );
       return;
     }
-    if (tool === "text") {
-      const g = { kind: "loading", textBox: true, start: point, before: base, selectedBefore: [...selected] };
-      gesture.current = g;
-      const hit = await hitLayer(base, point);
-      if (gesture.current !== g) return;
-      g.kind = "text-box";
-      g.hit = hit?.type === "text" ? hit : null;
+    if (tool === "text" && !handle) {
+      gesture.current = { kind: "text-box", start: point, before: base, hit: hitTextLayer(base, point) };
       setDraftRect({ x: point.x, y: point.y, width: 0, height: 0 });
-      if (g.lastEvent) pointerMove(g.lastEvent);
-      if (g.ended) pointerUp();
       return;
     }
     if (tool === "wand") {
@@ -1183,10 +1216,9 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
       setSelected([next.id]);
       return;
     }
-    if (tool === "move") {
-      const g = { kind: "loading", start: point, before: base };
+    if (tool === "move" || handle) {
+      const g = { kind: "loading", start: point, before: base, selectedBefore: selected };
       gesture.current = g;
-      const handle = event.target.dataset.handle;
       const hit = handle
         ? layer
         : autoSelect
@@ -1201,10 +1233,8 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
       let ids = descendantIds(base.layers, selected).has(hit.id)
         ? selected
         : [hit.id];
-      if (event.shiftKey && !handle)
-        ids = selected.includes(hit.id)
-          ? selected.filter((id) => id !== hit.id)
-          : [...selected, hit.id];
+      const shiftSelect = event.shiftKey && !handle;
+      if (shiftSelect && !selected.includes(hit.id)) ids = [...selected, hit.id];
       setSelected(ids);
       setMaskEditing(false);
       Object.assign(g, {
@@ -1212,6 +1242,8 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
         ids: descendantIds(base.layers, ids),
         layer: hit,
         handle,
+        // Shift 单击可取消选择；拖动时仍要保留图层，用 Shift 限制移动方向。
+        deselectOnClick: shiftSelect && selected.includes(hit.id),
       });
       if (g.lastEvent) pointerMove(g.lastEvent);
       if (g.ended) pointerUp();
@@ -1473,12 +1505,17 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
     if (g.kind === "move") {
       let dx = p.x - g.start.x,
         dy = p.y - g.start.y;
+      if (!g.moved && Math.hypot(dx, dy) * zoom < 2) return;
+      g.moved = true;
+      let moveAxis;
       if (event.shiftKey) {
-        if (Math.abs(dx) > Math.abs(dy)) dy = 0;
+        moveAxis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+        if (moveAxis === "x") dy = 0;
         else dx = 0;
       }
       const lines = [];
       if (snap && !event.altKey) {
+        const bounds = layerBounds(g.layer);
         const anchorsX = [
           0,
           doc.width / 2,
@@ -1496,25 +1533,27 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
             .map((guide) => guide.position),
         ];
         for (const other of doc.layers.filter(
-          (l) => !g.ids.has(l.id) && l.visible && l.type !== "group",
+          (l) => !g.ids.has(l.id) && l.visible && !["group", "adjustment"].includes(l.type),
         )) {
+          const { x, y, width, height } = layerBounds(other);
           anchorsX.push(
-            other.x,
-            other.x + other.width / 2,
-            other.x + other.width,
+            x,
+            x + width / 2,
+            x + width,
           );
           anchorsY.push(
-            other.y,
-            other.y + other.height / 2,
-            other.y + other.height,
+            y,
+            y + height / 2,
+            y + height,
           );
         }
         for (const [axis, anchors] of [
           ["x", anchorsX],
           ["y", anchorsY],
         ]) {
-          const start = g.layer[axis],
-            size = g.layer[axis === "x" ? "width" : "height"];
+          if (moveAxis && moveAxis !== axis) continue;
+          const start = bounds[axis],
+            size = bounds[axis === "x" ? "width" : "height"];
           let difference = 6 / zoom,
             best = null;
           for (const anchor of anchors)
@@ -1545,13 +1584,18 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
       return;
     }
     if (g.kind === "rotate") {
-      const center = {
-        x: g.layer.x + g.layer.width / 2,
-        y: g.layer.y + g.layer.height / 2,
-      };
-      let rotation =
-        (Math.atan2(p.y - center.y, p.x - center.x) * 180) / Math.PI + 90;
-      if (event.shiftKey) rotation = Math.round(rotation / 15) * 15;
+      const cx = g.layer.x + g.layer.width / 2;
+      const cy = g.layer.y + g.layer.height / 2;
+      if (Math.hypot(p.x - cx, p.y - cy) * zoom < 2) return;
+      // 用指针相对按下位置转过的角度，避免抓住手柄侧边时图层突然跳动。
+      const startAngle = Math.atan2(g.start.y - cy, g.start.x - cx);
+      const angle = Math.atan2(p.y - cy, p.x - cx);
+      let rotation = g.layer.rotation + ((angle - startAngle) * 180) / Math.PI;
+      rotation -= Math.round(rotation / 360) * 360;
+      const nearest = Math.round(rotation / 15) * 15;
+      const matched = event.shiftKey || (snap && !event.altKey && Math.abs(rotation - nearest) <= 4);
+      if (matched) rotation = nearest;
+      setRotationSnapped(matched);
       previewDocument({
         ...g.before,
         layers: g.before.layers.map((l) =>
@@ -1600,12 +1644,13 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
     }
     gesture.current = null;
     setSnapped([]);
+    setRotationSnapped(false);
     if (g.kind === "text-box") {
       setDraftRect(null);
       const dragged = g.rect && g.rect.width >= 3 && g.rect.height >= 3;
       if (!dragged && g.hit) {
         if (g.hit.locked) setToast("此文字图层已锁定，请先解锁。");
-        else editTextLayer(g.hit);
+        else editTextLayer(g.hit.layer);
         return;
       }
       if (g.before.layers.length >= 200) { setToast("单个文档最多支持 200 个图层。"); return; }
@@ -1624,6 +1669,10 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
         },
         "添加参考线",
       );
+      return;
+    }
+    if (g.kind === "move" && !g.moved) {
+      if (g.deselectOnClick) setSelected((ids) => ids.filter((id) => id !== g.layer.id));
       return;
     }
     if (["move", "resize", "rotate", "shape"].includes(g.kind)) {
@@ -1711,6 +1760,7 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
     setDraftRect(null);
     setDraftPoints([]);
     setSnapped([]);
+    setRotationSnapped(false);
   }
   async function copyContent() {
     if (selection) {
@@ -2071,6 +2121,8 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
     if (!active || !doc) return;
     function keydown(event) {
       if (
+        event.defaultPrevented ||
+        menu ||
         !doc ||
         modal ||
         ["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName) ||
@@ -2276,6 +2328,7 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
         const row = (
           <div
             role="option"
+            tabIndex={-1}
             aria-selected={selected.includes(item.id)}
             aria-label={`图层 ${item.name}`}
             key={item.id}
@@ -2309,8 +2362,15 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
             }
             onContextMenu={(event) => {
               event.preventDefault();
+              finishPreview();
               setSelected([item.id]);
-              setMenu("图层");
+              setMaskEditing(false);
+              const anchor = event.currentTarget;
+              const row = anchor.getBoundingClientRect();
+              const point = event.clientX || event.clientY
+                ? { x: event.clientX, y: event.clientY }
+                : { x: row.left, y: row.bottom };
+              setMenu({ name: "图层", anchor, point });
             }}
           >
             <IconButton
@@ -2454,6 +2514,7 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
                   cropRatio={cropRatio} setCropRatio={setCropRatio}
                   color={color} setColor={setColor} backColor={backColor} setBackColor={setBackColor}
                   layer={layer} updateLayer={updateLayer}
+                  textInputRef={textInputRef} previewLayer={previewLayer} finishPreview={finishPreview}
                 />
               ) : null}
               doc={doc}
@@ -2600,9 +2661,53 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
     ) },
   ];
 
+  const menuItems = menu?.point && layer
+    ? [
+        ...(layer.type === "text" ? [["编辑文字", () => editTextLayer(layer), "", layer.locked]] : []),
+        ["重命名图层", () => setModal({ type: "rename", id: layer.id, name: layer.name })],
+        null,
+        ...menus[menu.name].filter((item) => item?.[0] !== "新建空白图层" && item?.[0] !== "合并可见图层"),
+      ]
+    : menus[menu?.name];
+  const menuPopup = menuItems && (
+    <div
+      className={`menu-dropdown ${menu.point ? "layer-context-menu" : ""}`}
+      ref={menuRef}
+      role="menu"
+      aria-label={labelText(menu.point ? "图层操作" : menu.name)}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setMenu(null);
+          menu.anchor.focus({ preventScroll: true });
+        } else if (event.key === "Tab") {
+          setMenu(null);
+        } else if (["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
+          event.preventDefault();
+          const items = [...event.currentTarget.querySelectorAll("button:not(:disabled)")];
+          const index = items.indexOf(document.activeElement);
+          const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1
+            : (index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+          items[next]?.focus();
+        }
+      }}
+    >
+      {menuItems.map((item, index) => item ? (
+        <button type="button" role="menuitem" tabIndex={-1} key={item[0]} disabled={item[3]} onClick={() => execute(item[1])}>
+          <span>{labelText(item[0])}</span>
+          {item[2] && <kbd>{item[2]}</kbd>}
+        </button>
+      ) : <hr key={index} />)}
+    </div>
+  );
+  const showTransform = layer?.visible && !layer.locked &&
+    (tool === "move" && !["group", "adjustment"].includes(layer.type) || tool === "text" && layer.type === "text");
+  const rotating = gesture.current?.kind === "rotate";
+
   return (
     <main
       className={`editor ${fullscreen ? "focus-mode" : ""}`}
+      ref={editorRef}
       onDragOver={(event) => {
         if (event.dataTransfer.types.includes("Files")) event.preventDefault();
       }}
@@ -2631,33 +2736,15 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
             <div className="menu-container" key={name}>
               <button
                 className={
-                  menu === name ? "menu-trigger opened" : "menu-trigger"
+                  !menu?.point && menu?.name === name ? "menu-trigger opened" : "menu-trigger"
                 }
                 aria-haspopup="menu"
-                aria-expanded={menu === name}
-                onClick={() => setMenu(menu === name ? null : name)}
+                aria-expanded={!menu?.point && menu?.name === name}
+                onClick={(event) => setMenu(!menu?.point && menu?.name === name ? null : { name, anchor: event.currentTarget })}
               >
                 {name === "面板" && english ? "Panels" : labelText(name)}
               </button>
-              {menu === name && (
-                <div className="menu-dropdown" role="menu">
-                  {menus[name].map((item, index) =>
-                    item ? (
-                      <button
-                        role="menuitem"
-                        key={item[0]}
-                        disabled={item[3]}
-                        onClick={() => execute(item[1])}
-                      >
-                        <span>{labelText(item[0])}</span>
-                        <kbd>{item[2]}</kbd>
-                      </button>
-                    ) : (
-                      <hr key={index} />
-                    ),
-                  )}
-                </div>
-              )}
+              {!menu?.point && menu?.name === name && menuPopup}
             </div>
           ))}
         </nav>
@@ -2723,17 +2810,19 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
             <select aria-label={labelText("选择模式")} value="layer" onChange={() => {}}>
               <option value="layer">{labelText("图层")}</option>
             </select>
-            <label className="checkbox-line">
-              <input
-                type="checkbox"
-                checked={snap}
-                onChange={(e) => setSnap(e.target.checked)}
-              />
-              {labelText("吸附")}
-            </label>
-            <span className="option-note">{labelText("拖动边角缩放，顶部圆点旋转")}</span>
           </>
         )}
+        {(tool === "move" || tool === "text") && (
+          <label className="checkbox-line" title={labelText("旋转接近 15° 的倍数时自动吸附。Alt 临时关闭，Shift 固定每 15° 旋转。")}>
+            <input
+              type="checkbox"
+              checked={snap}
+              onChange={(e) => setSnap(e.target.checked)}
+            />
+            {labelText("吸附")}
+          </label>
+        )}
+        {tool === "move" && <span className="option-note">{labelText("拖动边角缩放，顶部圆点旋转")}</span>}
         {["brush", "eraser", "clone", "blur", "mosaic"].includes(tool) && (
           <>
             <NumberField
@@ -3018,10 +3107,11 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
             onPointerUp={pointerUp}
             onPointerCancel={cancelGesture}
             onDoubleClick={(event) => {
-              if (!["move", "text"].includes(tool)) return;
+              if (tool !== "move" || busy || modal || event.target.closest("button,[data-ruler]")) return;
               const point = canvasPoint(event);
-              hitLayer(docRef.current, point).then((hit) => {
-                if (hit?.type === "text" && !hit.locked) editTextLayer(hit);
+              const current = docRef.current;
+              hitLayer(current, point).then((hit) => {
+                if (docRef.current === current && hit?.type === "text") editTextLayer(hit);
               }).catch((error) => setToast(error.message));
             }}
             onContextMenu={(event) => event.preventDefault()}
@@ -3182,10 +3272,7 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
                   )}
                 </svg>
               )}
-              {tool === "move" &&
-                layer &&
-                !layer.locked &&
-                !["group", "adjustment"].includes(layer.type) && (
+              {showTransform && (
                   <div
                     className="transform-box"
                     style={{
@@ -3196,8 +3283,13 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
                       transform: `rotate(${layer.rotation}deg)`,
                     }}
                   >
-                    <span className="size-label">
-                      {Math.round(layer.width)} × {Math.round(layer.height)}
+                    <span
+                      className={`size-label${rotating && rotationSnapped ? " rotation-snapped" : ""}`}
+                      style={rotating ? { rotate: `${-layer.rotation}deg` } : undefined}
+                    >
+                      {rotating
+                        ? `${Math.round(layer.rotation * 10) / 10}°`
+                        : `${Math.round(layer.width)} × ${Math.round(layer.height)}`}
                     </span>
                     {["nw", "ne", "sw", "se"].map((handle) => (
                       <button
@@ -3321,10 +3413,8 @@ export default function Editor({ active = true, locale = "zh-CN", importRequest 
         </section>
         </WorkspacePanels>
       </div>
-      {menu && (
-        <div className="menu-dismiss" onPointerDown={() => setMenu(null)} />
-      )}
-      {toast && (
+      {menu?.point && menuPopup}
+      {toast && !modal && (
         <div className="toast" role="status">
           <Check size={15} />
           {toast}

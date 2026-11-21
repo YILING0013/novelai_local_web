@@ -1,5 +1,13 @@
-// AIPaintingPage.js
 "use client";
+
+import { MODEL_OPTIONS } from './utils/generationOptions';
+import { generateFileName, getImageSettings } from './tools/ImageTools/ImageSaveUtils';
+import usePreviewImageDrag from './usePreviewImageDrag';
+import { hasFileDrag, readDroppedFiles } from './tools/ImageTools/previewImageDragData.mjs';
+import { defaultImagePreviewSettings, exportPreviewImage, getPrivacyShortcut, imagePreviewSettingsKey, readImagePreviewSettings } from './tools/ImageTools/previewImageExport';
+import { readQuickImagePresets } from './ImageProcessing/quickImageAdjustments';
+import QuickImageAdjustment from './ImageProcessing/QuickImageAdjustment';
+// AIPaintingPage.js
 
 import AnlasIcon from './AnlasIcon';
 
@@ -316,6 +324,34 @@ const ImageProcessingWorkspace = dynamic(() => import('./ImageProcessing/ImagePr
 
 const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange, renderModeTools, desktopEditor, androidLayout = false, sharedImage, onSharedImageHandled }) => {
   const { t, formatNumber, formatDate, locale } = useI18n();
+  const [savedPreviewSettings, setPreviewSettings] = useState(null);
+  const previewSettings = savedPreviewSettings ?? defaultImagePreviewSettings;
+
+  useEffect(() => {
+    setPreviewSettings(readImagePreviewSettings());
+  }, []);
+
+  useEffect(() => {
+    if (!savedPreviewSettings) return;
+    try {
+      localStorage.setItem(imagePreviewSettingsKey, JSON.stringify(savedPreviewSettings));
+    } catch (error) {
+      console.warn('无法保存图像预览设置:', error);
+    }
+  }, [savedPreviewSettings]);
+
+  useEffect(() => {
+    if (!active || !previewSettings.privacyShortcut) return;
+    const togglePrivacy = (event) => {
+      if (event.defaultPrevented || event.repeat || event.isComposing
+        || event.target?.closest?.('input, textarea, select, [contenteditable="true"], [role="textbox"]')) return;
+      if (getPrivacyShortcut(event) !== previewSettings.privacyShortcut) return;
+      event.preventDefault();
+      setPreviewSettings((saved) => ({ ...(saved ?? defaultImagePreviewSettings), privacyMode: !(saved?.privacyMode) }));
+    };
+    document.addEventListener('keydown', togglePrivacy);
+    return () => document.removeEventListener('keydown', togglePrivacy);
+  }, [active, previewSettings.privacyShortcut]);
   const comicText = locale === 'en-US' ? {
     title: 'Comic maker', edit: 'Panel parameters', save: 'Save task', close: 'Back to canvas',
     generate: 'Generate panel', select: 'Select a panel', saved: 'Panel task saved',
@@ -383,6 +419,36 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
   // 状态管理
   const hasInitializedRef = useRef(false);
   const getAllParametersRef = useRef(null);
+  const { customMetadata, scrambledMetadata } = previewSettings;
+  const getItemPreviewFile = useMemo(() => {
+    const filesByItem = new WeakMap();
+    return (mode, asPng, item) => {
+      let exportFiles = filesByItem.get(item);
+      if (!exportFiles) {
+        exportFiles = new Map();
+        filesByItem.set(item, exportFiles);
+      }
+      const key = mode === 'original' && asPng ? 'original-png' : mode;
+      if (!exportFiles.has(key)) {
+        const source = item.cachedBlob || fetchUrlAsBlob(item.downloadSrc || item.originalSrc || item.src);
+        const file = Promise.resolve(source)
+          .then((blob) => exportPreviewImage(blob, mode, { customMetadata, scrambledMetadata }, asPng))
+          .then((blob) => {
+            const extension = blob.type === 'image/jpeg' ? 'jpg' : blob.type.startsWith('image/') ? blob.type.slice(6) : 'png';
+            const name = generateFileName(item, getImageSettings(), { extension, fallbackName: item.seed ?? item.id });
+            return new File([blob], name, { type: blob.type });
+          })
+          .catch((error) => {
+            exportFiles.delete(key);
+            throw error;
+          });
+        exportFiles.set(key, file);
+      }
+      return exportFiles.get(key);
+    };
+  }, [customMetadata, scrambledMetadata]);
+  const getPreviewFile = useCallback((mode, asPng) => getItemPreviewFile(mode, asPng, currentItem), [getItemPreviewFile, currentItem]);
+
   const parameterEditorRef = useRef(null);
   const comicWorkspaceRef = useRef(null);
   const comicTargetRef = useRef(null);
@@ -399,6 +465,20 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
   const [parameterEditorState, setParameterEditorState] = useState(null);
   const [parameterEditorKey, setParameterEditorKey] = useState(0);
   const [leftPanelMode, setLeftPanelMode] = useState('generation');
+  const [adjustmentItemId, setAdjustmentItemId] = useState(null);
+  const [adjustmentPanel, setAdjustmentPanel] = useState(null);
+  const [quickImagePresets, setQuickImagePresets] = useState([]);
+  const adjustmentActive = adjustmentItemId !== null && currentItem?.id === adjustmentItemId && leftPanelMode === 'generation';
+  useEffect(() => {
+    if (adjustmentItemId !== null && !adjustmentActive) setAdjustmentItemId(null);
+  }, [adjustmentActive, adjustmentItemId]);
+  useEffect(() => {
+    let active = true;
+    void readQuickImagePresets().then((presets) => { if (active) setQuickImagePresets(presets); })
+      .catch((error) => console.warn('读取单图处理预设失败:', error));
+    return () => { active = false; };
+  }, []);
+
   const versionContext = workContext;
   const setVersionContext = onWorkContextChange;
   const [versionLoading, setVersionLoading] = useState(false);
@@ -636,6 +716,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
   }, [vibeImages, vibeCacheHydrated, leftPanelMode]);
   const [setDesktopGenerateButtonContainer, desktopGenerateButtonWidth] = useObservedWidth();
   const [setMobileGenerateButtonContainer, mobileGenerateButtonWidth] = useObservedWidth();
+  const [comicToolbarContainer, setComicToolbarContainer] = useState(null);
   const [parameterToolbarContainer, setParameterToolbarContainer] = useState(null);
   const [drawerToolbarContainer, setDrawerToolbarContainer] = useState(null);
 
@@ -1323,7 +1404,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
     if (!Array.from(event.dataTransfer?.types || []).includes('Files') || event.target?.closest?.('[data-drop-zone]')) return;
     event.preventDefault();
     event.stopPropagation();
-    const imageFile = Array.from(event.dataTransfer.files).find((file) => file.type?.startsWith('image/'));
+    const imageFile = readDroppedFiles(event.dataTransfer).find((file) => file.type?.startsWith('image/'));
     if (imageFile) void openImageImport(imageFile);
   }, [openImageImport]);
 
@@ -1553,11 +1634,14 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
 
   useEffect(() => {
     const onSaveFailure = () => showNotification(t('librarySettings.saveFailed'), 'warning', false);
+    const onWatermarkFailure = () => showNotification(t('painting.workspace.adjustment.autoWatermarkFailed'), 'warning');
     const onVersionFailure = () => showNotification(t('gallery.versionWorkspace.saveFailed'), 'warning', false);
     window.addEventListener('novelai:image-save-failed', onSaveFailure);
+    window.addEventListener('novelai:auto-watermark-failed', onWatermarkFailure);
     window.addEventListener('novelai:version-save-failed', onVersionFailure);
     return () => {
       window.removeEventListener('novelai:image-save-failed', onSaveFailure);
+      window.removeEventListener('novelai:auto-watermark-failed', onWatermarkFailure);
       window.removeEventListener('novelai:version-save-failed', onVersionFailure);
     };
   }, [showNotification, t]);
@@ -2221,6 +2305,12 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
           return false;
         }
 
+      case 'use-as-reference': {
+        const blob = currentItem.cachedBlob || await fetchUrlAsBlob(currentItem.src);
+        await handleUseDroppedImage('reference', new File([blob], String(currentItem.id), { type: blob.type }));
+        return true;
+      }
+
       case 'use-as-vibe':
         try {
           const response = await fetch(currentItem.src);
@@ -2438,12 +2528,22 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
     setVibeImages(nextImages);
   }, [parameterEditorKey]);
 
+  const previewCanDrag = Boolean(active && leftPanelMode === 'generation' && currentItem && currentItem.type !== 'video'
+    && !adjustmentActive);
+  const previewDrag = usePreviewImageDrag({
+    enabled: previewCanDrag, getFile: getPreviewFile, privacyMode: previewSettings.privacyMode,
+    onError: (error) => {
+      const key = ['invalidCustomMetadata', 'imageTooLarge'].includes(error.message) ? error.message : 'copyExportFailed';
+      showNotification(t(`painting.workspace.gallery.${key}`), 'error');
+    },
+  });
+
   const parameterEditor = (
     <>
       {/* 参数面板 - 传递expandedPanels和onExpandedPanelsChange */}
       <Box sx={{ flexShrink: 0, minWidth: 0, pb: 1 }}>
         <ParameterPanel
-          parameterToolbarContainer={isMobile ? drawerToolbarContainer : parameterToolbarContainer}
+          parameterToolbarContainer={leftPanelMode === 'comic' ? comicToolbarContainer : (isMobile ? drawerToolbarContainer : parameterToolbarContainer)}
           renderPromptPanel={(characterControlSummary, characterControlContent) => (
             <PromptPanel
                   positivePrompt={positivePrompt}
@@ -2796,12 +2896,15 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
                   manualEditor={!compactAndroid && leftPanelMode === 'comic' ? parameterEditor : null}
                   onEditTask={() => setComicEditorOpen(true)}
                   onPanelBoundsChange={setComicPanelBounds}
+                  onParameterToolbarChange={setComicToolbarContainer}
+                  directorImageModels={MODEL_OPTIONS.filter(({ value }) => isNovelAIV5Model(value))}
+                  generatingSequence={comicGenerationBusy && Boolean(comicFlightRef.current?.count > 1)}
+                  onStopSequence={() => { if (comicFlightRef.current) comicFlightRef.current.cancelled = true; }}
                   onGenerateAll={() => handleGenerate(true)}
-                  getBatchGenerationCost={getComicBatchCost}
                   onSaveTask={getPaintingSnapshot}
                   onGenerate={comicGenerationAction.action}
                   generationAction={comicGenerationAction}
-                  onAIBusyChange={(value) => { comicAIFlightRef.current = value; setComicAIBusy(value); }}
+                  onDirectorBusyChange={(value) => { comicAIFlightRef.current = value; setComicAIBusy(value); }}
                   isGenerating={comicGenerationBusy || isGenerating}
                 />
               </Box>
@@ -2843,7 +2946,28 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
                   generatedItemsCount={generatedItems.length}
                   onApplyImageParameters={handleApplyImageParameters}
                   onError={reportWorkspaceFailure}
-                  disableVibeAction={isV5Model}
+                  hideVibeAction={!isNovelAIVibeModel(generationParams.model)}
+                  disableVibeAction={Boolean(generationParams.director_reference_images_cached?.length)}
+                  showReferenceAction={isNovelAIDirectorReferenceModel(generationParams.model)}
+                  disableReferenceAction={vibeImages.some((image) => !image.isTemporarilyDisabled)}
+                  privacyMode={previewSettings.privacyMode}
+                  imageDrag={previewCanDrag ? { ...previewDrag, mode: previewSettings.copyMode } : null}
+                  onAdjustImage={() => {
+                    setMobileDrawerOpen(false);
+                    setAdjustmentItemId((id) => id === currentItem?.id ? null : currentItem?.id ?? null);
+                  }}
+                  adjustmentPreview={adjustmentActive ? <QuickImageAdjustment key={currentItem.id}
+                    item={currentItem} panel={adjustmentPanel} privacyMode={previewSettings.privacyMode}
+                    presets={quickImagePresets} onPresetsChange={setQuickImagePresets}
+                    onClose={() => setAdjustmentItemId(null)} onApply={(blob, width, height) => {
+                      const src = createObjectUrlFromBlob(blob);
+                      appendGeneratedItem({
+                        type: 'image', src, originalSrc: src, downloadSrc: src, cachedBlob: blob, width, height,
+                        objectUrlToRevoke: src, seed: currentItem.seed, prompt: currentItem.prompt,
+                        model: currentItem.model, galleryParameters: currentItem.galleryParameters, isComposited: true,
+                      });
+                      setAdjustmentItemId(null);
+                    }} /> : null}
                   onImageTool={handleImageTool}
                   imageToolsDisabled={imageToolBusy || batchStatus.active || inpaintPreviewBatch.active}
                 />
@@ -2866,6 +2990,11 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
                   currentItemId={currentItem?.id}
                   onSelectItem={handleSelectPreview}
                   onDeleteItem={handleDeletePreview}
+                  previewSettings={previewSettings}
+                  quickImagePresets={quickImagePresets}
+                  getPreviewFile={getPreviewFile}
+                  getItemPreviewFile={getItemPreviewFile}
+                  onPreviewSettingsChange={(patch) => setPreviewSettings((saved) => ({ ...(saved ?? defaultImagePreviewSettings), ...patch }))}
                   onSeedCopyAndApply={handleSeedCopyAndApply}
                   onUseItemMetadata={handleUseItemMetadata}
                 />
@@ -3002,7 +3131,8 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
                 },
               }}
             >
-              {parameterEditor}
+              {adjustmentActive && <Box ref={setAdjustmentPanel} />}
+              <Box sx={{ display: adjustmentActive ? 'none' : 'contents' }}>{parameterEditor}</Box>
             </Box>
 
             {/* 桌面模式下的生成按钮和验证组件区域 */}
@@ -3210,7 +3340,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
         {isMobile && !isCanvasWorkspace && (
           <SwipeableDrawer
             anchor="bottom"
-            open={active && mobileDrawerOpen}
+            open={active && mobileDrawerOpen && !adjustmentActive}
             onClose={() => setMobileDrawerOpen(false)}
             onOpen={() => setMobileDrawerOpen(true)}
             disableSwipeToOpen={false}
@@ -3311,6 +3441,11 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
             <Box data-mobile-parameter-footer ref={setDrawerToolbarContainer} sx={{ px: 2, pt: 1, flexShrink: 0, bgcolor: 'background.paper', borderTop: 1, borderColor: 'divider' }} />
           </SwipeableDrawer>
         )}
+        {isMobile && adjustmentActive && <Box ref={setAdjustmentPanel} sx={{
+          height: '41dvh', overflowY: 'auto', flexShrink: 0, px: 0.5,
+          bgcolor: 'background.paper', borderTop: 1, borderColor: 'divider',
+        }} />}
+
 
         {/* 移动端下的固定生成按钮 */}
         {isMobile && !isCanvasWorkspace && (

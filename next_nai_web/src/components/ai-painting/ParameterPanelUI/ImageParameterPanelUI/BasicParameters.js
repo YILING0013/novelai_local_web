@@ -51,7 +51,7 @@ const BasicParameters = ({
   handleClearSeed,
   handleSmeaChange,
   handleDynChange,
-  handleResetParamsConfirm,
+  handleResetParamsConfirm, onExportParameters,
   parameterToolbarContainer = null,
   isV5Model = false,
 }) => {
@@ -151,7 +151,7 @@ const BasicParameters = ({
     handleClearSeed={handleClearSeed}
     handleSmeaChange={handleSmeaChange}
     handleDynChange={handleDynChange}
-    handleResetParamsConfirm={handleResetParamsConfirm}
+    handleResetParamsConfirm={handleResetParamsConfirm} onExportParameters={onExportParameters}
   />;
   return (
     <Box sx={{

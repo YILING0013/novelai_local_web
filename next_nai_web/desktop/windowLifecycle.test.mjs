@@ -77,6 +77,7 @@ function mount(file, { local = false } = {}) {
     return exports;
   }
   modules['@/desktop/navigation'] = load('../src/desktop/navigation.js');
+  modules['@/components/ResizableNavigation'] = load('../src/components/ResizableNavigation.js');
   const loaded = load(file);
   let Component = loaded.default;
   if (!Component) {

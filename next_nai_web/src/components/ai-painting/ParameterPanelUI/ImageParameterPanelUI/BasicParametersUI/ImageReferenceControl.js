@@ -1,5 +1,8 @@
 "use client";
 
+import { hasFileDrag, readDroppedFiles } from '../../../tools/ImageTools/previewImageDragData.mjs';
+import { imageDropHighlight } from '../imageDropHighlight';
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Box,
@@ -51,6 +54,7 @@ const ImageReferenceControl = ({ images, setImages, onReferenceImageChange, disa
   const { t } = useI18n();
   // 多图状态: { id, data: base64, displayUrl, type, strength, fidelity, disabled, cache_secret_key }
   const [masterKey, setMasterKey] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
   const refImageInputRef = useRef(null);
 
   // 初始化 masterKey（页面加载时生成一次）
@@ -139,14 +143,16 @@ const ImageReferenceControl = ({ images, setImages, onReferenceImageChange, disa
   }, [images, disabled]);
 
   // 添加图片处理
-  const handleFileSelect = (e) => {
+  const addReferenceImage = (file) => {
+    if (disabled || !file) return;
+    if (!file.type.startsWith('image/')) {
+      alert(t('painting.workspace.errors.imageFileRequired'));
+      return;
+    }
     if (images.length >= 12) {
       void (window.novelaiDialog?.alert ?? window.alert)(t('painting.workspace.parameters.referenceImageLimit', { max: 12 }));
       return;
     }
-
-    const file = e.target.files[0];
-    if (!file) return;
 
     if (file.size > 6 * 1024 * 1024) {
       void (window.novelaiDialog?.alert ?? window.alert)(t('painting.workspace.parameters.referenceImageSizeLimit', { size: '6 MB' }));
@@ -204,7 +210,7 @@ const ImageReferenceControl = ({ images, setImages, onReferenceImageChange, disa
         const dataUrl = canvas.toDataURL('image/png');
         const base64 = dataUrl.split(',')[1];
 
-        setImages(prev => [
+        setImages(prev => prev.length >= 12 ? prev : [
           ...prev,
           {
             id: Date.now() + Math.random(),
@@ -219,18 +225,20 @@ const ImageReferenceControl = ({ images, setImages, onReferenceImageChange, disa
             cache_secret_key: null
           }
         ]);
+        onExpandedChange(null, true);
       };
+      img.onerror = () => alert(t('painting.workspace.errors.imageProcessingFailed'));
       img.src = event.target.result;
     };
+    reader.onerror = () => alert(t('painting.workspace.errors.imageProcessingFailed'));
     reader.readAsDataURL(file);
-    if (e.target) e.target.value = null;
   };
 
   const handledImageImport = useRef(null);
   useEffect(() => {
     if (!imageImportRequest || imageImportRequest.target !== 'reference' || handledImageImport.current === imageImportRequest.id) return;
     handledImageImport.current = imageImportRequest.id;
-    handleFileSelect({ target: { files: [imageImportRequest.file] } });
+    addReferenceImage(imageImportRequest.file);
     onImageImportHandled();
   });
 
@@ -248,6 +256,23 @@ const ImageReferenceControl = ({ images, setImages, onReferenceImageChange, disa
 
   return (
     <Accordion
+      data-drop-zone="reference"
+      onDragOver={(event) => {
+        if (!hasFileDrag(event.dataTransfer)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = disabled ? 'none' : 'copy';
+      }}
+      onDragEnter={(event) => {
+        if (!disabled && hasFileDrag(event.dataTransfer)) setIsDragging(true);
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setIsDragging(false);
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        setIsDragging(false);
+        addReferenceImage(readDroppedFiles(event.dataTransfer)[0]);
+      }}
       expanded={expanded}
       onChange={onExpandedChange}
       disableGutters
@@ -271,6 +296,7 @@ const ImageReferenceControl = ({ images, setImages, onReferenceImageChange, disa
           minHeight: 44,
           px: 0,
           py: 0,
+          ...(isDragging && !disabled && imageDropHighlight),
           '&.Mui-expanded': { minHeight: 44 },
           '& .MuiAccordionSummary-content, & .MuiAccordionSummary-content.Mui-expanded': { margin: 0 },
         }}
@@ -405,7 +431,10 @@ const ImageReferenceControl = ({ images, setImages, onReferenceImageChange, disa
         <input
           type="file"
           ref={refImageInputRef}
-          onChange={handleFileSelect}
+          onChange={(event) => {
+            addReferenceImage(event.currentTarget.files[0]);
+            event.currentTarget.value = '';
+          }}
           accept="image/png, image/jpeg, image/webp"
           style={{ display: 'none' }}
           disabled={disabled}

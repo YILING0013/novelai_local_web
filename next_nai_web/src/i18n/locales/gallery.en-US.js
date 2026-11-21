@@ -1,5 +1,29 @@
 const gallery = {
   "gallery": {
+    "metadataEdit": {
+      "add": "Add",
+      "addField": "Add field",
+      "addItem": "Add array item",
+      "select": "Select fields",
+      "selectField": "Select {field}",
+      "cancelSelection": "Cancel selection",
+      "removeSelected": "Delete selected",
+      "selectedCount": "Selected: {count}",
+      "fieldCount": "Fields: {count}",
+      "name": "Field name",
+      "type": "Field type",
+      "duplicate": "This field already exists.",
+      "invalidName": "Use 1–79 ASCII characters with single spaces.",
+      "types": {
+        "string": "Text",
+        "number": "Number",
+        "boolean": "Boolean",
+        "object": "Object",
+        "array": "Array",
+        "null": "Null"
+      }
+    },
+
     "switchSource": "Switch gallery: {title}",
     "versionWorkspace": {
       "current": "{title} · Continue from v{number}",

@@ -32,7 +32,7 @@ const infoIconSx = {
  * @param {object} props 当前参数、参数修改回调和恢复默认值回调。
  * @returns {React.ReactElement} 其它设置浮层内默认收起的额外配置区域。
  */
-export default function ExtraConfiguration({ params, handleParamChange, handleSmeaChange, handleDynChange, handleResetParamsConfirm }) {
+export default function ExtraConfiguration({ params, handleParamChange, handleSmeaChange, handleDynChange, handleResetParamsConfirm, onExportParameters }) {
   const { t } = useI18n();
   const isSmeaUnsupported = params.isV4Model;
   // V4 及以上模型官方不支持 SMEA / SMEA DYN，UI 必须显示为关闭且不可交互。
@@ -301,6 +301,9 @@ export default function ExtraConfiguration({ params, handleParamChange, handleSm
           </FormGroup>
         </Box>
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
+          <Button variant="outlined" size="small" onClick={onExportParameters}>
+            {t('painting.workspace.parameters.debug.export')}
+          </Button>
           <Button
             variant="outlined"
             color="secondary"

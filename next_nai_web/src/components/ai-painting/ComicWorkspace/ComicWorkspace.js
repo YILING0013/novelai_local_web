@@ -1,16 +1,15 @@
 "use client";
 
-import { createClientId } from '../../../utils/browserCapabilities.mjs';
+import { createClientId } from '@/utils/browserCapabilities.mjs';
 
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Alert, Box, Button, ButtonBase, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Drawer, IconButton, Menu, MenuItem, Paper, Slider, Snackbar, Tab, Tabs, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography, useMediaQuery, useTheme } from '@mui/material';
 import { Add, ArrowBack, ArrowDownward, ArrowForward, ArrowUpward, BrushOutlined, Check, Close, ContentCopy, ContentCut, CropFree, DashboardOutlined, DeleteOutline, Download, Flip, ImageOutlined, LayersOutlined, Menu as MenuIcon, MouseOutlined, PanToolOutlined, PlayArrow, Redo, SaveOutlined, SettingsOutlined, TextFields, Undo, UploadFile, ZoomIn, ChatBubbleOutline, AutoAwesome } from '@mui/icons-material';
 import { Eraser } from 'lucide-react';
-import { saveAs } from 'file-saver';
 import { useI18n } from '@/i18n/I18nProvider';
-import { fetchUrlAsBlob } from '@/utils/mediaAssets';
-import apiClient from '@/utils/ApiClient';
-import { COMIC_LAYOUTS, COMIC_TEMPLATES, comicContentBounds, applyTemplate, convertPanelType, createComicPage, createComicTemplate, createRectanglePanel, fitPanelImage, getComicLayoutSize, movePanel, movePanelEdge, movePanelVertex, panelBounds, resizeComicPage, rotatePanel, sectionBounds, splitPanel, transformPanelImage } from './comicDocument.mjs';
+import { downloadBlobToFile, fetchUrlAsBlob } from '@/utils/mediaAssets';
+import comicClient from '@/utils/ApiClient';
+import { COMIC_LAYOUTS, COMIC_TEMPLATES, applyTemplate, comicContentBounds, convertPanelType, createComicPage, createComicTemplate, createRectanglePanel, fitPanelImage, getComicLayoutSize, isComicPanelInterior, movePanel, movePanelEdge, movePanelVertex, panelBounds, placeComicPanelBadge, resizeComicPage, rotatePanel, sectionBounds, splitPanelAlongPath, transformPanelImage } from './comicDocument.mjs';
 import { comicCutIntersections, snapComicCutPoint, snapPanelAngle, snapPanelDrag } from './comicSnapping.mjs';
 import { deleteComicPage, deleteComicTemplate, exportComicZip, importComicProject, loadComicLibrary, saveComicCanvasDefaults, saveComicDraft, saveComicPage, saveComicTemplate } from './comicStorage.mjs';
 import { exportComicProject, readComicProject } from './comicProject.mjs';
@@ -20,7 +19,7 @@ import PageArt from './ComicPageArt';
 import ComicElementDialog from './ComicElementDialog';
 import ComicLayerPanel from './ComicLayerPanel';
 import ComicAIStudio from './ComicAIStudio';
-import ComicLLMSettings from './ComicLLMSettings';
+import { ComicProviderControl } from './ComicLLMSettings';
 import { applyComicAIImage, comicAIControlPosition, comicAISectionFingerprint } from './comicAI.mjs';
 import { buildComicLetteringElements } from './comicLettering.mjs';
 import { COMIC_BALLOON_PRESETS, comicElementMatrix, createComicElement, loadComicFonts, readComicAsset } from './comicElements.mjs';
@@ -30,6 +29,11 @@ import messages from './comicMessages';
 const ROTATE_CURSOR = `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path d="M25 13a10 10 0 1 0 1 8M25 5v8h-8" fill="none" stroke="white" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M25 13a10 10 0 1 0 1 8M25 5v8h-8" fill="none" stroke="#222" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>')}") 16 16, grab`;
 
 const polygonPoints = (points) => points.map(({ x, y }) => `${x},${y}`).join(' ');
+
+function isCutEnd(start, hit, minimumDistance) {
+  return start && hit && hit.panelId === start.panelId && (start.corners.length || hit.edgeIndex !== start.edgeIndex)
+    && Math.hypot(hit.point.x - start.point.x, hit.point.y - start.point.y) > minimumDistance;
+}
 
 /** 工具和操作共用图标按钮：手机只显示图标，名称与快捷键保留在提示和无障碍标签中。 */
 function ComicButton({ label, icon: Icon, shortcut, tip, sx, ...props }) {
@@ -55,13 +59,13 @@ async function readImage(blob) {
   return { dataUrl, width: image.naturalWidth, height: image.naturalHeight };
 }
 
-/** 左侧工具、中央画布与右侧页面库；生成表单由生成页复用现有参数面板。 */
-const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [], onSelectTask, onPanelBoundsChange, manualEditor, onEditTask, onSaveTask, onGenerate, onGenerateAll, getBatchGenerationCost, generationAction, onAIBusyChange, active = true, androidLayout = false }, ref) {
+/** AI 制作和手动编排复用同一画布；公开示例在内存中编辑，不读写个人漫画库。 */
+const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [], onSelectTask, onPanelBoundsChange, manualEditor, onParameterToolbarChange, onEditTask, onSaveTask, onGenerate, onGenerateAll, onStopSequence, generatingSequence, generationAction, generationVerification, active = true, androidLayout = false, directorEnabled = true, directorImageModels = [], onDirectorBusyChange }, ref) {
   const { locale } = useI18n();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const compactAndroid = androidLayout && isMobile;
-  const shortLandscape = useMediaQuery('(min-width: 600px) and (max-height: 500px)');
+  const shortViewport = useMediaQuery('(min-width: 600px) and (max-height: 500px)');
   const c = messages[locale];
   const textRef = useRef(c); textRef.current = c;
   const language = locale === 'zh-CN' ? 'zh' : 'en';
@@ -69,22 +73,24 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
   const pageRef = useRef(null);
   const [pages, setPages] = useState([]);
   const pagesRef = useRef([]);
-  const deletingPages = useRef(new Set());
   const [templates, setTemplates] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [selectedElementId, setSelectedElementId] = useState(null);
   const [selectedStrokeId, setSelectedStrokeId] = useState(null);
   const [activeLayerId, setActiveLayerId] = useState('panels');
   const [layersOpen, setLayersOpen] = useState(false);
-  const [mode, setMode] = useState('ai');
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [creationMode, setMode] = useState('ai');
+  const mode = directorEnabled ? creationMode : 'manual';
   const [dockCollapsed, setDockCollapsed] = useState(compactAndroid);
-  const [toolsOpen, setToolsOpen] = useState(false);
-  useEffect(() => { if (compactAndroid) setDockCollapsed(true); }, [compactAndroid]);
-  const [llmSettings, setLLMSettings] = useState(null);
+  const aiDockOpen = mode === 'ai' && !dockCollapsed;
+  const [directorBusy, setDirectorBusy] = useState(false);
+  const [canvasActions, setCanvasActions] = useState(null);
   const [selectedControl, setSelectedControl] = useState(null);
   const controlDrag = useRef(null);
-  const [aiBusy, setAiBusy] = useState(false);
+  const [llmSettings, setLLMSettings] = useState(null);
+  const deletingPages = useRef(new Set());
+  const w = (zh, en) => language === 'zh' ? zh : en;
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [balloonPicker, setBalloonPicker] = useState(false);
   const [elementEditorId, setElementEditorId] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
@@ -114,7 +120,7 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
   const [view, setView] = useState({ zoom: 1, x: 0, y: 0 });
   const viewRef = useRef(view); viewRef.current = view;
   const zoom = view.zoom;
-  const [canvasSize, setCanvasSize] = useState({ width: 300, height: 420 });
+  const [canvasSize, setCanvasSize] = useState({ width: 300, height: 420, viewportWidth: 0, viewportHeight: 0 });
   const [pagesOpen, setPagesOpen] = useState(false);
   useEffect(() => {
     if (!compactAndroid || !active || (!pagesOpen && dockCollapsed)) return;
@@ -160,14 +166,31 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
   const regularLabel = language === 'zh' ? '普通画框' : 'Regular frame';
   const pageWidth = page?.width, pageHeight = page?.height;
   const hasPage = Boolean(page);
+  const panels = page?.panels;
+  const panelBadges = useMemo(() => new Map(panels?.map((panel, index) => {
+    const number = index + 1;
+    const width = Math.max(29, String(number).length * 11 + 10);
+    return [panel.id, { number, width, position: placeComicPanelBadge(panel, width, 26) }];
+  })), [panels]);
 
   useEffect(() => () => cancelAnimationFrame(dragFrame.current), []);
+
+  useEffect(() => { if (compactAndroid) setDockCollapsed(true); }, [compactAndroid]);
 
   useEffect(() => {
     const flush = (event) => { if (pageRef.current) event.detail.waitUntil(saveComicDraft(pageRef.current)); };
     window.addEventListener('desktop-flush-before-update', flush);
     return () => window.removeEventListener('desktop-flush-before-update', flush);
   }, []);
+
+  useEffect(() => {
+    if (!active) return undefined;
+    let current = true;
+    comicClient.request('/comic/llm-settings').then((result) => {
+      if (current) setLLMSettings(result.settings);
+    }).catch(() => { if (current) setLLMSettings(null); });
+    return () => { current = false; };
+  }, [active]);
 
   useEffect(() => {
     let mounted = true;
@@ -203,19 +226,23 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
     const element = viewport.current;
     let resizeFrame = 0;
     const resize = () => {
-      const inset = compactAndroid ? (shortLandscape ? 24 : 32) : 64;
-      const ratio = Math.min(Math.max(1, element.clientWidth - inset) / pageWidth, Math.max(1, element.clientHeight - inset) / pageHeight);
+      // 低矮横屏缩小桌面留白，避免“适应画布”后整页被压成几个像素。
+      const inset = compactAndroid ? (shortViewport ? 24 : 32) : 64;
+      const viewportWidth = element.clientWidth;
+      const viewportHeight = element.clientHeight;
+      const ratio = Math.min(Math.max(1, viewportWidth - inset) / pageWidth, Math.max(1, viewportHeight - inset) / pageHeight);
       const width = pageWidth * ratio, height = pageHeight * ratio;
-      setCanvasSize((current) => current.width === width && current.height === height ? current : { width, height });
+      setCanvasSize((current) => current.width === width && current.height === height
+        && current.viewportWidth === viewportWidth && current.viewportHeight === viewportHeight
+        ? current : { width, height, viewportWidth, viewportHeight });
     };
     // 切页、展开侧栏会同时改变容器和画布尺寸，延后一帧更新避免在观察回调内反复触发布局。
     const observer = new ResizeObserver(() => { cancelAnimationFrame(resizeFrame); resizeFrame = requestAnimationFrame(resize); });
     observer.observe(element); resize();
     return () => { observer.disconnect(); cancelAnimationFrame(resizeFrame); };
-  }, [pageWidth, pageHeight, active, compactAndroid, shortLandscape]);
+  }, [pageWidth, pageHeight, active, compactAndroid, shortViewport]);
 
   useEffect(() => { setView({ zoom: 1, x: 0, y: 0 }); setSelectedControl(null); }, [page?.id, page?.layout]);
-  useEffect(() => { if (active) apiClient.request('/comic/llm-settings').then((result) => setLLMSettings(result.settings)).catch((error) => setNotice({ severity: 'error', text: error.message })); }, [active]);
   useEffect(() => { onPanelBoundsChange?.(selected ? panelBounds(selected) : null); }, [selected, onPanelBoundsChange]);
 
   useEffect(() => {
@@ -336,7 +363,19 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
     }
     setNotice({ severity: 'success', text: c.generated }); return true;
   }
-  useImperativeHandle(ref, () => ({ saveTask: rememberTask, receiveGeneratedImage: receiveImage, getCurrentPage: () => pageRef.current }));
+  useImperativeHandle(ref, () => ({
+    saveTask: rememberTask,
+    receiveGeneratedImage: receiveImage,
+    getCurrentPage: () => pageRef.current,
+    selectGenerationPanel(pageId, panelId) {
+      const current = pageRef.current;
+      if (current?.id !== pageId) return false;
+      const panel = current.panels.find((item) => item.id === panelId);
+      if (!panel || !current.layers.some((layer) => layer.id === panel.layerId && layer.visible && !layer.locked)) return false;
+      choose(panel, current, { sequence: true });
+      return true;
+    },
+  }));
 
   function getAIPage(pageId) {
     if (deletingPages.current.has(pageId)) return null;
@@ -436,7 +475,7 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
     viewRef.current = next; setView(next);
   }
   function viewPointerDown(event) {
-    if (event.target.closest('button, input, [role="menu"], [data-comic-layers], [data-comic-ai-control]')) return;
+    if (event.target.closest('button, input, [role="menu"], [data-comic-layers], [data-comic-panel-image-actions]')) return;
     if (!(tool === 'hand' || tool === 'zoom' || spaceHeld || event.button === 1)) return;
     if (!event.isPrimary || (event.button !== 0 && event.button !== 1)) return;
     event.preventDefault(); event.stopPropagation();
@@ -516,9 +555,8 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
       const raw = canvasPoint(event, false);
       const candidates = editableItems.filter(({ kind, item }) => kind === 'panel' && (!cut || item.id === cut.panelId)).map(({ item }) => item).reverse();
       const near = snapComicCutPoint(candidates, raw, (event.pointerType === 'touch' ? 22 : 14) * handleScale);
-      const first = cut || near;
-      drag.current = { kind: 'cut', pointerId: event.pointerId, first, last: raw, before: current };
-      if (cut && near && near.edgeIndex !== cut.edgeIndex && Math.hypot(near.point.x - cut.point.x, near.point.y - cut.point.y) > handleScale) drag.current.end = near;
+      const first = cut || (near && { ...near, corners: [] });
+      drag.current = { kind: 'cut', pointerId: event.pointerId, first, pressed: raw, last: raw, continuing: Boolean(cut), before: current };
       setCut(first); setCutHover(near); setCursor(near?.point || raw);
       if (first) choose(current.panels.find((item) => item.id === first.panelId));
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -577,7 +615,6 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
     if (event && drag.current) applyPointerMove(event);
   }
   function applyPointerMove(event) {
-    const point = canvasPoint(event);
     if (tool === 'cut') {
       const raw = canvasPoint(event, false), action = drag.current;
       let first = action?.first || cut;
@@ -586,10 +623,19 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
       if (action) {
         // 保留每段鼠标轨迹的交点，快速划过整框也不会漏掉进入和离开的边。
         const crossings = candidates.flatMap((item) => comicCutIntersections(item, action.last, raw)).sort((left, right) => left.distance - right.distance);
-        for (const hit of [...crossings, ...(near ? [near] : [])]) {
-          if (!first) { first = hit; action.first = hit; choose(pageRef.current.panels.find((item) => item.id === hit.panelId)); }
-          else if (!action.end && hit.panelId === first.panelId && hit.edgeIndex !== first.edgeIndex && Math.hypot(hit.point.x - first.point.x, hit.point.y - first.point.y) > handleScale) action.end = hit;
+        for (const hit of crossings) {
+          if (!first) {
+            first = { ...hit, corners: [] };
+            choose(pageRef.current.panels.find((item) => item.id === hit.panelId));
+          } else if (!action.end && isCutEnd(first, hit, handleScale)) action.end = hit;
         }
+        if (!first && near) {
+          first = { ...near, corners: [] };
+          choose(pageRef.current.panels.find((item) => item.id === near.panelId));
+        }
+        action.first = first;
+        // 悬停只预览吸附。只有松手落在边上或真正穿过边界，才结束切割。
+        action.near = near;
         action.last = raw;
         setCut(first);
       }
@@ -597,6 +643,7 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
       return;
     }
     const action = drag.current; if (!action) return;
+    const point = canvasPoint(event);
     const current = pageRef.current;
     if ((action.panel || action.element) && !action.gesture && !action.moved) {
       const raw = canvasPoint(event, false);
@@ -723,13 +770,25 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
     if (!drag.current || (event.pointerId !== drag.current.pointerId && !touchPoints.current.has(event.pointerId))) return;
     if (drag.current.kind === 'cut') {
       applyPointerMove(event);
-      const { first, end } = drag.current; drag.current = null;
+      const { first, end: crossed, near, pressed, last, continuing } = drag.current; drag.current = null;
       if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-      if (!first || !end) return;
+      if (!first) return;
       const current = pageRef.current, cuttingPanel = current.panels.find((item) => item.id === first.panelId);
+      if (!cuttingPanel) { setCut(null); return; }
+      const end = crossed || (isCutEnd(first, near, handleScale) ? near : null);
+      if (!end) {
+        const previous = first.corners.at(-1) || first.point;
+        if ((continuing || Math.hypot(last.x - pressed.x, last.y - pressed.y) > handleScale)
+          && isComicPanelInterior(cuttingPanel, last) && Math.hypot(last.x - previous.x, last.y - previous.y) > handleScale) {
+          setCut({ ...first, corners: [...first.corners, last] });
+          setCutHover(null);
+          setCursor(null);
+        }
+        return;
+      }
       const nextOrder = getComicRenderItems(current).find(({ item }) => item.layerId === cuttingPanel.layerId && item.order > cuttingPanel.order)?.item.order;
-      const parts = splitPanel(cuttingPanel, first.point, end.point, gutter, nextOrder);
-      if (!parts) { setNotice({ severity: 'info', text: c.cutError }); return; }
+      const parts = splitPanelAlongPath(cuttingPanel, [first.point, ...first.corners, end.point], gutter, nextOrder);
+      if (!parts) { setCutHover(null); setCursor(null); setNotice({ severity: 'info', text: c.cutError }); return; }
       parts.sort((left, right) => panelBounds(left).y - panelBounds(right).y || panelBounds(left).x - panelBounds(right).x);
       replacePage({ ...current, panels: current.panels.flatMap((item) => item.id === cuttingPanel.id ? parts : [item]) });
       setCut(null); setCutHover(null); setCursor(null); choose(null); return;
@@ -776,7 +835,7 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
     setGallery({ target: imageTarget, entries: previousEntries, loading: true });
     try {
       // 本地画廊从磁盘分页读取，避免打开漫画时把整个图库装入内存。
-      const result = await apiClient.getGallery({ source: 'outputs', offset: previousEntries.length, limit: 60 });
+      const result = await comicClient.getGallery({ source: 'outputs', offset: previousEntries.length, limit: 60 });
       setGallery((current) => current?.target === imageTarget ? {
         target: imageTarget, entries: [...previousEntries, ...result.items],
         hasMore: result.has_more, loading: false,
@@ -795,11 +854,11 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
   }
 
   keyboardActions.current = (event) => {
-    if (event.isComposing || !pageRef.current || !viewport.current?.getClientRects().length || event.target.closest('input, textarea, [contenteditable="true"], [role="dialog"], [role="listbox"], [data-comic-dock], [data-comic-ai-control]')) return;
+    if (event.isComposing || !pageRef.current || !viewport.current?.getClientRects().length || event.target.closest('input, textarea, [contenteditable="true"], [role="dialog"], [role="listbox"], [data-comic-dock], [data-comic-ai-control], [data-comic-panel-image-actions]')) return;
     // 弹窗和参数输入保留各自的快捷键；只有漫画画布接管编辑命令。
-    if (pagesOpen || cropId || gallery || templatePicker || templateDialog || confirmation || balloonPicker || elementEditorId || contextMenu || [...document.querySelectorAll('[role="dialog"]')].some((dialog) => dialog.getClientRects().length && getComputedStyle(dialog).visibility !== 'hidden')) return;
+    if (cropId || gallery || templatePicker || templateDialog || confirmation || balloonPicker || elementEditorId || contextMenu || [...document.querySelectorAll('[role="dialog"]')].some((dialog) => dialog.getClientRects().length && getComputedStyle(dialog).visibility !== 'hidden')) return;
     const key = event.key.toLowerCase(); const command = event.ctrlKey || event.metaKey;
-    if (key === 'escape' && event.target.closest('[data-comic-layers], [data-comic-ai-control]')) return;
+    if (key === 'escape' && event.target.closest('[data-comic-layers]')) return;
     let action;
     let label;
     if (command && key === 'z') { action = () => undo(event.shiftKey); label = event.shiftKey ? c.redo : c.undo; }
@@ -825,10 +884,6 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
 
   if (!page) return <Box sx={{ p: 4 }}><Typography>{c.loading}</Typography></Box>;
 
-  const batchCost = mode === 'manual' && onGenerateAll ? getBatchGenerationCost(page) : null;
-  const batchCostLabel = batchCost && (batchCost.total === null
-    ? (language === 'zh' ? '请调整生成参数' : 'Adjust generation settings')
-    : (language === 'zh' ? `预计 ${batchCost.total.toLocaleString(locale)} 点` : `Est. ${batchCost.total.toLocaleString(locale)} Anlas`));
   const sectionLabels = page.layout === 'spreadPortrait' ? [c.left, c.right] : [c.top, c.bottom];
   const comicPageSelection = (COMIC_LAYOUTS[page.layout].sections === 2 || (compactAndroid && mode === 'manual')) && <Box sx={{ display: 'flex', gap: 1, minWidth: 0 }}>
           {COMIC_LAYOUTS[page.layout].sections === 2 && <ToggleButtonGroup size="small" exclusive value={section} onChange={(_, value) => { if (value !== null) { setSection(value); choose(null); } }} sx={{ flex: 1, '& .MuiToggleButton-root': { flex: 1, minHeight: { xs: 44, md: 32 }, whiteSpace: 'nowrap' } }}>{sectionLabels.map((label, index) => <ToggleButton key={index} value={index} aria-label={label} data-action-label={label}>{label}</ToggleButton>)}</ToggleButtonGroup>}
@@ -837,17 +892,40 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
   const editableItems = getComicRenderItems(page).filter(({ kind, item }) => kind !== 'stroke' && !page.layers.find((layer) => layer.id === item.layerId)?.locked);
   const handleScale = page.width / canvasSize.width / zoom;
   const selectedBounds = selected ? panelBounds(selected) : null;
+  const imageButtonSize = isMobile ? 36 : 32;
+  const imageActionsWidth = imageButtonSize * 4 + 12;
+  const imageActionsHeight = imageButtonSize + 6;
+  let imageActionsPosition = null;
+  if (selectedBounds && tool !== 'cut') {
+    const { viewportWidth, viewportHeight } = canvasSize;
+    const left = viewportWidth / 2 + view.x + (selectedBounds.x - page.width / 2) / handleScale;
+    const top = viewportHeight / 2 + view.y + (selectedBounds.y - page.height / 2) / handleScale;
+    const right = left + selectedBounds.width / handleScale;
+    const bottom = top + selectedBounds.height / handleScale;
+    if (right > 0 && bottom > 0 && left < viewportWidth && top < viewportHeight
+      && viewportWidth >= imageActionsWidth + 16 && viewportHeight >= imageActionsHeight + 16) {
+      // 用画布坐标跟随选框，位置随缩放更新；按钮本身始终用屏幕像素显示。
+      const fitsBelow = bottom + imageActionsHeight + 16 <= viewportHeight;
+      const fitsLeft = !fitsBelow && left >= imageActionsWidth + 16;
+      imageActionsPosition = {
+        left: Math.max(8, Math.min(fitsLeft ? left - imageActionsWidth - 8 : left, viewportWidth - imageActionsWidth - 8)),
+        top: Math.max(8, Math.min(fitsBelow ? bottom + 8 : bottom - imageActionsHeight - 8, viewportHeight - imageActionsHeight - 8)),
+      };
+    }
+  }
   const moveHandleAbove = selectedBounds && selectedBounds.y > 40 * handleScale;
   const panelMoveHandle = selectedBounds ? { x: selectedBounds.x + selectedBounds.width / 2, y: moveHandleAbove ? selectedBounds.y - 28 * handleScale : selectedBounds.y + selectedBounds.height + 28 * handleScale, anchorY: moveHandleAbove ? selectedBounds.y : selectedBounds.y + selectedBounds.height } : null;
   const panelRotateHandle = selectedBounds ? { x: panelMoveHandle.x + 44 * handleScale, y: panelMoveHandle.y } : null;
   const cutHoverPanel = cutHover ? page.panels.find((item) => item.id === cutHover.panelId) : null;
+  const cutVertices = cut ? [cut.point, ...cut.corners] : [];
+  const cutPreview = cursor ? [...cutVertices, cursor] : cutVertices;
   const tools = [
     ['select', MouseOutlined, c.select, c.selectTip, 'V'], ['cut', ContentCut, c.cut, c.cutTip, 'C'], ['rectangle', CropFree, c.rectangle, c.rectangleTip, 'U'],
     ['overlay', LayersOutlined, overlayLabel, language === 'zh' ? '拖出可跨越分镜的上层画框，支持透明人物立绘' : 'Draw an overlay across panels; transparent character images are supported', 'Shift+U'],
     ['brush', BrushOutlined, c.brush, c.brushTip, 'B'], ['eraser', Eraser, c.eraser, c.eraserTip, 'E'],
     ['hand', PanToolOutlined, c.hand, c.handTip, 'H / Space'], ['zoom', ZoomIn, c.zoom, c.zoomTip, 'Z'],
   ];
-  const pageLibrary = (<Box component="aside" sx={{ p: 0.8, borderLeft: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', gap: 0.65, minHeight: 0, overflowY: 'auto', height: '100%', '& .MuiTypography-subtitle2': { fontSize: 11 } }}>
+  const pageLibrary = (<Box component="aside" data-testid="comic-page-library" sx={{ p: 0.8, borderLeft: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', gap: 0.65, minHeight: 0, overflowY: 'auto', height: '100%', '& .MuiTypography-subtitle2': { fontSize: 11 } }}>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}><Typography variant="subtitle2">{c.pages}</Typography><Chip size="small" label={pages.length} />{isMobile && <ComicButton icon={Close} label={c.close} onClick={() => setPagesOpen(false)} />}</Box>
       <TextField fullWidth hiddenLabel size="small" placeholder={c.pageTitle} slotProps={{ htmlInput: { 'aria-label': c.pageTitle } }} value={page.title} onChange={(event) => replacePage({ ...page, title: event.target.value })} sx={{ '& .MuiInputBase-input': { height: 34, boxSizing: 'border-box', py: 0, px: 1, lineHeight: 'normal' } }} />
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.65, '& > span': { width: '100%' }, '& .MuiButton-root': { width: '100%', minHeight: 32, justifyContent: { xs: 'center', md: 'flex-start' }, px: 1 } }}>
@@ -855,13 +933,13 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
         <ComicButton icon={SaveOutlined} label={c.exportProject} tip={c.exportProjectTip} variant="contained" disabled={busy} onClick={() => perform(async () => {
           if (selectedIdRef.current) onSaveTask?.();
           const blob = await exportComicProject({ pages: pagesRef.current, templates, draft: pageRef.current });
-          saveAs(blob, 'comic-project.zip');
+          await downloadBlobToFile(blob, 'comic-project.zip');
           setNotice({ severity: 'success', text: c.projectExported });
         }, c.exportError)} />
         <ComicButton icon={UploadFile} label={c.importProject} tip={c.importProjectTip} variant="outlined" disabled={busy} onClick={() => projectUpload.current.click()} />
-        <ComicButton icon={Download} label={busy ? c.exportBusy : c.export} tip={c.exportImagesTip} variant="outlined" disabled={busy || !pages.length} onClick={() => perform(async () => { const blob = await exportComicZip(pagesRef.current); saveAs(blob, 'comic-pages.zip'); }, c.exportError)} />
+        <ComicButton icon={Download} label={busy ? c.exportBusy : c.export} tip={c.exportImagesTip} variant="outlined" disabled={busy || !pages.length} onClick={() => perform(async () => { const blob = await exportComicZip(pagesRef.current); await downloadBlobToFile(blob, 'comic-pages.zip'); }, c.exportError)} />
       </Box>
-      <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.6 }}>{dirty ? c.unsaved : c.saved} · {c.draft}</Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.6 }}>{`${dirty ? c.unsaved : c.saved} · ${c.draft}`}</Typography>
       <Divider />
       {!pages.length && <Typography color="text.secondary" variant="body2" sx={{ py: 3, textAlign: 'center' }}>{c.noPages}</Typography>}
       {pages.map((item, index) => <Paper key={item.id} variant="outlined" sx={{ p: 0.6, borderColor: item.id === page.id ? 'primary.main' : 'divider', flexShrink: 0 }}>
@@ -869,14 +947,7 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
           <Box component="svg" viewBox={`0 0 ${item.width} ${item.height}`} sx={{ display: 'block', width: '100%', height: 104, bgcolor: 'action.hover' }}><PageArt page={item} prefix={`thumb-${item.id}`} /></Box>
           <Typography variant="caption" noWrap component="div" sx={{ mt: 0.5 }}>{String(index + 1).padStart(3, '0')} · {item.title || c.pages}</Typography>
         </ButtonBase>
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}><IconButton size="small" aria-label={c.moveUp} disabled={!index || busy} onClick={() => perform(() => reorderPage(index, -1))}><ArrowUpward sx={{ fontSize: 16 }} /></IconButton><IconButton size="small" aria-label={c.moveDown} disabled={index === pages.length - 1 || busy} onClick={() => perform(() => reorderPage(index, 1))}><ArrowDownward sx={{ fontSize: 16 }} /></IconButton><IconButton size="small" aria-label={c.deletePage} onClick={() => setConfirmation({ kind: 'delete', action: async () => {
-          deletingPages.current.add(item.id);
-          try {
-            await deleteComicPage(item.id);
-            pagesRef.current = pagesRef.current.filter((saved) => saved.id !== item.id); setPages(pagesRef.current);
-            if (pageRef.current.id === item.id) loadPage(createComicPage(item.layout, 'blank', getComicLayoutSize(item.layout, canvasDefaults)), true);
-          } catch (error) { deletingPages.current.delete(item.id); throw error; }
-        } })}><DeleteOutline sx={{ fontSize: 16 }} /></IconButton></Box>
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}><IconButton size="small" aria-label={c.moveUp} disabled={!index || busy} onClick={() => perform(() => reorderPage(index, -1))}><ArrowUpward sx={{ fontSize: 16 }} /></IconButton><IconButton size="small" aria-label={c.moveDown} disabled={index === pages.length - 1 || busy} onClick={() => perform(() => reorderPage(index, 1))}><ArrowDownward sx={{ fontSize: 16 }} /></IconButton><IconButton size="small" disabled={directorBusy} aria-label={c.deletePage} onClick={() => setConfirmation({ kind: 'delete', action: async () => { await deleteComicPage(item.id); deletingPages.current.add(item.id); pagesRef.current = pagesRef.current.filter((saved) => saved.id !== item.id); setPages(pagesRef.current); if (pageRef.current.id === item.id) loadPage(createComicPage(item.layout, 'blank', getComicLayoutSize(item.layout, canvasDefaults)), true); } })}><DeleteOutline sx={{ fontSize: 16 }} /></IconButton></Box>
       </Paper>)}
     </Box>);
   const panelColor = selected?.type === 'overlay' ? '#bd7110' : '#287bcc';
@@ -884,7 +955,7 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
           <TextField select size="small" value={page.layout} slotProps={{ select: { inputProps: { 'aria-label': c.title } } }} onChange={(event) => navigate(createComicPage(event.target.value, 'blank', getComicLayoutSize(event.target.value, canvasDefaults)), true)} sx={{ flex: { xs: 1, md: 'none' }, minWidth: { xs: 0, md: 108 }, '& .MuiInputBase-root': { minHeight: { xs: 44, md: 34 } } }}>
             {Object.keys(COMIC_LAYOUTS).map((layout) => <MenuItem key={layout} value={layout}>{c[layout]}</MenuItem>)}
           </TextField>
-          <ComicButton icon={CropFree} label={c.canvasSize} tip={c.canvasSizeTip} variant={compactAndroid ? 'outlined' : 'text'} disabled={busy || aiBusy} onClick={() => setCanvasDimensions({ width: String(page.width), height: String(page.height) })} />
+          <ComicButton icon={CropFree} label={c.canvasSize} tip={c.canvasSizeTip} variant={compactAndroid ? 'outlined' : 'text'} disabled={busy || directorBusy} onClick={() => setCanvasDimensions({ width: String(page.width), height: String(page.height) })} />
           <Box sx={{ flex: 1, display: { xs: 'none', md: 'block' } }} />
           <Tooltip title={`${c.zoomCanvas} (Ctrl+0 / Ctrl+±)`}><TextField select size="small" value={zoom} slotProps={{ select: { inputProps: { 'aria-label': c.zoomCanvas } } }} onChange={(event) => Number(event.target.value) === 1 ? setView({ zoom: 1, x: 0, y: 0 }) : changeZoom(Number(event.target.value))} sx={{ width: { xs: 90, md: 74 }, flexShrink: 0, '& .MuiInputBase-root': { minHeight: { xs: 44, md: 34 } } }}>{[...new Set([0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 5, zoom])].sort((a, b) => a - b).map((value) => <MenuItem value={value} key={value}>{value === 1 ? c.fit : `${Math.round(value * 100)}%`}</MenuItem>)}</TextField></Tooltip>
         </Box>);
@@ -920,12 +991,6 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
       {['brush', 'eraser'].includes(tool) && <><Typography variant="caption">{compactAndroid ? brushSize : `${c.brushSize}: ${brushSize}px`}</Typography><Slider aria-label={c.brushSize} min={1} max={64} value={brushSize} onChange={(_, value) => setBrushSize(value)} /></>}
       {selected && <>
         <Divider sx={{ my: 0.75 }} /><Typography variant="subtitle2" sx={{ color: panelColor, mb: 0.5 }}>{compactAndroid ? `#${selectedNumber}` : `${c.panel} ${selectedNumber} · ${selected.type === 'overlay' ? overlayLabel : regularLabel}`}</Typography>
-        <Box data-comic-tool-group sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
-          <ComicButton icon={UploadFile} label={c.upload} shortcut="Ctrl+O" onClick={() => { uploadTarget.current = target; upload.current.click(); }} />
-          <ComicButton icon={ImageOutlined} label={c.gallery} onClick={() => openGallery()} />
-          <ComicButton icon={CropFree} label={c.cropImage} shortcut="Shift+C" disabled={!selected.image} onClick={() => setCropId(selected.id)} />
-          <ComicButton icon={DeleteOutline} label={c.removeImage} disabled={!selected.image} onClick={() => updatePanel(selected.id, { image: null })} />
-        </Box>
         {compactAndroid ? <ComicButton icon={selected.type === 'overlay' ? LayersOutlined : CropFree} label={selected.type === 'overlay' ? regularLabel : overlayLabel} onClick={() => { const converted = convertPanelType(selected, selected.type === 'overlay' ? 'regular' : 'overlay', page, section); if (converted) updatePanel(selected.id, converted); else setNotice({ severity: 'warning', text: c.smallPanel }); }} /> : <TextField select size="small" fullWidth label={language === 'zh' ? '画框类型' : 'Frame type'} value={selected.type || 'regular'} sx={{ my: 1 }} onChange={(event) => { const converted = convertPanelType(selected, event.target.value, page, section); if (converted) updatePanel(selected.id, converted); else setNotice({ severity: 'warning', text: c.smallPanel }); }}><MenuItem value="regular">{regularLabel}</MenuItem><MenuItem value="overlay">{overlayLabel}</MenuItem></TextField>}
         <Typography variant="caption">{compactAndroid ? `${selected.borderWidth}px` : selected.borderWidth ? `${c.border}: ${selected.borderWidth}px` : c.borderless}</Typography>
         <Slider aria-label={c.border} min={0} max={12} value={selected.borderWidth} onChange={(_, value) => updatePanel(selected.id, { borderWidth: value })} />
@@ -963,7 +1028,7 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
         const images = new Set(project.pages.flatMap((item) => [...item.panels.map((panel) => panel.image?.dataUrl), ...item.elements.map((element) => element.dataUrl)]).filter(Boolean));
         // 自定义素材遵循上传时同样的校验，损坏图片、危险 SVG 或坏字体不落库。
         for (const dataUrl of images) {
-          const blob = await (await fetch(dataUrl)).blob();
+          const blob = await fetchUrlAsBlob(dataUrl);
           const extension = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/svg+xml': 'svg' }[blob.type];
           await readComicAsset(new File([blob], `asset.${extension}`, { type: blob.type }));
         }
@@ -987,9 +1052,9 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
     {!compactAndroid && editingTools}
 
     <Box sx={{ position: 'relative', minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-      <Box data-comic-toolbar sx={{ p: { xs: 0.5, md: 0.65 }, display: 'flex', flexDirection: 'row', flexWrap: compactAndroid ? 'nowrap' : 'wrap', alignItems: 'center', gap: 0.5, borderBottom: 1, borderColor: 'divider' }}>
+      <Box data-comic-toolbar data-testid="comic-canvas-toolbar" sx={{ p: { xs: 0.5, md: 0.65 }, display: 'flex', flexDirection: 'row', flexWrap: compactAndroid ? 'nowrap' : 'wrap', alignItems: 'center', gap: 0.5, borderBottom: 1, borderColor: 'divider' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0, flex: compactAndroid ? 1 : 'none' }}>
-          <ToggleButtonGroup exclusive value={mode} aria-label={language === 'zh' ? '制作方式' : 'Creation mode'}
+          {directorEnabled && <ToggleButtonGroup exclusive value={mode} disabled={generatingSequence || directorBusy} aria-label={language === 'zh' ? '制作方式' : 'Creation mode'}
             onChange={(_, value) => { if (value) { setMode(value); setDockCollapsed(compactAndroid); if (value === 'manual' && !selected) choose(page.panels.find((panel) => page.layers.some((layer) => layer.id === panel.layerId && layer.visible && !layer.locked))); } }}
             sx={{ position: 'relative', display: 'grid', gridTemplateColumns: '1fr 1fr', flex: { xs: 1, md: 'none' }, width: { md: language === 'zh' ? 190 : 250 }, minWidth: 0, minHeight: 44, p: '4px', border: 0, borderRadius: 2, bgcolor: 'action.selected',
               '&:before': { content: '""', position: 'absolute', top: 4, bottom: 4, left: 4, width: 'calc((100% - 8px) / 2)', borderRadius: 1.3, bgcolor: 'primary.main', transform: mode === 'manual' ? 'translateX(100%)' : 'translateX(0)', transition: 'transform 200ms ease' },
@@ -997,10 +1062,10 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
               '@media (prefers-reduced-motion: reduce)': { '&:before': { transition: 'none' } } }}>
             <ToggleButton value="ai" aria-label={language === 'zh' ? 'AI制作' : 'AI creation'}>{compactAndroid ? 'AI' : (language === 'zh' ? 'AI制作' : 'AI creation')}</ToggleButton>
             <ToggleButton value="manual" aria-label={language === 'zh' ? '手动编排' : 'Manual layout'}>{compactAndroid ? (language === 'zh' ? '手动' : 'Manual') : (language === 'zh' ? '手动编排' : 'Manual layout')}</ToggleButton>
-          </ToggleButtonGroup>
+          </ToggleButtonGroup>}
           {compactAndroid && <ComicButton icon={BrushOutlined} label={language === 'zh' ? '绘图工具' : 'Drawing tools'} variant="outlined" onClick={() => setToolsOpen(true)} />}
-          {compactAndroid && <ComicButton icon={SettingsOutlined} label={language === 'zh' ? '参数' : 'Parameters'} variant="outlined" onClick={() => setDockCollapsed(false)} />}
-          {compactAndroid && <><ComicButton icon={MenuIcon} label={c.pages} onClick={() => setPagesOpen(true)} /><ComicButton icon={dirty ? SaveOutlined : Check} label={c.savePage} disabled={busy} onClick={() => perform(savePage)} /></>}
+          {compactAndroid && directorEnabled && <ComicButton icon={SettingsOutlined} label={language === 'zh' ? '参数' : 'Parameters'} variant="outlined" onClick={() => setDockCollapsed(false)} />}
+          {compactAndroid && <ComicButton icon={MenuIcon} label={c.pages} onClick={() => setPagesOpen(true)} />}
         </Box>
         {!compactAndroid && pageTools}
         {!compactAndroid && comicPageSelection}
@@ -1008,27 +1073,34 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
       </Box>
 
       <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: { xs: 'column', lg: 'row' } }}>
-        <Box component="aside" data-comic-dock data-testid="comic-dock" role={active && compactAndroid && !dockCollapsed ? 'dialog' : undefined} aria-modal={active && compactAndroid && !dockCollapsed ? true : undefined} aria-label={language === 'zh' ? '漫画参数' : 'Comic parameters'} sx={{ width: { xs: '100%', lg: dockCollapsed ? 44 : 350 }, flexShrink: 0, minHeight: 0, height: { xs: mode === 'ai' && !dockCollapsed ? '54%' : 'auto', lg: 'auto' }, maxHeight: { xs: dockCollapsed ? 48 : '54%', lg: 'none' }, display: 'flex', flexDirection: 'column', border: 0, bgcolor: 'background.paper', '& .MuiInputBase-root, & .MuiButton-root, & .MuiTypography-body2': { fontSize: 13 }, ...(compactAndroid ? { display: dockCollapsed ? 'none' : 'flex', position: 'absolute', inset: 0, width: 'auto', height: 'auto', maxHeight: 'none', zIndex: 1200 } : {}) }}>
+        {directorEnabled && <Box component="aside" data-comic-dock data-testid="comic-dock" role={active && compactAndroid && !dockCollapsed ? 'dialog' : undefined} aria-modal={active && compactAndroid && !dockCollapsed ? true : undefined} aria-label={language === 'zh' ? '漫画参数' : 'Comic parameters'} sx={{ width: { xs: '100%', lg: dockCollapsed ? 44 : 350 }, flexShrink: 0, minHeight: 0, height: { xs: mode === 'ai' && !dockCollapsed ? '54%' : 'auto', lg: 'auto' }, maxHeight: { xs: dockCollapsed ? 48 : '54%', lg: 'none' }, display: 'flex', flexDirection: 'column', border: 0, bgcolor: 'background.paper', '& .MuiInputBase-root, & .MuiButton-root, & .MuiTypography-body2': { fontSize: 13 }, ...(compactAndroid ? { display: dockCollapsed ? 'none' : 'flex', position: 'absolute', inset: 0, width: 'auto', height: 'auto', maxHeight: 'none', zIndex: 1200 } : {}) }}>
           <Box sx={{ display: 'flex', alignItems: 'center', px: 1, minHeight: 48, gap: 0.5, borderBottom: dockCollapsed ? 0 : 1, borderColor: 'divider' }}>
             <IconButton size="small" aria-label={dockCollapsed ? (language === 'zh' ? '展开参数' : 'Expand parameters') : (language === 'zh' ? '收起参数' : 'Collapse parameters')} onClick={() => setDockCollapsed(!dockCollapsed)}>{compactAndroid ? <Close /> : <ArrowBack sx={{ transform: dockCollapsed ? 'rotate(180deg)' : 'none', width: 18 }} />}</IconButton>
             {!dockCollapsed && <><Typography sx={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{mode === 'ai' ? (language === 'zh' ? 'AI制作' : 'AI creation') : `${c.panel} ${selectedNumber || '—'}`}</Typography>
-              {mode === 'manual' && <Button size="small" startIcon={<SaveOutlined />} disabled={!selected || aiBusy || generationAction?.loading} onClick={() => { const snapshot = onSaveTask?.(); if (snapshot) { rememberTask(target, snapshot); setNotice({ severity: 'success', text: c.taskSaved }); } }} sx={{ whiteSpace: 'nowrap', mr: 0.5 }}>{c.saveTask}</Button>}
-              {mode === 'ai' && <Button size="small" variant="outlined" startIcon={<SettingsOutlined />} disabled={aiBusy} onClick={() => setSettingsOpen(true)} sx={{ minHeight: compactAndroid ? 44 : 32, flexShrink: 0, px: 1 }}>{language === 'zh' ? '模型设置' : 'Models'}</Button>}</>}
+              {mode === 'manual' && <Button size="small" startIcon={<SaveOutlined />} disabled={!selected || directorBusy || generationAction?.loading} onClick={() => { const snapshot = onSaveTask?.(); if (snapshot) { rememberTask(target, snapshot); setNotice({ severity: 'success', text: c.taskSaved }); } }} sx={{ whiteSpace: 'nowrap', mr: 0.5 }}>{c.saveTask}</Button>}
+              {mode === 'ai' && active && <ComicProviderControl client={comicClient} language={language}
+                disabled={directorBusy} compact={compactAndroid} onChange={setLLMSettings} />}</>}
           </Box>
           <Box sx={{ display: dockCollapsed ? 'none' : (compactAndroid && mode === 'ai' ? 'flex' : 'block'), overflowY: compactAndroid && mode === 'ai' ? 'hidden' : 'auto', overflowX: 'hidden', flex: 1, minHeight: 0, flexDirection: 'column' }}>
             {compactAndroid && comicPageSelection}
             <Box sx={{ display: mode === 'ai' ? (compactAndroid ? 'flex' : 'block') : 'none', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-              <ComicAIStudio compact={compactAndroid} open={active && mode === 'ai' && !dockCollapsed} page={page} language={language} llmSettings={llmSettings} selectedControl={selectedControl}
-                getPage={getAIPage} onUpdatePage={updateAIPage} onApplyResult={applyAIResult} generationBusy={generationAction?.loading && !aiBusy}
-                onBusyChange={(value) => { setAiBusy(value); onAIBusyChange?.(value); }} />
+              <ComicAIStudio compact={compactAndroid} open={active && aiDockOpen} actionContainer={active && mode === 'ai' ? canvasActions : null}
+                onOpenResults={() => setDockCollapsed(false)} page={page} client={comicClient} language={language} llmSettings={llmSettings} selectedControl={selectedControl}
+                imageModels={directorImageModels} getPage={getAIPage} onUpdatePage={updateAIPage} onApplyResult={applyAIResult} generationBusy={generationAction?.loading && !directorBusy}
+                onBusyChange={(value) => { setDirectorBusy(value); onDirectorBusyChange?.(value); }} />
             </Box>
             <Box sx={{ display: mode === 'manual' ? 'flex' : 'none', flexDirection: 'column', gap: 1.5, p: 1 }}>
               {/* 参数快照由父层保存，隐藏时卸载输入控件，避免自动高度观察器在零尺寸下触发循环。 */}
               {mode === 'manual' && (manualEditor || (compactAndroid ? <Button fullWidth variant="outlined" startIcon={<SettingsOutlined />} disabled={!selected} onClick={() => { setDockCollapsed(true); onEditTask?.(selectedBounds); }}>{c.editTask}</Button> : <ComicButton icon={SettingsOutlined} label={c.editTask} onClick={() => onEditTask?.(selectedBounds)} />))}
             </Box>
           </Box>
-        </Box>
+          {mode === 'manual' && !dockCollapsed && manualEditor && <Box ref={onParameterToolbarChange} data-testid="comic-parameter-toolbar"
+            sx={{ flexShrink: 0, px: 1, py: 0.75, borderTop: 1, borderColor: 'divider', '& > :first-child': { mb: 0 } }} />}
+        </Box>}
+      <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative', display: 'flex', flexDirection: 'column', bgcolor: 'action.hover',
+        backgroundImage: 'radial-gradient(#88888825 1px, transparent 1px)', backgroundSize: '18px 18px' }}>
       <Box ref={viewport} tabIndex={-1} data-testid="comic-viewport" onContextMenu={(event) => {
+        if (event.target.closest('[data-comic-panel-image-actions]')) return;
         event.preventDefault();
         const panel = page.panels.find((item) => item.id === event.target.closest('[data-panel]')?.dataset.panel);
         const element = page.elements.find((item) => item.id === event.target.closest('[data-element]')?.dataset.element);
@@ -1045,10 +1117,14 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
             if (kind === 'element') return <g key={item.id} data-element={item.id} transform={`matrix(${comicElementMatrix(item).join(' ')})`} onDoubleClick={() => { chooseElement(item); setElementEditorId(item.id); }}>
               <polygon data-element={item.id} points={polygonPoints(item.mask.map((point) => ({ x: point.x * item.width, y: point.y * item.height })))} fill="transparent" stroke="#ad69da" strokeWidth={(item.id === selectedElementId ? 2 : 1) * handleScale} strokeDasharray={item.id === selectedElementId ? undefined : `${6 * handleScale} ${5 * handleScale}`} opacity={item.id === selectedElementId ? 1 : 0.45} style={{ cursor: tool === 'select' ? 'grab' : 'inherit' }} />
             </g>;
-            const color = item.type === 'overlay' ? '#bd7110' : '#287bcc'; const bounds = panelBounds(item); const index = page.panels.indexOf(item) + 1;
+            const color = item.type === 'overlay' ? '#bd7110' : '#287bcc';
+            const { number, width, position } = panelBadges.get(item.id);
             return <g key={item.id} data-panel={item.id}>
               <polygon data-panel={item.id} points={polygonPoints(item.points)} fill="transparent" stroke={color} strokeWidth={(item.id === selectedId ? 1.5 : 0.75) * handleScale} strokeDasharray={item.id === selectedId ? undefined : `${6 * handleScale} ${5 * handleScale}`} opacity={item.id === selectedId ? 1 : 0.6} style={{ cursor: tool === 'select' ? 'grab' : 'inherit' }} />
-              <g pointerEvents="none"><rect x={bounds.x + 7} y={bounds.y + 7} width={29} height={26} rx={5} fill={color} /><text x={bounds.x + 21.5} y={bounds.y + 26} fill="white" fontSize={18} textAnchor="middle" fontFamily="sans-serif">{index}</text></g>
+              {position && <g data-panel-number={item.id} pointerEvents="none" transform={`translate(${position.x} ${position.y}) scale(${position.scale})`}>
+                <rect width={width} height={26} rx={5} fill={color} />
+                <text x={width / 2} y={19} fill="white" fontSize={18} textAnchor="middle" fontFamily="sans-serif">{number}</text>
+              </g>}
             </g>;
           })}
           {selected && tool === 'select' && <g data-panel={selected.id}>
@@ -1099,8 +1175,11 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
           {rotationLabel && <g pointerEvents="none" transform={`translate(${rotationLabel.x} ${rotationLabel.y}) scale(${handleScale})`}><rect x={-29} y={-13} width={58} height={26} rx={6} fill={theme.palette.background.paper} stroke={theme.palette.divider} /><text textAnchor="middle" y={5} fill={theme.palette.text.primary} fontSize={12} fontFamily="sans-serif">{Math.round((rotationLabel.angle % 360 + 360) % 360)}°</text></g>}
           {tool === 'cut' && <g pointerEvents="none" stroke="#d34256">
             {cutHoverPanel && <line x1={cutHoverPanel.points[cutHover.edgeIndex].x} y1={cutHoverPanel.points[cutHover.edgeIndex].y} x2={cutHoverPanel.points[(cutHover.edgeIndex + 1) % cutHoverPanel.points.length].x} y2={cutHoverPanel.points[(cutHover.edgeIndex + 1) % cutHoverPanel.points.length].y} strokeWidth={3 * handleScale} opacity={0.7} />}
-            {cut && cursor && <><line x1={cut.point.x} y1={cut.point.y} x2={cursor.x} y2={cursor.y} strokeWidth={gutter} opacity={0.18} /><line x1={cut.point.x} y1={cut.point.y} x2={cursor.x} y2={cursor.y} strokeWidth={1.5 * handleScale} strokeDasharray={`${6 * handleScale} ${4 * handleScale}`} /></>}
-            {cut && <circle cx={cut.point.x} cy={cut.point.y} r={5 * handleScale} fill="#d34256" stroke="white" strokeWidth={handleScale} />}
+            {cutPreview.length > 1 && <g fill="none" strokeLinejoin="round">
+              <polyline points={polygonPoints(cutPreview)} strokeWidth={gutter} opacity={0.18} />
+              <polyline points={polygonPoints(cutPreview)} strokeWidth={1.5 * handleScale} strokeDasharray={`${6 * handleScale} ${4 * handleScale}`} />
+            </g>}
+            {cutVertices.map((point, index) => <circle key={index} data-comic-cut-vertex cx={point.x} cy={point.y} r={5 * handleScale} fill="#d34256" stroke="white" strokeWidth={handleScale} />)}
             {cutHover && <circle cx={cutHover.point.x} cy={cutHover.point.y} r={6 * handleScale} fill="white" strokeWidth={2 * handleScale} />}
           </g>}
           {mode === 'ai' && page.aiWorkflow?.plan?.sections.flatMap((part) => part.instances.map((instance, index) => {
@@ -1110,13 +1189,13 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
             const label = `${index + 1} · ${character?.name || (language === 'zh' ? '场景' : 'Scene')}`;
             const selectedPoint = selectedControl?.sectionId === part.id && selectedControl?.instanceId === instance.id;
             return <g key={`${part.id}:${instance.id}`} data-comic-ai-control={`${part.id}:${instance.id}`} role="button" tabIndex={0} aria-label={label} aria-pressed={selectedPoint}
-              transform={`translate(${point.x} ${point.y}) scale(${handleScale})`} style={{ cursor: aiBusy ? 'wait' : 'grab', outline: 'none' }}
+              transform={`translate(${point.x} ${point.y}) scale(${handleScale})`} style={{ cursor: directorBusy ? 'wait' : 'grab', outline: 'none' }}
               onFocus={() => { setSelectedControl({ sectionId: part.id, instanceId: instance.id }); }}
               onPointerDown={(event) => {
                 event.stopPropagation(); event.preventDefault();
                 setSelectedControl({ sectionId: part.id, instanceId: instance.id }); setDockCollapsed(false);
                 event.currentTarget.focus({ preventScroll: true });
-                if (aiBusy || generationAction?.loading || event.button !== 0) return;
+                if (directorBusy || generationAction?.loading || event.button !== 0) return;
                 controlDrag.current = { pointerId: event.pointerId, before: pageRef.current, sectionId: part.id, instanceId: instance.id };
                 event.currentTarget.setPointerCapture(event.pointerId);
               }} onPointerMove={(event) => {
@@ -1125,7 +1204,7 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
                 if (action?.pointerId === event.pointerId) moveAIControl(action.sectionId, action.instanceId, canvasPoint(event));
               }} onPointerUp={(event) => finishAIControl(event)} onPointerCancel={(event) => finishAIControl(event, true)} onLostPointerCapture={(event) => finishAIControl(event, true)}
               onKeyDown={(event) => {
-                if (aiBusy || generationAction?.loading) return;
+                if (directorBusy || generationAction?.loading) return;
                 const delta = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key];
                 if (delta) { event.preventDefault(); event.stopPropagation(); moveAIControl(part.id, instance.id, { x: point.x + delta[0] * (event.shiftKey ? 10 : 2), y: point.y + delta[1] * (event.shiftKey ? 10 : 2) }, true); }
                 if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedControl({ sectionId: part.id, instanceId: instance.id }); setDockCollapsed(false); }
@@ -1137,11 +1216,25 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
           }))}
           {rectangle && <rect x={Math.min(rectangle.start.x, rectangle.end.x)} y={Math.min(rectangle.start.y, rectangle.end.y)} width={Math.abs(rectangle.start.x - rectangle.end.x)} height={Math.abs(rectangle.start.y - rectangle.end.y)} fill={tool === 'overlay' ? '#bd711020' : '#287bcc20'} stroke={tool === 'overlay' ? '#bd7110' : '#287bcc'} strokeWidth={1.5 * handleScale} strokeDasharray={`${5 * handleScale} ${3 * handleScale}`} pointerEvents="none" />}
         </Box>
+        {imageActionsPosition && <Paper role="group" aria-label={w('画框图像操作', 'Frame image actions')}
+          data-comic-panel-image-actions data-testid="comic-panel-image-actions" elevation={3}
+          onPointerDown={(event) => event.stopPropagation()} onPointerMove={(event) => event.stopPropagation()} onPointerUp={(event) => event.stopPropagation()}
+          sx={{
+            position: 'absolute', ...imageActionsPosition, zIndex: 2, display: 'flex', gap: '2px', p: '2px',
+            border: 1, borderColor: 'divider', borderRadius: 1.5, cursor: 'auto',
+            '& .MuiButton-root': {
+              width: imageButtonSize, minWidth: imageButtonSize, height: imageButtonSize, minHeight: imageButtonSize, p: 0,
+              '& .MuiButton-startIcon': { m: 0 }, '& > .MuiBox-root': { display: 'none' },
+            },
+          }}>
+          <ComicButton icon={UploadFile} label={c.upload} shortcut="Ctrl+O" onClick={() => { uploadTarget.current = target; upload.current.click(); }} />
+          <ComicButton icon={ImageOutlined} label={c.gallery} onClick={() => openGallery()} />
+          <ComicButton icon={CropFree} label={c.cropImage} shortcut="Shift+C" disabled={!selected.image} onClick={() => setCropId(selected.id)} />
+          <ComicButton icon={DeleteOutline} label={c.removeImage} disabled={!selected.image} onClick={() => updatePanel(selected.id, { image: null })} />
+        </Paper>}
         <Box sx={{ position: 'absolute', right: 8, bottom: 8, display: 'flex', overflow: 'hidden', bgcolor: layersOpen ? 'primary.main' : 'background.paper', borderRadius: 1, boxShadow: 3 }}><ComicButton icon={LayersOutlined} label={c.layers} variant={layersOpen ? 'contained' : 'text'} sx={{ borderRadius: 0, boxShadow: 'none' }} onClick={() => setLayersOpen((open) => !open)} /></Box>
         {isMobile && <Typography role="status" data-testid="comic-tool-name" variant="caption" noWrap sx={{ position: 'absolute', left: 8, bottom: 6, maxWidth: '70%', px: 0.6, py: 0.2, borderRadius: 0.5, color: '#fff', bgcolor: '#20242a66', pointerEvents: 'none' }}>{spaceHeld ? c.hand : lastAction || (tool === 'text' ? c.text : tools.find(([id]) => id === tool)?.[2])}</Typography>}
-      </Box>
-      </Box>
-      {layersOpen && <Box sx={{ position: 'absolute', right: 8, bottom: 82, zIndex: 4, maxWidth: 'calc(100% - 16px)' }}>
+      {layersOpen && <Box sx={{ position: 'absolute', right: 8, bottom: 48, zIndex: 4, maxWidth: 'calc(100% - 16px)', cursor: 'auto' }}>
         <ComicLayerPanel page={page} activeLayerId={activeLayerId} selectedItem={selectedItem} language={language} onClose={() => setLayersOpen(false)} onSelectLayer={(id) => { choose(null); setActiveLayerId(id); }} onSelectItem={(kind, id) => {
           const current = pageRef.current;
           const item = (kind === 'panel' ? current.panels : kind === 'element' ? current.elements : current.strokes).find((value) => value.id === id);
@@ -1150,17 +1243,26 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
           if (kind === 'panel') choose(item, current); else if (kind === 'element') chooseElement(item); else { choose(null); setSelectedStrokeId(item.id); setActiveLayerId(item.layerId); }
         }} onChange={changeLayers} />
       </Box>}
-      <Box data-testid="comic-actions" sx={{ p: compactAndroid ? 0.5 : 0.8, display: compactAndroid && mode === 'ai' ? 'none' : 'flex', flexWrap: 'wrap', gap: 0.75, alignItems: 'center', flexShrink: 0, borderTop: 1, borderColor: 'divider', bgcolor: 'background.paper' }}>
-        <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexWrap: 'wrap', flexDirection: compactAndroid ? 'column' : 'row', gap: 1, '& .MuiButton-root': { minHeight: { xs: 44, md: 30 }, fontSize: { xs: 13, md: 11 } } }}>
-        {mode === 'manual' && <>
-          <Button size="small" variant="contained" startIcon={<PlayArrow />} disabled={busy || aiBusy || generationAction?.disabled || (!selected && !generationAction?.loading)} onClick={onGenerate}>{generationAction?.text || c.generate}{generationAction?.costLabel ? ` · ${generationAction.costLabel}` : ''}</Button>
-          {onGenerateAll && <Tooltip title={language === 'zh' ? `共 ${batchCost.count} 个分镜，每个生成一张` : `${batchCost.count} panels, one image each`}><span>
-            <Button size="small" variant="outlined" disabled={busy || aiBusy || generationAction?.loading || !batchCost.count || batchCost.total === null} onClick={onGenerateAll}>{language === 'zh' ? '依次生成所有分镜' : 'Generate every panel'} · {batchCostLabel}</Button>
-          </span></Tooltip>}
-        </>}
-        {selectedElement && <><Chip size="small" label={selectedElement.kind === 'bubble' ? c.dialogue : c[selectedElement.kind]} /><ComicButton icon={SettingsOutlined} label={c.editElement} onClick={() => setElementEditorId(selectedElement.id)} /></>}
-        </Box>
-        {!compactAndroid && <ComicButton icon={dirty ? SaveOutlined : Check} label={c.savePage} tip={c.savedLocally} shortcut="Ctrl+S" disabled={busy} onClick={() => perform(savePage)} />}
+      </Box>
+      <Paper data-testid="comic-canvas-actions" elevation={4} sx={{ alignSelf: 'center', maxWidth: 'calc(100% - 12px)', m: { xs: 0.75, sm: 1.25 }, p: 0.5, display: 'flex',
+        flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: 0.5, flexShrink: 0, border: 1, borderColor: 'divider', borderRadius: 2,
+        '& .MuiButton-root': { minHeight: { xs: 34, md: 32 }, fontSize: 12, lineHeight: 1.25 } }}>
+        {mode === 'manual' && <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+          {generationVerification}
+          <Button size="small" variant="contained" startIcon={<PlayArrow />} disabled={busy || directorBusy || generatingSequence || generationAction?.disabled || !selected}
+            onClick={onGenerate}>{generationAction?.text || c.generate}{generationAction?.costLabel ? ` · ${generationAction.costLabel}` : ''}</Button>
+        </Box>}
+        {mode === 'manual' && onGenerateAll && (generatingSequence
+          ? <Button size="small" color="warning" onClick={onStopSequence}>{w('停止后续分镜', 'Stop remaining panels')}</Button>
+          : <Button size="small" disabled={busy || directorBusy || generationAction?.sequenceDisabled ||
+            !page.panels.some((panel) => page.layers.some((layer) => layer.id === panel.layerId && layer.visible && !layer.locked))}
+            onClick={onGenerateAll}>{w('按顺序生成全部分镜', 'Generate all panels in order')}</Button>)}
+        {!directorEnabled && selected && <ComicButton icon={SettingsOutlined} label={c.editTask} onClick={() => onEditTask?.(selectedBounds)} />}
+        {selectedElement && <ComicButton icon={SettingsOutlined} label={c.editElement} onClick={() => setElementEditorId(selectedElement.id)} />}
+        <Box ref={setCanvasActions} sx={{ display: 'contents' }} />
+        <ComicButton icon={dirty ? SaveOutlined : Check} label={c.savePage} tip={c.savedLocally} shortcut="Ctrl+S" disabled={busy} onClick={() => perform(savePage)} />
+      </Paper>
+      </Box>
       </Box>
     </Box>
 
@@ -1186,8 +1288,7 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
       {selectedItem && [<MenuItem key="duplicate" onClick={duplicateSelection}>{c.duplicate}<Typography component="span" sx={{ ml: 'auto', pl: 3, color: 'text.secondary', fontSize: 11 }}>Ctrl+J</Typography></MenuItem>, <MenuItem key="up" onClick={() => moveLayer(1)}>{c.contentForward}</MenuItem>, <MenuItem key="down" onClick={() => moveLayer(-1)}>{c.contentBackward}</MenuItem>, <MenuItem key="delete" sx={{ color: 'error.main' }} onClick={deleteSelection}>{c.deleteContent}</MenuItem>]}
     </Menu>
 
-    <ComicLLMSettings androidLayout={androidLayout} open={active && settingsOpen} onClose={() => setSettingsOpen(false)} language={language} disabled={aiBusy} onChange={setLLMSettings} />
-    <Dialog open={Boolean(canvasDimensions)} onClose={() => !busy && setCanvasDimensions(null)} maxWidth="xs" fullWidth aria-labelledby="comic-canvas-size-title">
+    <Dialog open={Boolean(canvasDimensions)} onClose={() => !busy && setCanvasDimensions(null)} maxWidth="xs" fullWidth>
       <Box component="form" onSubmit={(event) => {
         event.preventDefault();
         const width = Number(canvasDimensions.width), height = Number(canvasDimensions.height);
@@ -1195,7 +1296,7 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
         perform(async () => {
           cancelDrag();
           const bounds = sectionBounds({ ...pageRef.current, width, height });
-          // 只记录单页基准，双页换版式不会反复翻倍，打开旧页也不会覆盖用户设置。
+          // 默认尺寸只记录一页的短边和长边，打开旧页或切换双页时不会覆盖或翻倍。
           const defaults = { width: Math.min(bounds.width, bounds.height), height: Math.max(bounds.width, bounds.height) };
           await saveComicCanvasDefaults(defaults);
           setCanvasDefaults(defaults);
@@ -1204,7 +1305,7 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
           setCut(null); setView({ zoom: 1, x: 0, y: 0 }); setCanvasDimensions(null);
         });
       }}>
-        <DialogTitle id="comic-canvas-size-title">{c.canvasSize}</DialogTitle>
+        <DialogTitle>{c.canvasSize}</DialogTitle>
         <DialogContent sx={{ display: 'flex', gap: 1.5, pt: '12px !important' }}>
           {['width', 'height'].map((dimension) => {
             const value = canvasDimensions?.[dimension] ?? '';
@@ -1214,7 +1315,7 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
         </DialogContent>
         <DialogActions>
           <Button disabled={busy} onClick={() => setCanvasDimensions(null)}>{c.cancel}</Button>
-          <Tooltip title={c.canvasSizeTip}><span><Button type="submit" variant="contained" disabled={busy || !canvasDimensions || !Object.values(canvasDimensions).every((value) => Number.isInteger(Number(value)) && value > 0)}>{c.confirm}</Button></span></Tooltip>
+          <Tooltip title={c.canvasSizeTip}><span><Button type="submit" variant="contained" disabled={busy || !canvasDimensions || !Object.values(canvasDimensions).every((value) => Number.isInteger(Number(value)) && Number(value) > 0)}>{c.confirm}</Button></span></Tooltip>
         </DialogActions>
       </Box>
     </Dialog>
@@ -1268,7 +1369,7 @@ const ComicWorkspace = forwardRef(function ComicWorkspace({ generatedItems = [],
       <DialogContent dividers>
         {galleryTab === 1 && gallery?.failed && <Alert severity="error">{c.galleryError}</Alert>}
         {galleryTab === 1 && gallery?.loading && !gallery.entries.length ? <Typography>{c.loading}</Typography> : <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(130px,1fr))', gap: 1 }}>
-          {(galleryTab ? gallery?.entries || [] : generatedItems.filter((item) => item.type !== 'video')).map((item, index) => <ButtonBase key={item.id} disabled={busy} aria-label={`${c.panel} ${index + 1}`} onClick={() => perform(async () => { const blob = galleryTab ? await fetchUrlAsBlob((await apiClient.getGalleryEntry(item.id)).url) : await fetchUrlAsBlob(item.src); await addImage(blob, gallery.target); setGallery(null); }, c.imageError)} sx={{ display: 'block', overflow: 'hidden', borderRadius: 1 }}>
+          {(galleryTab ? gallery?.entries || [] : generatedItems.filter((item) => item.type !== 'video')).map((item, index) => <ButtonBase key={item.id} disabled={busy} aria-label={`${c.panel} ${index + 1}`} onClick={() => perform(async () => { const blob = galleryTab ? await fetchUrlAsBlob((await comicClient.getGalleryEntry(item.id)).url) : await fetchUrlAsBlob(item.src); await addImage(blob, gallery.target); setGallery(null); }, c.imageError)} sx={{ display: 'block', overflow: 'hidden', borderRadius: 1 }}>
             <Box component="img" src={galleryTab ? item.thumbnail_url : item.src} alt={item.title || item.prompt || ''} loading="lazy" sx={{ width: '100%', height: 140, objectFit: 'cover' }} />
           </ButtonBase>)}
         </Box>}

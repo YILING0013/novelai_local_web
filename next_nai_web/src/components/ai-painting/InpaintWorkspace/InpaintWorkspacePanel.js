@@ -1,5 +1,7 @@
 "use client";
 
+import { readDroppedFiles } from '../tools/ImageTools/previewImageDragData.mjs';
+
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import {
   Box,
@@ -1491,7 +1493,7 @@ const InpaintWorkspacePanel = forwardRef(({
     event.preventDefault();
     setDragActive(false);
 
-    const file = event.dataTransfer.files?.[0];
+    const [file] = readDroppedFiles(event.dataTransfer);
     if (!file) {
       return;
     }

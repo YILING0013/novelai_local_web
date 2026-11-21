@@ -52,8 +52,9 @@ export function floodMask(pixels, width, height, x, y, tolerance) {
  * @param {number} width 图片宽。
  * @param {number} height 图片高。
  * @param {object} a 调色参数。
+ * @param {boolean} smoothCurves 是否使用平滑曲线，旧合成项目保留线性曲线。
  */
-export function adjustPixels(data, width, height, a) {
+export function adjustPixels(data, width, height, a, smoothCurves = false) {
   const parse = (hex) =>
     [1, 3, 5].map((offset) => parseInt(hex.slice(offset, offset + 2), 16));
   const dark = parse(a.shadowColor || "#172b42"),
@@ -63,11 +64,11 @@ export function adjustPixels(data, width, height, a) {
     a.curve || [
       [0, 0],
       [255, 255],
-    ],
+    ], smoothCurves,
   );
   const hslBands = HSL_CHANNELS.map(({ key }) => a.hsl[key]);
   const hasHsl = hslBands.some((band) => band.hue || band.saturation || band.lightness);
-  const channelCurves = [a.curveRed, a.curveGreen, a.curveBlue].map(curveTable);
+  const channelCurves = [a.curveRed, a.curveGreen, a.curveBlue].map((points) => curveTable(points, smoothCurves));
   const gradeBands = GRADING_CHANNELS.map(({ key }) => a.grading[key]);
   const hasGrading = gradeBands.some((band) => band.saturation || band.lightness);
   const gradeColors = gradeBands.map((band) => {
@@ -329,20 +330,50 @@ export function detailPixels(data, width, height, adjustments) {
   }
 }
 
-/** 将曲线控制点线性插值为 256 个色调映射值。
+/** 计算穿过控制点的三次曲线，使画布映射与编辑器显示共用同一条曲线。
+ * @param {number[][]} points 横坐标严格递增的控制点。
+ * @returns {number[][]} 每段的起点、三次贝塞尔纵向控制值和终点。
+ */
+export function smoothCurveSegments(points) {
+  const widths = points.slice(1).map(([x], index) => x - points[index][0]);
+  const slopes = widths.map((width, index) => (points[index + 1][1] - points[index][1]) / width);
+  const tangents = points.map((_, index) => {
+    if (index === 0) return slopes[0];
+    if (index === points.length - 1) return slopes.at(-1);
+    const left = slopes[index - 1];
+    const right = slopes[index];
+    // 极值处使用水平切线，单调区间使用加权调和平均，避免出现过冲和反色。
+    if (left * right <= 0) return 0;
+    const leftWidth = widths[index - 1];
+    const rightWidth = widths[index];
+    const w1 = leftWidth + 2 * rightWidth;
+    const w2 = 2 * leftWidth + rightWidth;
+    return (w1 + w2) / (w1 / left + w2 / right);
+  });
+  return widths.map((width, index) => {
+    const [x0, y0] = points[index];
+    const [x1, y1] = points[index + 1];
+    return [x0, y0, y0 + tangents[index] * width / 3, y1 - tangents[index + 1] * width / 3, x1, y1];
+  });
+}
+
+/** 将曲线控制点插值为 256 个色调映射值。
  * @param {number[][]} points 按输入值排序的控制点。
+ * @param {boolean} smooth 是否使用三次插值。
  * @returns {Uint8ClampedArray} 色调查找表。
  */
-export function curveTable(points) {
+export function curveTable(points, smooth = false) {
   const table = new Uint8ClampedArray(256);
-  let segment = 0;
-  for (let x = 0; x < 256; x++) {
-    while (segment < points.length - 2 && x > points[segment + 1][0]) segment++;
-    const [x0, y0] = points[segment],
-      [x1, y1] = points[segment + 1];
-    table[x] =
-      y0 +
-      (y1 - y0) * Math.max(0, Math.min(1, (x - x0) / Math.max(1, x1 - x0)));
+  const segments = smooth ? smoothCurveSegments(points) : points.slice(1).map(([x1, y1], index) => {
+    const [x0, y0] = points[index];
+    return [x0, y0, 0, 0, x1, y1];
+  });
+  for (const [x0, y0, c0, c1, x1, y1] of segments) {
+    for (let x = x0; x <= x1; x++) {
+      const t = (x - x0) / (x1 - x0);
+      const u = 1 - t;
+      table[x] = smooth ? u ** 3 * y0 + 3 * u ** 2 * t * c0 + 3 * u * t ** 2 * c1 + t ** 3 * y1 : y0 + (y1 - y0) * t;
+    }
   }
   return table;
 }

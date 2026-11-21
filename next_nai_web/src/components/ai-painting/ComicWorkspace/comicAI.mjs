@@ -111,8 +111,9 @@ export function buildComicAISections(page, readingDirection = 'ltr') {
       if (overlap > Math.min(left.bounds.height, right.bounds.height) / 2) return (left.bounds.x - right.bounds.x) * (readingDirection === 'rtl' ? -1 : 1);
       return left.bounds.y - right.bounds.y || left.bounds.x - right.bounds.x;
     });
+    const portrait = page.layout === 'portrait' || (page.layout === 'spreadPortrait' && page.layoutVersion !== 2);
     return {
-      id, width: page.layout === 'portrait' ? 832 : 1216, height: page.layout === 'portrait' ? 1216 : 832,
+      id, width: portrait ? 832 : 1216, height: portrait ? 1216 : 832,
       referencePanels: panels.length > 1 ? panels.map(({ panel, bounds: box }, index) => ({
         id: panel.id, number: index + 1,
         center: { x: (box.x + box.width / 2 - bounds.x) / bounds.width, y: (box.y + box.height / 2 - bounds.y) / bounds.height },
@@ -128,7 +129,7 @@ export function buildComicAISections(page, readingDirection = 'ltr') {
  * @param {object} options model 默认 V5 Full；forGeneration 默认 true，导入编辑草稿时设为 false，仅检查结构。
  * @returns {object} 生成时返回已清理重复对白的编排副本；仅校验导入时保留原对象。结构不完整时抛出错误。
  */
-export function validateComicAIPlan(plan, { model = 'nai-diffusion-5-full', forGeneration = true } = {}) {
+export function validateComicAIPlan(plan, { model = 'nai-diffusion-5-full', forGeneration = true, drawDialogues = true } = {}) {
   const identified = (items) => Array.isArray(items) && items.every((item) => item && typeof item.id === 'string' && item.id.length > 0) && new Set(items.map((item) => item.id)).size === items.length;
   const coordinate = (value) => typeof value === 'number' && Number.isFinite(value);
   if (!plan || plan.version !== 1 || typeof plan.summary !== 'string' || !identified(plan.characters) || !Array.isArray(plan.sections) || !plan.sections.length || plan.sections.length > 2) throw new Error('Invalid comic AI plan.');
@@ -154,7 +155,7 @@ export function validateComicAIPlan(plan, { model = 'nai-diffusion-5-full', forG
       || typeof dialogue.text !== 'string' || !['speech', 'narration', 'sfx'].includes(dialogue.type) || !['horizontal', 'vertical'].includes(dialogue.direction)
       || !Number.isInteger(dialogue.order))) throw new Error('Invalid comic AI dialogue.');
     // 缺少对白、人物记录或重复排序不影响请求执行；这里只检查每张图的真实文字容量。
-    if (forGeneration) comicTextContent(section, model);
+    if (forGeneration && drawDialogues) comicTextContent(section, model);
   }
   // 首次收到计划即移除画面提示里的重复对白，随后编辑 dialogues 不会把旧台词带回请求。
   return forGeneration ? { ...plan, sections: plan.sections.map(cleanComicAIVisualPrompts) } : plan;
@@ -166,10 +167,10 @@ export function validateComicAIPlan(plan, { model = 'nai-diffusion-5-full', forG
  * @param {object} options characters 为人物固定外观；另含模型、质量提示后缀与种子，质量词放在 Text 清单之前。
  * @returns {object} 带精确角色坐标的普通生成参数，一次只请求一张图。
  */
-export function buildComicAIParams(section, { characters = [], model = 'nai-diffusion-5-full', qualitySuffix = 'best quality, amazing quality, very aesthetic, highres', seed = '' } = {}) {
+export function buildComicAIParams(section, { characters = [], model = 'nai-diffusion-5-full', qualitySuffix = 'best quality, amazing quality, very aesthetic, highres', seed = '', drawDialogues = true } = {}) {
   section = cleanComicAIVisualPrompts(section);
-  const dialogues = [...section.dialogues].sort((left, right) => left.order - right.order);
-  const text = comicTextContent(section, model);
+  const dialogues = drawDialogues ? [...section.dialogues].sort((left, right) => left.order - right.order) : [];
+  const text = drawDialogues ? comicTextContent(section, model) : '';
   const panelLocations = new Map(section.panels.map((panel) => {
     let location = `Panel ${panel.number}`;
     if (panel.bounds) {
@@ -211,7 +212,8 @@ export function buildComicAIParams(section, { characters = [], model = 'nai-diff
     ...(model === NOVELAI_V5_MEDIUM_MODEL_ID ? NOVELAI_V5_MEDIUM_DEFAULT_PARAMS : {}),
     model, width: section.width, height: section.height, seed, batchSize: 1,
     positivePrompt: dialogues.length ? `${global}\nText: ${text}` : global,
-    negativePrompt: section.negativePrompt, characterPositionMode: section.useCoords === false ? 'auto' : 'custom',
+    negativePrompt: [section.negativePrompt, !drawDialogues && 'text, watermark, lettering, speech bubble'].filter(Boolean).join(', '),
+    characterPositionMode: section.useCoords === false ? 'auto' : 'custom',
     characterControl: buildNovelAIV5CharacterControl(characterTabs, section.useCoords !== false),
   };
 }
@@ -290,7 +292,8 @@ export function applyComicAIImage(page, sectionId, image, { originalImage, taskI
     const box = panelBounds(stroke.points);
     return !overlaps({ x: box.x - stroke.width / 2, y: box.y - stroke.width / 2, width: box.width + stroke.width, height: box.height + stroke.width });
   });
-  return { ...ready, updatedAt: Date.now(), panels, strokes,
-    layers: [...ready.layers.filter((layer) => layer.comicAISectionId !== sectionId), originalLayer, imageLayer, textLayer],
+  const layers = [...ready.layers.filter((layer) => layer.comicAISectionId !== sectionId), originalLayer, imageLayer];
+  if (textElements.length) layers.push(textLayer);
+  return { ...ready, updatedAt: Date.now(), panels, strokes, layers,
     elements: [...elements, ...textElements.map((element, order) => ({ ...element, layerId: textLayer.id, order, comicAISectionId: sectionId, comicAIRole: 'text', comicAITaskId: taskId }))] };
 }

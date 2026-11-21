@@ -2,6 +2,7 @@
 
 import React from 'react';
 import NextImage from 'next/image';
+import { imageDropHighlight } from './imageDropHighlight';
 import LockableSlider from '@/components/muiWrappers/LockableSlider';
 import {
   Box,
@@ -317,10 +318,7 @@ const VibePanel = ({
         borderTop: '1px solid',
         borderColor: 'divider',
         borderRadius: 0,
-        bgcolor: isVibeDragging && !blocked ? 'action.hover' : 'transparent',
-        outline: isVibeDragging && !blocked ? '2px solid' : 'none',
-        outlineColor: 'primary.main',
-        outlineOffset: -2,
+        bgcolor: 'transparent',
         backgroundImage: 'none',
         boxShadow: 'none',
         '&::before': { display: 'none' },
@@ -335,6 +333,7 @@ const VibePanel = ({
           px: 0,
           py: 0,
           bgcolor: 'transparent',
+          ...(isVibeDragging && !blocked && imageDropHighlight),
           '&.Mui-expanded': { minHeight: 44 },
           '& .MuiAccordionSummary-content, & .MuiAccordionSummary-content.Mui-expanded': { margin: 0 },
         }}

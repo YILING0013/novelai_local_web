@@ -35,10 +35,11 @@ export function makeAdjustmentPreset(name, adjustments) {
 }
 
 /** 在浏览器独立预设库中读取或保存列表；LUT 较大，使用 IndexedDB 容纳完整表数据。
- * @param {object[]|undefined} presets 提供数组时保存，省略时读取。
+ * @param {object[]|Function|undefined} presets 提供数组时保存，函数在同一事务内更新，省略时读取。
+ * @param {string} libraryKey 同一个预设库中的独立分类。
  * @returns {Promise<object[]|undefined>} 读取所得列表，或保存成功后的 undefined。
  */
-export function presetStorage(presets) {
+export function presetStorage(presets, libraryKey = "library") {
   return new Promise((resolve, reject) => {
     const opening = indexedDB.open("novelai-image-processing-postprocessing", 1);
     let blocked = false;
@@ -53,10 +54,16 @@ export function presetStorage(presets) {
       if (blocked) { database.close(); return; }
       const transaction = database.transaction("presets", presets === undefined ? "readonly" : "readwrite");
       const store = transaction.objectStore("presets");
-      const request = presets === undefined ? store.get("library") : store.put(presets, "library");
+      const updating = typeof presets === "function";
+      const request = presets === undefined || updating ? store.get(libraryKey) : store.put(presets, libraryKey);
+      let updated;
+      if (updating) request.onsuccess = () => {
+        updated = presets(request.result || []);
+        store.put(updated, libraryKey);
+      };
       transaction.oncomplete = () => {
         database.close();
-        resolve(presets === undefined ? request.result : undefined);
+        resolve(updating ? updated : presets === undefined ? request.result : undefined);
       };
       transaction.onabort = () => {
         database.close();

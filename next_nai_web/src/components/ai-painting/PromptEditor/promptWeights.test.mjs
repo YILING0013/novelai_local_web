@@ -2,6 +2,25 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { adjustPromptWeight, weightUpText, weightDownText } from './promptWeights.mjs';
 
+test('数字结尾的标签与权重结束符分隔，连续加减权重仍只修改原权重', () => {
+  const tag = 'artist:example12138';
+  const text = `${tag}, landscape`;
+  const first = weightUpText(text, 0, tag.length);
+  assert.equal(first.text, '1.1::artist:example12138 ::, landscape');
+
+  const second = weightUpText(first.text, first.start, first.end);
+  assert.equal(second.text, '1.2::artist:example12138 ::, landscape');
+  const third = weightDownText(second.text, second.start, second.end);
+  assert.deepEqual(third, first);
+  assert.deepEqual(weightDownText(third.text, third.start, third.end), { text, start: 0, end: tag.length });
+
+  const weakened = weightDownText(text, tag.length, tag.length);
+  assert.equal(weakened.text, '0.9::artist:example12138 ::, landscape');
+  assert.deepEqual(weightUpText(weakened.text, weakened.start, weakened.end), {
+    text, start: tag.length, end: tag.length,
+  });
+});
+
 test('无权重提示词从 1.0 每次调整 0.1，保留未选词、分隔符、空白和限定括号', () => {
   const text = 'keep,  blue_hair，\n furina_(genshin_impact), untouched';
   const start = text.indexOf('blue_hair');

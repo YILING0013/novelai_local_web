@@ -44,9 +44,10 @@ const looksLikeNovelAIJson = (value) => {
  * 安全解析 JSON 字符串。
  *
  * @param {unknown} value 可能是 JSON 字符串的值。
+ * @param {boolean} allowArrays 是否允许返回数组。
  * @returns {object|null} 解析成功返回对象，否则返回 null。
  */
-const tryParseJsonObject = (value) => {
+const tryParseJsonObject = (value, allowArrays = false) => {
   if (typeof value !== 'string') {
     return null;
   }
@@ -58,7 +59,7 @@ const tryParseJsonObject = (value) => {
 
   try {
     const parsed = JSON.parse(trimmed);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+    return parsed && typeof parsed === 'object' && (allowArrays || !Array.isArray(parsed)) ? parsed : null;
   } catch (_error) {
     return null;
   }
@@ -401,10 +402,35 @@ const parseMetadataCandidates = (candidates) => {
   return best.parsed;
 };
 
+/**
+ * 按原字段名读取元数据，编辑时保留自定义文本而不映射为生成参数。
+ * @param {Array<object>} candidates 图库图片解析器读取的元数据候选。
+ * @returns {object} 可编辑的 PNG 文本字段。
+ */
+const parseMetadataDocument = (candidates) => {
+  const fields = new Map();
+  for (const { keyword, text, value, source } of candidates) {
+    const field = text ?? value;
+    if (source === 'stealth_pngcomp' || source === 'png:NovelAI Stealth') {
+      const stealth = value ?? tryParseJsonObject(text);
+      // 隐写数据可能包含完整的 PNG 字段，也可能只有一组生成参数。
+      const original = stealth && Object.hasOwn(stealth, 'Comment') ? stealth : { Comment: stealth ?? field };
+      for (const [name, entry] of Object.entries(original)) {
+        if (!fields.has(name)) fields.set(name, entry);
+      }
+    } else if (!fields.has(keyword) || source.startsWith('png:')) {
+      fields.set(keyword, field);
+    }
+  }
+  return Object.fromEntries(fields);
+};
+
 module.exports = {
+  tryParseJsonObject,
   normalizeExifText,
   parseMetadataCandidate,
   parseMetadataCandidates,
+  parseMetadataDocument,
   parseNovelAIMetadata,
   scoreMetadata,
 };

@@ -322,7 +322,7 @@
   border-radius: 4px;
 }
 .image-processing-editor .menu-trigger.opened {
-  background: color-mix(in srgb, var(--panel-raised) 7%, transparent);
+  background: var(--accent-dark);
   color: var(--text);
 }
 .image-processing-editor .menu-dropdown {
@@ -331,8 +331,9 @@
   left: 0;
   width: 250px;
   padding: 5px;
-  background: var(--accent-dark);
-  border: 1px solid var(--accent);
+  background: var(--panel-raised);
+  color: var(--text);
+  border: 1px solid var(--border);
   border-radius: 7px;
   box-shadow: 0 8px 30px #0006;
   z-index: 60;
@@ -342,18 +343,18 @@
   padding: 8px 10px;
   justify-content: space-between;
   gap: 18px;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.3;
+  text-align: left;
 }
-.image-processing-editor .menu-dropdown button:hover {
+.image-processing-editor .menu-dropdown button:not(:disabled):is(:hover, :focus-visible) {
   background: var(--accent-dark);
   color: var(--text);
 }
-.image-processing-editor .menu-dismiss {
-  position: absolute;
-  inset: 0;
-  z-index: 40;
-  background: transparent;
+.image-processing-editor .menu-dropdown.layer-context-menu {
+  max-width: calc(100% - 16px);
+  max-height: min(520px, calc(100% - 16px));
+  overscroll-behavior: contain;
 }
 .image-processing-editor .search-button {
   gap: 12px;
@@ -836,6 +837,10 @@
     sans-serif;
   border-radius: 3px;
   white-space: nowrap;
+}
+.image-processing-editor .size-label.rotation-snapped {
+  background: var(--accent);
+  color: var(--accent-contrast);
 }
 .image-processing-editor .tool-brush,
 .image-processing-editor .tool-eraser,

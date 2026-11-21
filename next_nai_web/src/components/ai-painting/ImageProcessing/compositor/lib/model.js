@@ -1,4 +1,4 @@
-import { createClientId } from '@/utils/browserCapabilities.mjs';
+import { createClientId } from '../../../../../utils/browserCapabilities.mjs';
 import { validateLut } from "./lut.js";
 
 export const BLENDS = [
@@ -423,5 +423,22 @@ export function localPoint(point, layer) {
     y:
       (dx * Math.sin(angle) + dy * Math.cos(angle)) * (layer.flipY ? -1 : 1) +
       layer.height / 2,
+  };
+}
+
+/** 计算图层旋转后在画布上的外接矩形，用于边缘和中心吸附。
+ * @param {object} layer 图层位置、尺寸和角度。
+ * @returns {{x: number, y: number, width: number, height: number}} 画布坐标下的外接矩形。
+ */
+export function layerBounds(layer) {
+  const angle = (layer.rotation * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(angle)), sin = Math.abs(Math.sin(angle));
+  const width = layer.width * cos + layer.height * sin;
+  const height = layer.width * sin + layer.height * cos;
+  return {
+    x: layer.x + (layer.width - width) / 2,
+    y: layer.y + (layer.height - height) / 2,
+    width,
+    height,
   };
 }

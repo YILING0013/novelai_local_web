@@ -1,5 +1,9 @@
 "use client";
 
+import { summarizeGenerationParameters } from './Generation/generationDebug.mjs';
+import { hasFileDrag, readDroppedFiles } from './tools/ImageTools/previewImageDragData.mjs';
+import { downloadBlobToFile } from '@/utils/mediaAssets';
+
 import { MODEL_OPTIONS } from './utils/generationOptions';
 
 
@@ -560,14 +564,22 @@ const ParameterPanel = ({
     }
   };
 
-  const handleDragOver = (e) => e.preventDefault();
-  const handleDragEnter = (e) => { e.preventDefault(); setIsDragging(true); };
-  const handleDragLeave = (e) => { e.preventDefault(); setIsDragging(false); };
+  const handleDragOver = (e) => {
+    if (!hasFileDrag(e.dataTransfer)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+  const handleDragEnter = (e) => {
+    if (!hasFileDrag(e.dataTransfer)) return;
+    e.preventDefault();
+    setIsDragging(true);
+  };
+  const handleDragLeave = (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setIsDragging(false); };
   const handleDrop = (e) => {
     e.preventDefault();
     setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const file = e.dataTransfer.files[0];
+    const [file] = readDroppedFiles(e.dataTransfer);
+    if (file) {
       if (file.type.startsWith('image/')) {
         handleImageUpload({ target: { files: [file] } });
       } else {
@@ -576,8 +588,12 @@ const ParameterPanel = ({
     }
   };
 
-  const handleVibeDragOver = (e) => e.preventDefault();
-  const handleVibeDragEnter = (e) => { e.preventDefault(); setIsVibeDragging(true); };
+  const handleVibeDragOver = handleDragOver;
+  const handleVibeDragEnter = (e) => {
+    if (!hasFileDrag(e.dataTransfer)) return;
+    e.preventDefault();
+    setIsVibeDragging(true);
+  };
   const handleVibeDragLeave = (e) => {
     e.preventDefault();
     // 在缩略图和滑块之间移动仍处于同一个上传区域，离开整个折叠栏时再清除高亮。
@@ -587,14 +603,15 @@ const ParameterPanel = ({
   const handleVibeDrop = (e) => {
     e.preventDefault();
     setIsVibeDragging(false);
-    if (!e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
+    const files = readDroppedFiles(e.dataTransfer);
+    if (!files.length) return;
 
     if (isV4Model(params.model)) {
-      handleVibeV4FileUpload({ target: { files: e.dataTransfer.files } });
+      handleVibeV4FileUpload({ target: { files } });
     } else {
-      const allImages = Array.from(e.dataTransfer.files).every(file => file.type.startsWith('image/'));
+      const allImages = files.every(file => file.type.startsWith('image/'));
       if (allImages) {
-        handleVibeImageUpload({ target: { files: e.dataTransfer.files } });
+        handleVibeImageUpload({ target: { files } });
       } else {
         setToast({ open: true, message: t('painting.workspace.errors.v3ImageOnly'), severity: 'error' });
       }
@@ -1430,7 +1447,7 @@ const ParameterPanel = ({
     };
   }, [characterTabs, params]);
 
-  const getAllParameters = useCallback((snapshot = null) => {
+  const getAllParameters = useCallback((snapshot = null, resolveRandomPrompts = true) => {
     // 连续生成使用每个画框保存的编辑态，无需切换可见表单或等待 React 更新。
     const state = snapshot?.parameterState;
     const sourceParams = state?.params || params;
@@ -1441,8 +1458,8 @@ const ParameterPanel = ({
     const normalizedParams = normalizeNovelAISmeaParams(sourceParams);
     const allParams = {
       ...normalizedParams,
-      positivePrompt: extractActiveContent(prompts.positivePrompt, { processRandomPrompts: randomPromptEnabled, randomPromptConfig }),
-      negativePrompt: extractActiveContent(prompts.negativePrompt, { processRandomPrompts: randomPromptEnabled, randomPromptConfig }),
+      positivePrompt: extractActiveContent(prompts.positivePrompt, { processRandomPrompts: resolveRandomPrompts && randomPromptEnabled, randomPromptConfig }),
+      negativePrompt: extractActiveContent(prompts.negativePrompt, { processRandomPrompts: resolveRandomPrompts && randomPromptEnabled, randomPromptConfig }),
       vibeTransfer: getVibeTransferData(sourceParams, snapshot ? snapshot.vibeImages : vibeImages),
       characterControl: getCharacterData(sourceParams, state ? state.characterTabs || [] : characterTabs),
       version_editor: createVersionEditorSnapshot(state || {
@@ -1623,7 +1640,17 @@ const ParameterPanel = ({
     );
   };
 
-  const debugParams = () => console.log('当前参数:', getAllParameters());
+  const exportDebugParameters = async () => {
+    const exportedAt = new Date().toISOString();
+    const record = { schema_version: 1, exported_at: exportedAt,
+      current: summarizeGenerationParameters({ parameters: getAllParameters(null, false), randomPromptEnabled, randomPromptConfig }) };
+    try {
+      await downloadBlobToFile(new Blob([JSON.stringify(record, null, 2)], { type: 'application/json' }),
+        `generation-debug-${exportedAt.replace(/[:.]/g, '-')}.json`);
+    } catch {
+      setToast({ open: true, message: t('painting.workspace.errors.generic'), severity: 'error' });
+    }
+  };
 
   // 添加状态判断，用于决定是否禁用相关模块
   const hasImageReference = !!(
@@ -1709,7 +1736,7 @@ const ParameterPanel = ({
               handleClearSeed={handleClearSeed}
               handleSmeaChange={handleSmeaChange}
               handleDynChange={handleDynChange}
-              handleResetParamsConfirm={handleResetParamsConfirm}
+              handleResetParamsConfirm={handleResetParamsConfirm} onExportParameters={exportDebugParameters}
               parameterToolbarContainer={parameterToolbarContainer}
               isV5Model={isNovelAIV5Model(params.model)}
           />
@@ -1728,7 +1755,7 @@ const ParameterPanel = ({
           handleSizePresetClick={handleSizePresetClick}
           handleClearSeed={handleClearSeed}
           handleRefreshSeed={handleRefreshSeed}
-          handleResetParamsConfirm={handleResetParamsConfirm}
+          handleResetParamsConfirm={handleResetParamsConfirm} onExportParameters={exportDebugParameters}
           expandedPanels={expandedPanels}
           onExpandedPanelsChange={onExpandedPanelsChange}
           fileInputRef={fileInputRef}
@@ -1764,9 +1791,6 @@ const ParameterPanel = ({
           isV5Model={isNovelAIV5Model(params.model)}
       />
 
-      <Button variant="outlined" size="small" onClick={debugParams} sx={{ mt: 2, display: process.env.NODE_ENV === 'production' ? 'none' : 'block' }}>
-        {t('painting.workspace.parameters.logParameters')}
-      </Button>
 
       {/* Dialogs */}
       <Dialog open={resetDialogOpen} onClose={() => setResetDialogOpen(false)}>
