@@ -145,6 +145,7 @@ const messages = {
     "logout": "退出登录"
   },
   "common": {
+    "back": "返回",
     "retry": "重试",
     "copied": "已复制",
     "copyFailed": "复制失败，请选中文字后手动复制。",

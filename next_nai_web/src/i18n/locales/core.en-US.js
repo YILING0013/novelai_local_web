@@ -145,6 +145,7 @@ const messages = {
     "logout": "Log out"
   },
   "common": {
+    "back": "Back",
     "retry": "Retry",
     "copied": "Copied",
     "copyFailed": "Could not copy. Select the text and copy it manually.",
