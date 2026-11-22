@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import { applyComicAIImage, buildComicAIParams, buildComicAISections, comicAISectionFingerprint, positionComicAIControls, validateComicAIPlan } from './comicAI.mjs';
 import { createComicPage } from './comicDocument.mjs';
 import { buildComicLetteringElements } from './comicLettering.mjs';
+import { comicTextEdits, sameComicTextBounds } from './comicTextEdits.mjs';
 
 const source = readFileSync(new URL('./ComicAIStudio.js', import.meta.url), 'utf8');
 const defaultsStart = source.indexOf('const initialInput =');
@@ -49,7 +50,7 @@ test('新任务按有效订阅选择写作模型，保留已存草稿并忽略�
 });
 
 /** 执行真实工作流函数和画布回填函数，只替换网络、图片解码和磁盘存储。 */
-function studioScenario({ count = 1, failGeneration = null, input: inputOverrides = {}, hooks = {}, llmSettings = null } = {}) {
+function studioScenario({ count = 1, failGeneration = null, input: inputOverrides = {}, hooks = {}, llmSettings = null, detected = [] } = {}) {
   const first = { ...createComicPage(count === 2 ? 'spreadPortrait' : 'portrait'), id: 'page-one' };
   const second = { ...createComicPage(), id: 'page-two' };
   const plan = { version: 1, summary: '清晨旅行', storyDraft: '旅人在清晨出发，沿街走向车站。', visualStyle: '1.25::artist:example::, watercolor', planningModels: { story: 'xialong-v1', extract: 'glm-4-6', format: 'glm-4-6' }, characters: [], sections: Array.from({ length: count }, (_, id) => ({
@@ -95,6 +96,7 @@ function studioScenario({ count = 1, failGeneration = null, input: inputOverride
     structuredClone, Date, Object, Set, Promise,
     createClientId: () => `task-${++sequence}`,
     buildComicAIParams, buildComicAISections, comicAISectionFingerprint, positionComicAIControls, validateComicAIPlan,
+    comicTextEdits, sameComicTextBounds,
     w: (zh) => zh, errorMessage: (cause) => cause.message,
     setWorkflow() {}, setBusy: (value) => { busy = value; }, setProgress: (value) => progress.push(value), setJob() {},
     setError: (value) => { if (value) errors.push(value); },
@@ -130,7 +132,14 @@ function studioScenario({ count = 1, failGeneration = null, input: inputOverride
         const image = { dataUrl: `data:image/png;base64,cleaned-${sectionId}`, width: section.width, height: section.height };
         const imageUrl = `local:cleaned-${sectionId}`, maskUrl = `local:mask-${sectionId}`;
         assets.set(imageUrl, image); assets.set(maskUrl, image);
-        return { id: `lettering-${sectionId}`, status: 'completed', result: { image: { url: imageUrl }, mask: { url: maskUrl }, blocks: [], unmatchedDialogueIds: [] } };
+        const blocks = detected.map((block) => {
+          const choice = body.assignments[block.id];
+          const preset = body.dialogues.find(({ id }) => id === choice);
+          return { ...block, applied: Boolean(choice), needsReview: !choice, dialogueId: preset?.id ?? null,
+            text: preset?.text ?? choice?.text ?? '', direction: preset?.direction ?? choice?.direction ?? block.direction };
+        });
+        return { id: `lettering-${sectionId}`, status: 'completed', result: { image: { url: imageUrl }, mask: { url: maskUrl },
+          sourceHash: 'a'.repeat(64), blocks, unmatchedDialogueIds: [] } };
       },
       cancelImageBatch: async (id) => cancelledBatches.push(id),
     },
@@ -178,6 +187,31 @@ test('区域擦除和自定义文本原样交给本地重建，重复应用只�
   assert.equal(scenario.planRequests.length, 1);
   assert.deepEqual(scenario.localJobs.filter((job) => job.action === 'comic-lettering').map((job) => job.image), [original, original, original]);
   assert.deepEqual(scenario.localJobs.at(-1).assignments, assignments);
+  assert.deepEqual(scenario.errors, []);
+});
+
+test('生成后的文字应用复用原生去字，旧识别框也能选台词、抹除并恢复原文', async () => {
+  const detected = ['first', 'second', 'third'].map((id, index) => ({ id, ocrText: `原文 ${index + 1}`,
+    bounds: { x: 35, y: 30 + index * 40, width: 90, height: 30 }, direction: 'horizontal-tb', confidence: 1 }));
+  const scenario = studioScenario({ detected });
+  scenario.workflowRef.current.plan.sections[0].dialogues.push({ id: 'ai-line', panelId: 'p0', speakerId: null, type: 'speech',
+    direction: 'vertical', order: 1, text: '编排对白' });
+  await scenario.controls.run('generate');
+  const state = scenario.workflowRef.current.sections[0];
+  assert.deepEqual(state.ocr.lines.map(({ id }) => id), ['first', 'second', 'third']);
+  // 回归版本存了原生框的位置，但没存 ID，应用时应从同一原图补齐。
+  state.ocr.lines = state.ocr.lines.map(({ id, ...line }) => line);
+  state.assignments = { 0: 'ai-line', 1: { action: 'erase' }, 2: null };
+  await scenario.controls.run('replace', 0);
+  const applied = scenario.getPage('page-one');
+  assert.deepEqual(applied.elements.map(({ text, writingMode }) => [text, writingMode]), [['编排对白', 'vertical-rl']]);
+  assert.deepEqual(structuredClone(scenario.localJobs.at(-1).assignments), { first: 'ai-line', second: { action: 'erase' }, third: null });
+  assert.equal(scenario.localJobs.at(-1).image, state.originalImage.dataUrl);
+  scenario.workflowRef.current.sections[0].assignments = { 0: null, 1: null };
+  await scenario.controls.run('replace', 0);
+  assert.equal(scenario.getPage('page-one').elements.length, 0);
+  assert.equal(scenario.deliveries.at(-1).image.dataUrl, state.originalImage.dataUrl);
+  assert.equal(scenario.requests.length, 1);
   assert.deepEqual(scenario.errors, []);
 });
 

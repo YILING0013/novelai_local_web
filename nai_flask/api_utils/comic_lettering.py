@@ -438,30 +438,34 @@ class ComicLettering:
             if uniform:
                 # CTD 会漏掉“一”或句点这类细小字形。只在已读出的文字框内补充
                 # 与背景有明显色差、且不接触框边的笔画，避免把穿过文字框的线稿当字擦掉。
-                contrast = (np.max(np.abs(original_rgb[y:y + h, x:x + w].astype(float) - background), axis=2) > 20).astype(np.uint8)
+                left, top = max(0, x - 5), max(0, y - 5)
+                right, bottom = min(width, x + w + 5), min(height, y + h + 5)
+                contrast = (np.max(np.abs(original_rgb[top:bottom, left:right].astype(float) - background), axis=2) > 20).astype(np.uint8)
                 count, components, stats, _ = cv2.connectedComponentsWithStats(contrast)
+                outline = np.zeros_like(contrast)
                 for component in range(1, count):
                     sx, sy, sw, sh, _ = stats[component]
-                    if sx > 0 and sy > 0 and sx + sw < w and sy + sh < h:
-                        local_mask[y:y + h, x:x + w][components == component] = 255
+                    if sx == 0 or sy == 0 or sx + sw == right - left or sy + sh == bottom - top:
+                        outline[components == component] = 1
+                    elif (x < left + sx and left + sx + sw < x + w
+                          and y < top + sy and top + sy + sh < y + h):
+                        local_mask[top:bottom, left:right][components == component] = 255
                 local_mask = cv2.dilate(local_mask, np.ones((3, 3), np.uint8))
+                # CTD 也可能把延伸到框外的气泡轮廓认成字，去掉相关蒙版后仍可处理框内的字形。
+                local_mask[top:bottom, left:right][cv2.dilate(outline, np.ones((3, 3), np.uint8)) > 0] = 0
                 if bubble_mask is not None:
                     local_mask &= bubble_mask
-            # 重叠或串在一起的待核对文字不能被另一个确定的块顺带擦掉。
-            overlaps = False
+            # 优先保护相邻待核对框。框的识别留边常有少量交叠，裁掉交叠处后仍可去掉本框笔画。
+            mask_size = np.count_nonzero(local_mask)
             for other in blocks:
                 if other["id"] != block["id"] and other["needsReview"]:
                     box = other["bounds"]
-                    if np.any(local_mask[box["y"]:box["y"] + box["height"], box["x"]:box["x"] + box["width"]]):
-                        overlaps = True
-                        break
-            if overlaps:
+                    local_mask[box["y"]:box["y"] + box["height"], box["x"]:box["x"] + box["width"]] = 0
+            # 若大段笔画共用同一片区域，继续替字会叠到残留文字上，应留待用户核对。
+            if np.count_nonzero(local_mask) < max(4, mask_size * 0.85):
                 block.update(needsReview=True, reason="overlapping-text")
                 continue
             glyph_pixels = original_rgb[local_mask > 0]
-            if not len(glyph_pixels):
-                block.update(needsReview=True, reason="overlapping-text")
-                continue
             luma = glyph_pixels.mean(1)
             foreground = glyph_pixels[luma <= np.percentile(luma, 30)] if background.mean() >= 128 else glyph_pixels[luma >= np.percentile(luma, 70)]
             color = np.median(foreground, axis=0).astype(np.uint8)

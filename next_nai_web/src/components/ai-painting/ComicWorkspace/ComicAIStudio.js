@@ -1,13 +1,13 @@
-/* eslint-disable @next/next/no-img-element */
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
 import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Chip, LinearProgress, MenuItem, Paper, Stack, Tooltip, TextField, Typography } from '@mui/material';
-import { AutoAwesome, Download, ExpandMore, PlayArrow, Stop } from '@mui/icons-material';
+import { AutoAwesome, ExpandMore, PlayArrow, Replay, Stop } from '@mui/icons-material';
 import { createPortal } from 'react-dom';
-import { replaceComicImageText } from './comicLettering.mjs';
+import ComicTextReview from './ComicTextReview';
+import { comicTextEdits, sameComicTextBounds } from './comicTextEdits.mjs';
 import apiClient from '@/utils/ApiClient';
-import { downloadUrlToFile, fetchUrlAsBlob } from '@/utils/mediaAssets';
+import { fetchUrlAsBlob } from '@/utils/mediaAssets';
 import { createClientId } from '@/utils/browserCapabilities.mjs';
 import { useGeneration } from '../Generation/GenerationContext';
 import { buildComicAIParams, buildComicAISections, comicAISectionFingerprint, positionComicAIControls, validateComicAIPlan } from './comicAI.mjs';
@@ -203,18 +203,19 @@ export default function ComicAIStudio({ open, actionContainer, onOpenResults, im
       }
       // 一次固定计划，编辑器在任务结束后才重新开放，避免两张图使用不同版本的台词。
       const sections = plan.sections.filter((section) => sectionId === null || section.id === sectionId).sort((left, right) => left.id - right.id);
-      const pendingImages = sections.filter((section) => mode === 'regenerate' || mode === 'retry' || !workflowRef.current.sections[section.id]?.originalImage);
+      const pendingImages = sections.filter(({ id }) => {
+        const state = workflowRef.current.sections[id];
+        return mode === 'regenerate' || mode === 'retry' || (!state?.originalImage
+          && (mode !== 'generate' || (!state?.generationFailedWithoutImage && state?.status !== 'generating')));
+      });
       if (pendingImages.length > 1) current.batchId = createClientId();
       let imageIndex = 0;
       for (const section of sections) {
         if (current.cancelled) break;
         current.sectionId = section.id;
         let state = workflowRef.current.sections[section.id];
-        if (mode === 'generate' && state?.originalImage) continue;
+        if (mode === 'generate' && (state?.originalImage || state?.generationFailedWithoutImage || state?.status === 'generating')) continue;
         if ((mode === 'ocr' || mode === 'replace') && !state?.originalImage) continue;
-        if (mode === 'generate' && (state?.generationFailedWithoutImage || state?.status === 'generating')) {
-          throw new Error(w('请检查生成记录，再手动重试该区。', 'Check generation results, then retry this section manually.'));
-        }
         let generatedNow = false;
         let undoToken = null;
         if (mode === 'rebuild' && !state?.originalImage) throw new Error(w('尚无原图可重建。', 'Generate an image before rebuilding text.'));
@@ -255,23 +256,65 @@ export default function ComicAIStudio({ open, actionContainer, onOpenResults, im
           await updateSection(section.id, { status: 'cancelled' }); break;
         }
         if (['generate', 'retry', 'ocr', 'replace'].includes(mode)) {
+          const options = { action: 'comic-lettering', image: state.originalImage.dataUrl,
+            reading_direction: workflowRef.current.sourceInput.readingDirection, language: workflowRef.current.sourceInput.language };
           if (mode === 'replace') {
-            const lettering = await replaceComicImageText(state.originalImage, state.ocr.lines, state.assignments || {});
+            setProgress(w('正在清理文字并更新画布…', 'Removing text and updating the canvas…'));
+            const edits = comicTextEdits(state, section.dialogues);
+            const requested = edits.filter(({ choice, text }) => choice && (choice.action !== 'replace' || text));
+            let cleanedImage = state.originalImage;
+            let result = { sourceHash: state.result?.sourceHash, blocks: [], unmatchedDialogueIds: [], ocrReplacement: true };
+            if (requested.length) {
+              let nativeIds = new Map(edits.map(({ id }) => [id, id]));
+              if (edits.some(({ line }) => !line.id)) {
+                // 回归版本只保存了框坐标。先核对原图上的原生框，避免按排序猜测旧修改的目标。
+                const detected = await runLocal({ ...options, dialogues: [], assignments: {} });
+                if (current.cancelled) break;
+                nativeIds = new Map(edits.map(({ id, line }) => [id, detected.blocks.find(({ bounds }) =>
+                  sameComicTextBounds(line.bounds, bounds))?.id]));
+              }
+              if (requested.some(({ id }) => !nativeIds.get(id))) throw new Error(w('原图的文字框已变化，请重新识别后再应用。', 'Text regions have changed. Recognize the original again before applying edits.'));
+              const assignments = Object.fromEntries(edits.flatMap(({ id, choice, text, direction }) => {
+                const nativeId = nativeIds.get(id);
+                if (!nativeId) return [];
+                return [[nativeId, choice?.action === 'replace' ? { ...choice, text, direction } : choice]];
+              }));
+              const dialogues = section.dialogues.filter(({ id }) => requested.some(({ dialogueId }) => dialogueId === id))
+                .map((line) => ({ ...line, direction: line.direction === 'vertical' ? 'vertical-rl' : 'horizontal-tb' }));
+              const processed = await runLocal({ ...options, dialogues, assignments });
+              if (current.cancelled) break;
+              const blocks = requested.map(({ id }) => {
+                const block = processed.blocks.find((entry) => entry.id === nativeIds.get(id));
+                if (!block) throw new Error(w('原图的文字框已变化，请重新识别后再应用。', 'Text regions have changed. Recognize the original again before applying edits.'));
+                return { ...block, id };
+              });
+              result = { sourceHash: processed.sourceHash, blocks, unmatchedDialogueIds: [], ocrReplacement: true };
+              if (blocks.some((block) => block.applied)) cleanedImage = await readAIImage(processed.image.url);
+            }
             if (current.cancelled) break;
+            if (!requested.length && !state.result?.blocks.some((block) => block.applied)) continue;
+            if (!state.pending && !state.result?.blocks.some((block) => block.applied) && !result.blocks.some((block) => block.applied)) {
+              await updateSection(section.id, { cleanedImage, result });
+              continue;
+            }
+            await updateSection(section.id, { cleanedImage, result, maskImage: undefined, pending: true, status: 'pending' });
             const applied = await callbacks.current.onApplyResult({ pageId: current.pageId, sectionId: section.id,
-              image: lettering.cleanedImage, originalImage: state.originalImage, result: lettering.result,
+              image: cleanedImage, originalImage: state.originalImage, result,
               taskId: state.taskId, expectedFingerprint: state.appliedFingerprint || state.fingerprint });
-            await updateSection(section.id, { ...lettering, pending: !applied.applied,
-              appliedFingerprint: applied.fingerprint || state.appliedFingerprint, status: applied.applied ? 'completed' : 'pending' });
+            await updateSection(section.id, { pending: !applied.applied, appliedFingerprint: applied.fingerprint || state.appliedFingerprint,
+              status: applied.applied ? 'completed' : 'pending' });
           } else {
             try {
-              const result = await runLocal({ action: 'comic-lettering', image: state.originalImage.dataUrl,
-                dialogues: [], assignments: {}, reading_direction: workflowRef.current.sourceInput.readingDirection,
-                language: workflowRef.current.sourceInput.language });
+              const result = await runLocal({ ...options, dialogues: [], assignments: {} });
               if (current.cancelled) break;
-              // OCR 只读取原图，用户确认替换后才改动画布文字。
-              const lines = result.blocks.map(({ ocrText, bounds, direction, confidence }) => ({ text: ocrText, bounds, direction, confidence }));
-              await updateSection(section.id, { ocr: { backend: 'native', lines }, assignments: {}, ocrError: '', status: state.pending ? 'pending' : 'completed' });
+              // 识别只读取原图。用原生 ID 保存对应关系，下一轮直接用同一蒙版去字。
+              const lines = result.blocks.map(({ id, ocrText, bounds, direction, confidence }) => ({ id, text: ocrText, bounds, direction, confidence }));
+              const previous = comicTextEdits(state, section.dialogues);
+              const assignments = Object.fromEntries(lines.flatMap(({ id, bounds }) => {
+                const edit = previous.find(({ line }) => sameComicTextBounds(line.bounds, bounds));
+                return edit ? [[id, edit.choice]] : [];
+              }));
+              await updateSection(section.id, { ocr: { backend: 'native', lines }, assignments, ocrError: '', status: state.pending ? 'pending' : 'completed' });
             } catch (cause) {
               if (current.cancelled) break;
               await updateSection(section.id, { ocrError: cause.message, status: state.pending ? 'pending' : 'completed' });
@@ -322,7 +365,8 @@ export default function ComicAIStudio({ open, actionContainer, onOpenResults, im
       if (!applied.applied) throw new Error(w('请回到任务发起页后应用结果。', 'Return to the task page before applying the result.'));
       await persist({ ...pendingWorkflow, sections: { ...pendingWorkflow.sections, [sectionId]: {
         ...state, pending: false, appliedFingerprint: applied.fingerprint,
-        status: state.result?.blocks.some((block) => block.needsReview) || state.result?.unmatchedDialogueIds.length ? 'needs-review' : state.result ? 'completed' : 'cancelled',
+        status: state.result && !state.result.ocrReplacement && (state.result.blocks.some((block) => block.needsReview)
+          || state.result.unmatchedDialogueIds.length) ? 'needs-review' : 'completed',
       } } }, pageId);
     } catch (cause) { setError(errorMessage(cause)); }
     finally { flight.current = null; setBusy(false); setProgress(''); callbacks.current.onBusyChange(false); }
@@ -339,19 +383,31 @@ export default function ComicAIStudio({ open, actionContainer, onOpenResults, im
     void persist({ ...workflowRef.current, plan: positionComicAIControls(callbacks.current.getPage(displayedPageId.current), plan) })
       .catch((cause) => setError(errorMessage(cause)));
   }
-  function editReplacement(sectionId, index, text, direction) {
+  function editReplacement(sectionId, id, choice) {
     const state = workflowRef.current.sections[sectionId];
-    void updateSection(sectionId, { assignments: { ...state.assignments, [index]: { action: 'replace', text, direction } } })
+    void updateSection(sectionId, { assignments: { ...state.assignments, [id]: choice } })
       .catch((cause) => setError(errorMessage(cause)));
   }
-  const hasResults = Object.values(workflow?.sections || {}).some((state) => state.originalImage);
+  const generatedSections = workflow?.plan?.sections.filter(({ id }) => workflow.sections[id]?.originalImage) || [];
+  const failedSections = availableSections.filter(({ id }) => workflow.sections[id]?.generationFailedWithoutImage || workflow.sections[id]?.status === 'generating');
+  const newSections = availableSections.filter((section) => !failedSections.includes(section));
   const canvasActions = actionContainer && createPortal(<>
     {busy && <Button size="small" startIcon={<Stop />} color="warning" onClick={cancel}>{w('停止后续步骤', 'Stop subsequent steps')}</Button>}
-    {availableSections.length > 0 && !busy && <Button size="small" variant="contained" startIcon={<PlayArrow />}
+    {newSections.length > 0 && !busy && <Button size="small" variant="contained" startIcon={<PlayArrow />}
       disabled={actionsBusy || !imageModel} onClick={() => run('generate', null, imageModel)}>
-      {availableSections.length > 1 ? w('按顺序生成全部', 'Generate all in order') : w('生成漫画', 'Generate comic')}
+      {newSections.length > 1 ? w('按顺序生成全部', 'Generate all in order') : w('生成漫画', 'Generate comic')}
     </Button>}
-    {hasResults && <Button size="small" onClick={() => { onOpenResults(); setShowResults(true); }}>{w('核对文字', 'Review text')}</Button>}
+    {!busy && [...generatedSections, ...failedSections].map(({ id }) => {
+      const generated = Boolean(workflow.sections[id].originalImage);
+      const multiple = workflow.plan.sections.length > 1;
+      return <Button key={id} size="small" variant={newSections.length ? 'text' : 'outlined'} startIcon={<Replay />}
+        title={w('生图会消耗额度', 'Image generation uses credits')} disabled={actionsBusy || !imageModel}
+        onClick={() => run('retry', id, imageModel)}>
+        {generated ? (multiple ? w(`重新生成第 ${id + 1} 区`, `Regenerate section ${id + 1}`) : w('重新生成', 'Regenerate'))
+          : (multiple ? w(`重试第 ${id + 1} 区`, `Retry section ${id + 1}`) : w('重试生成', 'Retry generation'))}
+      </Button>;
+    })}
+    {generatedSections.length > 0 && <Button size="small" onClick={() => { onOpenResults(); setShowResults(true); }}>{w('核对文字', 'Review text')}</Button>}
   </>, actionContainer);
 
   // 收起侧栏时保留正在运行的工作流，卸载自动伸缩的输入框。
@@ -404,11 +460,6 @@ export default function ComicAIStudio({ open, actionContainer, onOpenResults, im
           const state = workflow.sections[section.id];
           if (!state) return null;
           const interrupted = !busy && state.status === 'generating';
-          const pendingEdits = state.ocr?.lines.some((line, index) => {
-            const edit = state.assignments?.[index]?.text?.trim() || '';
-            const previous = state.result?.ocrReplacement ? state.result.blocks.find((block) => block.id === String(index))?.text : '';
-            return (edit === line.text ? '' : edit) !== (previous || '');
-          });
           return <Paper key={section.id} variant="outlined" sx={{ p: 1.5, minWidth: 0 }}>
             <Stack spacing={1.5}>
               <Stack direction="row" gap={1} alignItems="center"><Typography fontWeight={600}>{w(`第 ${section.id + 1} 区`, `Section ${section.id + 1}`)}</Typography><Chip size="small" label={interrupted ? w('上次任务中断', 'Previous task interrupted') : statusText[state.status] || state.status} /></Stack>
@@ -416,42 +467,11 @@ export default function ComicAIStudio({ open, actionContainer, onOpenResults, im
               {state.generationFailedWithoutImage && <Alert severity="warning">{state.originalImage
                 ? w('本次原图未返回，原有结果已保留。请先检查画廊是否已有新结果；重试会重新生图并消耗额度。', 'The new original image was not returned; the previous result is retained. Check the gallery for a new result first; retrying generates again and uses credits.')
                 : w('本次原图未返回。请先检查画廊是否已有结果；重试会重新生图并消耗额度。', 'The original image for this request was not returned. Check the gallery for a result first; retrying starts a new generation and uses credits.')}</Alert>}
-              {state.originalImage && <Box sx={{ maxWidth: 640, position: 'relative', alignSelf: 'center', width: '100%' }}>
-                <Box component="img" src={state.originalImage.dataUrl} alt={w('生成原图', 'Original image')} sx={{ display: 'block', width: '100%', height: 'auto' }} />
-                {state.ocr?.lines.length > 0 && <svg aria-hidden="true" viewBox={`0 0 ${state.originalImage.width} ${state.originalImage.height}`} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-                  {state.ocr.lines.map(({ bounds }, index) => <g key={index}>
-                    <rect {...bounds} fill="none" stroke="#e17a00" strokeWidth={2} />
-                    <text x={bounds.x} y={Math.max(14, bounds.y - 3)} fontSize={18} fill="#e17a00" stroke="black" strokeWidth={2} paintOrder="stroke">{index + 1}</text>
-                  </g>)}
-                </svg>}
-              </Box>}
               {state.error && <Alert severity="warning">{state.error}</Alert>}
-              {state.ocrError && <Alert severity="warning">{w('本地 OCR 未完成，可重新识别原图。', 'Local OCR did not complete. You can retry on the saved image.')}{' '}{state.ocrError}</Alert>}
-              {state.ocr && (state.ocr.lines.length ? <Stack spacing={1.25}>
-                {state.ocr.lines.map((line, index) => <Box key={index}>
-                  <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere', mb: 0.5 }}>{index + 1}. {line.text}</Typography>
-                  <TextField fullWidth size="small" label={w('替换文字（留空保留原文）', 'Replacement (blank keeps original)')}
-                    disabled={actionsBusy} value={state.assignments?.[index]?.text || ''} slotProps={{ htmlInput: { maxLength: 2000 } }}
-                    onChange={(event) => editReplacement(section.id, index, event.target.value, line.direction)} />
-                </Box>)}
-              </Stack> : <Typography variant="body2">{w('未识别到文字', 'No text detected')}</Typography>)}
-              {state.result?.ocrReplacement && state.result.blocks.some((block) => block.needsReview) && <Alert severity="warning">
-                {w('以下识别框背景复杂，已保留原文', 'Original text kept in regions with complex backgrounds')} · {state.result.blocks.filter((block) => block.needsReview).map((block) => Number(block.id) + 1).join(', ')}
-              </Alert>}
-              {state.pending && state.originalImage && <Button variant="contained" disabled={actionsBusy} onClick={() => applyPending(section.id)}>{w('替换画布中的当前分区', 'Replace current canvas section')}</Button>}
-              {pendingEdits && !state.pending && <Button variant="contained" disabled={actionsBusy} onClick={() => run('replace', section.id)}>{w('应用文字替换', 'Apply text replacements')}</Button>}
-              <Stack direction="row" flexWrap="wrap" gap={0.25}>
-                {state.originalImage && <>
-                  <Button size="small" disabled={actionsBusy} onClick={() => run('ocr', section.id)}>{state.ocr ? w('重新识别', 'Recognize again') : w('识别文字', 'Recognize text')}</Button>
-                  <Button size="small" startIcon={<Download />} onClick={() => {
-                    void downloadUrlToFile(state.originalImage.dataUrl, `comic-original-${section.id + 1}.png`)
-                      .catch(() => setError(w('无法下载原图。', 'Could not download the original image.')));
-                  }}>{w('下载原图', 'Download original')}</Button>
-                </>}
-                <Button size="small" disabled={actionsBusy || !imageModel} color={state.originalImage ? 'inherit' : 'primary'}
-                  title={state.originalImage ? w('重新生图会消耗额度', 'Regenerating uses credits') : undefined}
-                  onClick={() => run('retry', section.id, imageModel)}>{state.originalImage ? w('重新生成', 'Regenerate') : w('重试生成', 'Retry generation')}</Button>
-              </Stack>
+              {state.originalImage && <ComicTextReview state={state} dialogues={section.dialogues} language={language} disabled={actionsBusy}
+                onEdit={(id, choice) => editReplacement(section.id, id, choice)}
+                onRecognize={() => run('ocr', section.id)} onApply={() => run('replace', section.id)}
+                onApplyPending={() => applyPending(section.id)} />}
             </Stack>
           </Paper>;
         })}</Stack>}

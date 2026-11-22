@@ -119,6 +119,7 @@ function validatePage(page, allowWorkflow = true) {
             return !bounds || ![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isInteger)
               || bounds.x < 0 || bounds.y < 0 || bounds.width <= 0 || bounds.height <= 0
               || bounds.x + bounds.width > original.width || bounds.y + bounds.height > original.height
+              || (line.id !== undefined && (typeof line.id !== 'string' || !line.id || line.id.length > 128))
               || typeof line.text !== 'string' || !finite(line.confidence) || line.confidence < 0 || line.confidence > 1
               || !['horizontal-tb', 'vertical-rl'].includes(line.direction);
           })) throw new Error('Invalid comic OCR result.');

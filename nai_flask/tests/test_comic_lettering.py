@@ -138,6 +138,43 @@ def test_manual_erase_and_custom_text_only_clean_selected_original_region(synthe
     assert not manually_matched[0]["needsReview"]
 
 
+@pytest.mark.parametrize(("neighbor_x", "applied"), [(64, True), (43, False)])
+def test_neighboring_region_protects_shared_pixels_without_blocking_minor_overlap(synthetic_runtime, monkeypatch, neighbor_x, applied):
+    runtime, detector_mask = synthetic_runtime
+    pixels = np.full((128, 128, 3), 255, np.uint8)
+    pixels[detector_mask > 0] = 0
+    block = {"id": "first", "ocrText": "Hello world", "confidence": 1, "direction": "horizontal-tb",
+             "bounds": {"x": 20, "y": 30, "width": 50, "height": 20}}
+    neighbor = {**block, "id": "neighbor", "ocrText": "Nearby text",
+                "bounds": {"x": neighbor_x, "y": 30, "width": 36, "height": 20}}
+    monkeypatch.setattr("api_utils.comic_lettering._collect_blocks", lambda *args: [block, neighbor])
+    options = validate_lettering_options({"assignments": {"first": {"action": "erase"}, "neighbor": None}})
+
+    cleaned, mask, details = runtime.rebuild(Image.fromarray(pixels), options, lambda *args: None, lambda: None, None)
+
+    assert details["blocks"][0]["applied"] is applied
+    assert not np.asarray(mask)[:, neighbor_x:neighbor_x + 36].any()
+    assert np.array_equal(np.asarray(cleaned)[:, neighbor_x:], pixels[:, neighbor_x:])
+
+
+def test_bubble_outline_crossing_ocr_bounds_is_kept_even_if_detector_marks_it_as_text(synthetic_runtime, monkeypatch):
+    runtime, detector_mask = synthetic_runtime
+    detector_mask[31:33, 12:120] = 1
+    pixels = np.full((128, 128, 3), 255, np.uint8)
+    pixels[detector_mask > 0] = 0
+    block = {"id": "first", "ocrText": "Hello world", "confidence": 1, "direction": "horizontal-tb",
+             "bounds": {"x": 20, "y": 30, "width": 50, "height": 20}}
+    monkeypatch.setattr("api_utils.comic_lettering._collect_blocks", lambda *args: [block])
+    options = validate_lettering_options({"assignments": {"first": {"action": "erase"}}})
+
+    cleaned, mask, details = runtime.rebuild(Image.fromarray(pixels), options, lambda *args: None, lambda: None, None)
+
+    assert details["blocks"][0]["applied"]
+    assert np.array_equal(np.asarray(cleaned)[31:33], pixels[31:33])
+    assert not np.asarray(mask)[31:33].any()
+    assert (np.asarray(cleaned)[35:43, 25:65] == 255).all()
+
+
 @pytest.mark.parametrize("mode", ["RGB", "RGBA", "JPEG"])
 def test_only_confirmed_glyphs_change_and_alpha_is_preserved(synthetic_runtime, mode):
     runtime, detector_mask = synthetic_runtime
