@@ -277,16 +277,20 @@ export default function ComicAIStudio({ open, actionContainer, onOpenResults, im
               const assignments = Object.fromEntries(edits.flatMap(({ id, choice, text, direction }) => {
                 const nativeId = nativeIds.get(id);
                 if (!nativeId) return [];
-                return [[nativeId, choice?.action === 'replace' ? { ...choice, text, direction } : choice]];
+                return [[nativeId, choice?.action === 'match' || choice?.action === 'replace' ? { action: 'replace', text, direction } : choice]];
               }));
               const dialogues = section.dialogues.filter(({ id }) => requested.some(({ dialogueId }) => dialogueId === id))
                 .map((line) => ({ ...line, direction: line.direction === 'vertical' ? 'vertical-rl' : 'horizontal-tb' }));
               const processed = await runLocal({ ...options, dialogues, assignments });
               if (current.cancelled) break;
-              const blocks = requested.map(({ id }) => {
+              const blocks = requested.map(({ id, choice, dialogueId }) => {
                 const block = processed.blocks.find((entry) => entry.id === nativeIds.get(id));
                 if (!block) throw new Error(w('原图的文字框已变化，请重新识别后再应用。', 'Text regions have changed. Recognize the original again before applying edits.'));
-                return { ...block, id };
+                if (choice.action !== 'match') return { ...block, id };
+                const full = dialogues.find((entry) => entry.id === dialogueId);
+                // 同一句分到多个框时，各使用原行坐标，避免几段文字叠在同一气泡中央。
+                return { ...block, id, dialogueId, matchedText: true,
+                  layoutBounds: full?.text.trim() === choice.text ? block.layoutBounds : block.bounds };
               });
               result = { sourceHash: processed.sourceHash, blocks, unmatchedDialogueIds: [], ocrReplacement: true };
               if (blocks.some((block) => block.applied)) cleanedImage = await readAIImage(processed.image.url);
@@ -312,7 +316,7 @@ export default function ComicAIStudio({ open, actionContainer, onOpenResults, im
               const previous = comicTextEdits(state, section.dialogues);
               const assignments = Object.fromEntries(lines.flatMap(({ id, bounds }) => {
                 const edit = previous.find(({ line }) => sameComicTextBounds(line.bounds, bounds));
-                return edit ? [[id, edit.choice]] : [];
+                return edit?.selected !== undefined ? [[id, edit.selected]] : [];
               }));
               await updateSection(section.id, { ocr: { backend: 'native', lines }, assignments, ocrError: '', status: state.pending ? 'pending' : 'completed' });
             } catch (cause) {

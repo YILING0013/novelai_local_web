@@ -413,3 +413,14 @@ def test_repeated_jobs_reuse_comic_models_with_new_run_options(tmp_path, monkeyp
     assert len(used_options) == 2 and used_options[0] is not used_options[1]
     manager.release()
     assert manager.session is None
+
+def test_empty_detector_mask_recovers_low_contrast_ocr_glyphs(synthetic_runtime):
+    runtime, detector_mask = synthetic_runtime
+    pixels = np.full((128, 128, 3), 255, np.uint8)
+    pixels[35:43, 25:65] = 240
+    detector_mask[:] = 0
+    options = validate_lettering_options({"dialogues": [{"id": "hello", "text": "Hello world"}]})
+    cleaned, mask, result = runtime.rebuild(Image.fromarray(pixels), options, lambda *args: None, lambda: None, None)
+    assert result["blocks"][0]["applied"]
+    assert np.all(np.asarray(cleaned)[35:43, 25:65] == 255)
+    assert np.array_equal(np.asarray(cleaned)[np.asarray(mask) == 0], pixels[np.asarray(mask) == 0])

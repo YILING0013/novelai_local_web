@@ -1,13 +1,17 @@
 'use client';
 
+import { useMemo } from 'react';
 import { Alert, Box, Button, MenuItem, Stack, TextField, Typography } from '@mui/material';
 import { Check, TextFields } from '@mui/icons-material';
-import { comicTextEdits } from './comicTextEdits.mjs';
+import { matchComicDialogueLines } from './comicDialogueMatch.mjs';
+import { comicTextEdits, comicTextLines } from './comicTextEdits.mjs';
 
 /** 核对原图上的文字框，选择对白或去字方式，并将确认的修改写回画布。 */
 export default function ComicTextReview({ state, dialogues, language, disabled, onEdit, onRecognize, onApply, onApplyPending }) {
   const w = (zh, en) => language === 'zh' ? zh : en;
-  const edits = comicTextEdits(state, dialogues);
+  const { ocr, result } = state;
+  const matches = useMemo(() => matchComicDialogueLines(comicTextLines({ ocr, result }), dialogues), [ocr, result, dialogues]);
+  const edits = comicTextEdits(state, dialogues, matches);
   const presets = [...dialogues].filter((dialogue) => dialogue.text.trim()).sort((a, b) => a.order - b.order);
   const invalid = edits.some(({ choice, text }) => choice?.action === 'replace' && !text);
   const canApply = edits.some(({ choice, text, direction, dialogueId, previous }) => {
@@ -31,16 +35,19 @@ export default function ComicTextReview({ state, dialogues, language, disabled, 
     </Box>
     {state.ocrError && <Alert severity="warning">{w('文字识别未完成，可以从原图重试。', 'Text recognition did not finish. Retry using the original image.')} {state.ocrError}</Alert>}
     {edits.length > 0 ? <Stack spacing={1}>
-      {edits.map(({ id, line, choice, text }, index) => {
+      {edits.map(({ id, line, choice, text, suggestion }, index) => {
         const mode = typeof choice === 'string' ? `dialogue:${choice}` : choice?.action ?? 'keep';
         return <Stack key={id} data-comic-text-region={id} spacing={1} sx={{ p: 1.25, border: 1, borderColor: 'divider', borderRadius: 1.5 }}>
           <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>{index + 1}. {line.text || w('未读出文字', 'Unreadable text')}</Typography>
           <TextField select fullWidth size="small" label={w('处理方式', 'Text action')} value={mode} disabled={disabled}
             sx={{ '& .MuiSelect-select': { textOverflow: 'ellipsis' } }} onChange={(event) => {
               const value = event.target.value;
-              onEdit(id, value === 'keep' ? null : value === 'erase' ? { action: 'erase' }
+              onEdit(id, value === 'match' ? { action: 'auto' } : value === 'keep' ? null : value === 'erase' ? { action: 'erase' }
                 : value === 'replace' ? { action: 'replace', text: text || line.text, direction: line.direction } : value.slice('dialogue:'.length));
             }}>
+            {(suggestion || mode === 'match') && <MenuItem value="match" sx={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+              {w('匹配的 AI 对白', 'Matched AI dialogue')} · {(mode === 'match' ? text : suggestion.text)}
+            </MenuItem>}
             <MenuItem value="keep">{w('保留原文', 'Keep original')}</MenuItem>
             <MenuItem value="erase">{w('仅抹除文字', 'Erase text only')}</MenuItem>
             <MenuItem value="replace">{w('自定义文字', 'Custom text')}</MenuItem>

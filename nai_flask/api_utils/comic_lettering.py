@@ -425,30 +425,44 @@ class ComicLettering:
                 block["layoutBounds"] = {"x": int(bx + left), "y": int(by + top),
                                          "width": layout_width, "height": layout_height}
                 break
-            if np.count_nonzero(local_mask) < 4:
-                block.update(needsReview=True, reason="text-mask-missing")
-                continue
-            ring = (cv2.dilate(local_mask, np.ones((11, 11), np.uint8)) > 0) & (local_mask == 0) & (mask == 0)
+            missing_mask = np.count_nonzero(local_mask) < 4
+            if missing_mask:
+                # OCR 有框、CTD 却漏掉浅色或很细的字时，用框外环估计底色，继续从像素补笔画。
+                sample_area = np.zeros_like(mask)
+                sample_area[y:y + h, x:x + w] = 255
+            else:
+                sample_area = local_mask
+            ring = (cv2.dilate(sample_area, np.ones((11, 11), np.uint8)) > 0) & (sample_area == 0) & (mask == 0)
             samples = original_rgb[ring]
             if not len(samples):
                 block.update(needsReview=True, reason="background-unavailable")
                 continue
             background = np.median(samples, axis=0)
             uniform = np.mean(np.max(np.abs(samples.astype(float) - background), axis=1) <= 14) >= 0.85
-            if uniform:
+            if uniform or missing_mask:
                 # CTD 会漏掉“一”或句点这类细小字形。只在已读出的文字框内补充
                 # 与背景有明显色差、且不接触框边的笔画，避免把穿过文字框的线稿当字擦掉。
                 left, top = max(0, x - 5), max(0, y - 5)
                 right, bottom = min(width, x + w + 5), min(height, y + h + 5)
-                contrast = (np.max(np.abs(original_rgb[top:bottom, left:right].astype(float) - background), axis=2) > 20).astype(np.uint8)
+                patch = original_rgb[top:bottom, left:right]
+                if uniform:
+                    contrast = np.max(np.abs(patch.astype(float) - background), axis=2) > 9
+                else:
+                    # 起伏底色上同时提取亮笔画和暗笔画，核大小跟随行高。
+                    size = max(5, min(31, min(w, h) // 2)) | 1
+                    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size))
+                    dark = cv2.morphologyEx(patch, cv2.MORPH_BLACKHAT, kernel)
+                    light = cv2.morphologyEx(patch, cv2.MORPH_TOPHAT, kernel)
+                    contrast = np.maximum(dark, light).max(axis=2) > 18
+                contrast = contrast.astype(np.uint8)
                 count, components, stats, _ = cv2.connectedComponentsWithStats(contrast)
                 outline = np.zeros_like(contrast)
                 for component in range(1, count):
                     sx, sy, sw, sh, _ = stats[component]
                     if sx == 0 or sy == 0 or sx + sw == right - left or sy + sh == bottom - top:
                         outline[components == component] = 1
-                    elif (x < left + sx and left + sx + sw < x + w
-                          and y < top + sy and top + sy + sh < y + h):
+                    elif (x <= left + sx and left + sx + sw <= x + w
+                          and y <= top + sy and top + sy + sh <= y + h):
                         local_mask[top:bottom, left:right][components == component] = 255
                 local_mask = cv2.dilate(local_mask, np.ones((3, 3), np.uint8))
                 # CTD 也可能把延伸到框外的气泡轮廓认成字，去掉相关蒙版后仍可处理框内的字形。
@@ -457,6 +471,9 @@ class ComicLettering:
                     local_mask &= bubble_mask
             # 优先保护相邻待核对框。框的识别留边常有少量交叠，裁掉交叠处后仍可去掉本框笔画。
             mask_size = np.count_nonzero(local_mask)
+            if mask_size < 4:
+                block.update(needsReview=True, reason="text-mask-missing")
+                continue
             for other in blocks:
                 if other["id"] != block["id"] and other["needsReview"]:
                     box = other["bounds"]
@@ -486,8 +503,9 @@ class ComicLettering:
                 scale = min(1.0, 512 / max(crop.shape[:2]))
                 cw, ch = max(1, round(crop.shape[1] * scale)), max(1, round(crop.shape[0] * scale))
                 image_input = cv2.copyMakeBorder(cv2.resize(crop, (cw, ch)), 0, 512 - ch, 0, 512 - cw, cv2.BORDER_REFLECT_101)
-                mask_input = np.zeros((512, 512), np.float32)
-                mask_input[:ch, :cw] = cv2.resize(crop_mask, (cw, ch), interpolation=cv2.INTER_NEAREST) > 0
+                # 图像和蒙版同步镜像，否则补边会让模型重新看见本应抹除的字。
+                resized_mask = (cv2.resize(crop_mask, (cw, ch), interpolation=cv2.INTER_NEAREST) > 0).astype(np.float32)
+                mask_input = cv2.copyMakeBorder(resized_mask, 0, 512 - ch, 0, 512 - cw, cv2.BORDER_REFLECT_101)
                 progress("inpainting-text", index, len(blocks))
                 repaired = _run_cpu_model(self.lama, {"image": image_input.transpose(2, 0, 1)[None].astype(np.float32) / 255,
                                                      "mask": mask_input[None, None]}, run_options)[0]
