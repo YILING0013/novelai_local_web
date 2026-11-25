@@ -7,9 +7,10 @@
 <p align="center">在电脑或手机上使用自己的 NovelAI 账户创作，并在本机整理图片、作品和提示词。</p>
 
 <p align="center">
-  <a href="https://nai.idlecloud.cc">在线网站</a> ·
+  <a href="https://yihan.art">在线网站</a> ·
   <a href="https://github.com/YILING0013/novelai_local_web/releases/latest">下载 Windows 安装包</a> ·
-  <a href="https://github.com/YILING0013/novelai_local_web/releases/tag/android-v0.1.3">下载 Android APK</a> ·
+  <a href="https://github.com/YILING0013/novelai_local_web/releases/latest/download/NovelAI-Local-Web.zip">下载本地 Web 包</a> ·
+  <a href="https://github.com/YILING0013/novelai_local_web/releases/tag/android-v0.1.6">下载 Android APK</a> ·
   <a href="#工作区与功能">界面与功能</a> ·
   <a href="#从源码运行与开发">源码运行</a>
 </p>
@@ -22,7 +23,7 @@ NovelAI Local 是采用 AGPL-3.0 的非官方社区项目，与 NovelAI / Anlata
 | --- | --- | --- |
 | **Windows 桌面版** | 在电脑创作，也可以让同一 Wi-Fi 下的手机通过浏览器访问电脑工作区 | Windows x64，安装包自带应用与后端 |
 | **Android 本地版** | 手机上独立创作、整理图库和运行本地工具 | Android 7.0 起，ARM64 或 x86_64，需 Chromium 120 或更新版本的系统 WebView |
-| **源码 Web 版** | 运行 Next.js 静态页面和 Flask 后端，开发或使用现有 Web 工作区 | 电脑上的本地服务，浏览器访问 |
+| **本地 Web 版** | 运行 Next.js 静态页面和 Flask 后端，开发或使用现有 Web 工作区 | 电脑上的本地服务，浏览器访问 |
 
 ### Windows 桌面版
 
@@ -36,7 +37,7 @@ NovelAI Local 是采用 AGPL-3.0 的非官方社区项目，与 NovelAI / Anlata
 
 ### Android 本地版
 
-1. 从 [Android 发布页](https://github.com/YILING0013/novelai_local_web/releases/tag/android-v0.1.3) 下载签名 APK，打开文件并按 Android 提示安装。应用名为 **NovelAI Local**，可与 NovelAI Mobile 并装。由旧调试签名版迁移时，先导出重要图片、笔记和项目，再安装正式版。
+1. 从 [Android 发布页](https://github.com/YILING0013/novelai_local_web/releases/tag/android-v0.1.6) 下载签名 APK，打开文件并按 Android 提示安装。应用名为 **NovelAI Local**，可与 NovelAI Mobile 并装。由旧调试签名版迁移时，先导出重要图片、笔记和项目，再安装正式版。
 2. 在手机上直接用 NovelAI 官方账户登录。离线时可从登录页打开**本机工具**，浏览本机图库、编辑图片或使用已下载的模型。在线生成、官方标签补充、机器翻译和模型下载需要网络。
 3. 左上角侧栏切换绘画、局部重绘、漫画、图像处理和画廊；画布底部打开生成参数及常用工具，顶部更多菜单打开账户和设置。点按生成栏的订阅或点数入口可查看 Anlas 明细。
 4. 在右上角的**应用更新**手动检查新版。正式版支持应用内下载并交由 Android 确认安装。应用会校验安装包摘要、包名和签名。连续生成期间保持应用运行，系统结束应用后可在画廊查看已保存的图片。
@@ -120,7 +121,7 @@ Windows 截图来自当前源码构建，Android 截图来自 0.1.3。在线界�
 
 - **Windows 原生版**使用 Tauri 2、Vite / React 和 Rust。安装依赖、原生推理库和 NSIS 打包步骤见 [Windows 构建说明](docs/desktop.md#从源码构建)。
 - **Android 本地版**使用 Capacitor、共享 React 界面和 Rust 核心。Android SDK、NDK、调试 APK 和设备测试步骤见 [Android 构建说明](docs/android.md#从源码构建)。
-- **源码 Web 版**使用 Next.js 静态页面与 Flask / Waitress，保留独立的本地启动方式。Windows 需要 Python 3.11+（含 `py` Launcher）和 Node.js 20.19+（含 npm）。
+- **本地 Web 版**使用 Next.js 静态页面与 Flask / Waitress，保留独立的本地启动方式。Windows 需要 Python 3.11+（含 `py` Launcher）和 Node.js 20.19+（含 npm）。
 
 ```powershell
 git clone https://github.com/YILING0013/novelai_local_web.git

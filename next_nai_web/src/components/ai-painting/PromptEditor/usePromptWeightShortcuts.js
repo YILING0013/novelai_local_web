@@ -6,17 +6,21 @@ import { adjustPromptWeight } from './promptWeights.mjs';
  * @param {object} options 输入框引用、文本、文本更新回调、默认权重格式及调整后的通知。
  * @returns {object} 调整权重函数和返回是否已处理的按键事件。
  */
-export default function usePromptWeightShortcuts({ inputRef, value, onChange, defaultWeightMode, onAdjust, enabled = true }) {
+export default function usePromptWeightShortcuts({
+  inputRef, value, onChange, defaultWeightMode, weightStep, keepWeightSelection = true, weightShortcutsEnabled = true,
+  onAdjust, enabled = true,
+}) {
   const pendingSelection = useRef(null);
 
-  const adjustWeight = (direction) => {
+  const adjustWeight = (direction, source = 'weightButton') => {
     const input = inputRef.current;
     if (!enabled || !input) return false;
-    const result = adjustPromptWeight(input.value, input.selectionStart, input.selectionEnd, direction, defaultWeightMode);
+    const result = adjustPromptWeight(input.value, input.selectionStart, input.selectionEnd, direction, defaultWeightMode, weightStep);
     if (result.text === input.value) return false;
+    if (!keepWeightSelection) result.start = result.end;
     pendingSelection.current = result;
     onChange(result.text, result);
-    onAdjust?.();
+    onAdjust?.(source);
     return true;
   };
 
@@ -31,11 +35,11 @@ export default function usePromptWeightShortcuts({ inputRef, value, onChange, de
 
   useEffect(() => {
     const input = inputRef.current;
-    if (!input) return;
+    if (!input || !weightShortcutsEnabled) return;
     const onWheel = (event) => {
       if (!event.shiftKey || event.ctrlKey || event.altKey || event.metaKey || document.activeElement !== input) return;
       const delta = event.deltaY || event.deltaX;
-      if (delta && adjustWeight(delta < 0 ? 1 : -1)) event.preventDefault();
+      if (delta && adjustWeight(delta < 0 ? 1 : -1, 'wheelWeight')) event.preventDefault();
     };
     // 原生非 passive 监听允许取消滚动，避免调权时页面跟着移动。
     input.addEventListener('wheel', onWheel, { passive: false });
@@ -45,9 +49,9 @@ export default function usePromptWeightShortcuts({ inputRef, value, onChange, de
   return {
     adjustWeight,
     onKeyDown: (event) => {
-      if (!event.altKey || event.ctrlKey || event.shiftKey || event.metaKey || event.nativeEvent?.isComposing
+      if (!weightShortcutsEnabled || !event.altKey || event.ctrlKey || event.shiftKey || event.metaKey || event.nativeEvent?.isComposing
           || !['ArrowUp', 'ArrowDown'].includes(event.key)) return false;
-      if (!adjustWeight(event.key === 'ArrowUp' ? 1 : -1)) return false;
+      if (!adjustWeight(event.key === 'ArrowUp' ? 1 : -1, 'keyWeight')) return false;
       event.preventDefault();
       event.stopPropagation();
       return true;

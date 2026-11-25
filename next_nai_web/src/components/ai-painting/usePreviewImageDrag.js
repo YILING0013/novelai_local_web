@@ -95,7 +95,7 @@ export default function usePreviewImageDrag({ enabled, getFile, privacyMode, onE
     return previous === source || Boolean(previous && source && previous.id === source.id && previous.src === source.src);
   };
   const onPointerDown = (event, mode, source) => {
-    if (!enabled || event.button !== 0 || event.pointerType === 'touch' || press.current?.dragging) return;
+    if (!enabled || event.button !== 0 || !event.isPrimary || press.current?.dragging) return;
     releasePress();
     const current = {
       mode, source, getFile, privacyMode, active: true, held: false, dragging: false,

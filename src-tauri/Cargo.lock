@@ -2957,7 +2957,7 @@ dependencies = [
 
 [[package]]
 name = "novelai-local"
-version = "2.0.4"
+version = "2.0.5"
 dependencies = [
  "argon2",
  "axum",
@@ -2983,6 +2983,7 @@ dependencies = [
  "percent-encoding",
  "png",
  "rand 0.8.8",
+ "regex",
  "reqwest 0.12.28",
  "reqwest_cookie_store",
  "rusqlite",

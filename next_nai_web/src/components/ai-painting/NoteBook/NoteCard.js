@@ -43,11 +43,11 @@ const NoteCard = ({ note, onUse, onEdit, onOpenMenu, onView, selecting, selected
         {note.created_at && <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.75 }}>{formatDate(Number(note.created_at) * 1000, { dateStyle: 'medium' })}</Typography>}
       </CardContent>
       <CardActions sx={{ px: 2, py: 1.5, justifyContent: 'space-between' }}>
-        <Button size="small" variant="outlined" onClick={() => onUse(note)}>{t('painting.tools.notebook.use')}</Button>
+        {onUse && <Button size="small" variant="outlined" data-tour="noteUse" onClick={() => onUse(note)}>{t('painting.tools.notebook.use')}</Button>}
         <Box sx={{ display: 'flex' }}>
-          <Tooltip title={t('painting.tools.notebook.viewDetails')}><IconButton aria-label={`${t('painting.tools.notebook.viewDetails')} ${note.title}`} size="small" onClick={() => onView(note)}><VisibilityIcon fontSize="small" /></IconButton></Tooltip>
-          <Tooltip title={t('painting.tools.common.edit')}><IconButton aria-label={`${t('painting.tools.common.edit')} ${note.title}`} size="small" onClick={() => onEdit(note)}><EditIcon fontSize="small" /></IconButton></Tooltip>
-          <Tooltip title={t('painting.tools.notebook.moreActions')}><IconButton aria-label={`${t('painting.tools.notebook.moreActions')} ${note.title}`} size="small" onClick={(event) => onOpenMenu(event, note)}><MoreVertIcon fontSize="small" /></IconButton></Tooltip>
+          <Tooltip title={t('painting.tools.notebook.viewDetails')}><IconButton data-release-target={characterTabsCount ? 'note' : undefined} aria-label={`${t('painting.tools.notebook.viewDetails')} ${note.title}`} size="small" onClick={() => onView(note)}><VisibilityIcon fontSize="small" /></IconButton></Tooltip>
+          {onEdit && <Tooltip title={t('painting.tools.common.edit')}><IconButton aria-label={`${t('painting.tools.common.edit')} ${note.title}`} size="small" onClick={() => onEdit(note)}><EditIcon fontSize="small" /></IconButton></Tooltip>}
+          {onOpenMenu && <Tooltip title={t('painting.tools.notebook.moreActions')}><IconButton aria-label={`${t('painting.tools.notebook.moreActions')} ${note.title}`} size="small" data-tour="noteMenu" onClick={(event) => onOpenMenu(event, note)}><MoreVertIcon fontSize="small" /></IconButton></Tooltip>}
         </Box>
       </CardActions>
     </Card>

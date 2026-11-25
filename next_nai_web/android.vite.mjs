@@ -14,6 +14,7 @@ export default mergeConfig(desktop, {
   },
   build: {
     outDir: join(process.env.NAI_ANDROID_ASSETS || path('../android/app/build/generated/nai/web-only'), 'public'),
+    rolldownOptions: { input: { app: path('./android/index.html'), tutorial: path('./android/tutorial-demo.html') } },
     emptyOutDir: false,
     target: 'chrome120',
   },

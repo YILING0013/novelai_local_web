@@ -1,12 +1,34 @@
 import { tryParseJsonObject } from './metadataParserCore';
+import { defaultWorkspaceShortcuts } from './workspaceShortcuts.mjs';
 
 const modes = ['original', 'scrambled', 'clean', 'custom'];
 
 export const imageExportModes = Object.freeze(modes);
 export const imagePreviewSettingsKey = 'novelai:workspace-image-preview';
-export const defaultImagePreviewSettings = Object.freeze({
+export const imagePreviewSettingsChanged = 'novelai:workspace-image-preview-changed';
+export const transparencyColors = Object.freeze({
+  white: '#ffffff', gray: '#808080', green: '#008000', red: '#d32f2f', blue: '#1976d2',
+});
+export const transparencyBackgrounds = ['none', 'checkerboard', ...Object.keys(transparencyColors), 'custom'];
+export const defaultWorkspaceInterfaceSettings = Object.freeze({
+  expandedImageShortcuts: false,
+  displayImageDrag: true,
+  historyImageDrag: true,
+  historyFollowSelection: true,
+  historyImageFit: 'contain',
+  centerNewGeneration: true,
+  lockedGestureNavigation: true,
+  transparencyBackground: 'checkerboard',
+  transparencyCustomColor: '#808080',
   privacyMode: false,
-  privacyShortcut: 'Ctrl+Shift+KeyH',
+  privacyScope: 'both',
+  privacyReveal: 'hold',
+  showAdjustmentEntry: true,
+  showGalleryEntry: true,
+});
+export const defaultImagePreviewSettings = Object.freeze({
+  ...defaultWorkspaceInterfaceSettings,
+  ...defaultWorkspaceShortcuts,
   privacyShortcutCustomized: false,
   copyMode: 'original',
   downloadMode: 'original',
@@ -15,6 +37,26 @@ export const defaultImagePreviewSettings = Object.freeze({
   autoWatermarkEnabled: false,
   autoWatermarkPresetId: '',
 });
+
+/**
+ * 返回透明像素下方的展示背景，原图与导出画布不写入背景色。
+ * @param {object} settings 透明背景选项和自定义色。
+ * @param {object} theme 当前的 MUI 主题。
+ * @returns {object} 图片容器的背景样式。
+ */
+export function transparencyBackgroundSx(settings, theme) {
+  const { transparencyBackground: background, transparencyCustomColor } = settings;
+  if (background === 'none') return {};
+  if (background !== 'checkerboard') {
+    return { bgcolor: background === 'custom' ? transparencyCustomColor : transparencyColors[background] };
+  }
+  const dark = theme.palette.mode === 'dark';
+  return {
+    backgroundColor: dark ? '#33383e' : '#f4f4f4',
+    backgroundImage: `conic-gradient(${dark ? '#424950' : '#dedede'} 25%, transparent 0 50%, ${dark ? '#424950' : '#dedede'} 0 75%, transparent 0)`,
+    backgroundSize: '16px 16px',
+  };
+}
 
 /**
  * 读取工作区预览和导出偏好，浏览器禁用存储时使用默认值。
@@ -26,8 +68,19 @@ export function readImagePreviewSettings() {
     const defaults = defaultImagePreviewSettings;
     const customShortcut = typeof saved.privacyShortcut === 'string' &&
       (saved.privacyShortcutCustomized === true || !['Alt+Shift+KeyP', defaults.privacyShortcut].includes(saved.privacyShortcut));
+    const workspace = Object.fromEntries(Object.entries(defaultWorkspaceInterfaceSettings)
+      .filter(([, value]) => typeof value === 'boolean')
+      .map(([key, value]) => [key, typeof saved[key] === 'boolean' ? saved[key] : value]));
     return {
-      privacyMode: saved.privacyMode === true,
+      ...workspace,
+      ...Object.fromEntries(Object.entries(defaultWorkspaceShortcuts)
+        .map(([key, value]) => [key, typeof saved[key] === 'string' ? saved[key] : value])),
+      historyImageFit: saved.historyImageFit === 'cover' ? 'cover' : 'contain',
+      transparencyBackground: transparencyBackgrounds.includes(saved.transparencyBackground)
+        ? saved.transparencyBackground : defaults.transparencyBackground,
+      transparencyCustomColor: /^#[\da-f]{6}$/i.test(saved.transparencyCustomColor) ? saved.transparencyCustomColor : defaults.transparencyCustomColor,
+      privacyScope: ['both', 'display', 'history'].includes(saved.privacyScope) ? saved.privacyScope : defaults.privacyScope,
+      privacyReveal: ['hold', 'hover', 'toggle'].includes(saved.privacyReveal) ? saved.privacyReveal : defaults.privacyReveal,
       privacyShortcut: customShortcut ? saved.privacyShortcut : defaults.privacyShortcut,
       privacyShortcutCustomized: customShortcut,
       copyMode: modes.includes(saved.copyMode) ? saved.copyMode : defaults.copyMode,
@@ -43,15 +96,15 @@ export function readImagePreviewSettings() {
 }
 
 /**
- * 把键盘事件转为可存储的快捷键。
- * @param {KeyboardEvent} event 键盘事件。
- * @returns {string} 含修饰键和物理按键的组合。
+ * 合并改动字段并通知当前标签页，避免设置页和历史快捷设置互相覆盖。
+ * @param {object} patch 这次操作修改的字段。
+ * @returns {object} 保存后的完整设置。
  */
-export function getPrivacyShortcut(event) {
-  const { ctrlKey, altKey, shiftKey, metaKey, code } = event;
-  if (!code || /^(Control|Alt|Shift|Meta)/.test(code) || ['Escape', 'Tab', 'Enter', 'Space'].includes(code)) return '';
-  if (!ctrlKey && !altKey && !metaKey && !/^F\d+$/.test(code)) return '';
-  return [ctrlKey && 'Ctrl', altKey && 'Alt', shiftKey && 'Shift', metaKey && 'Meta', code].filter(Boolean).join('+');
+export function writeImagePreviewSettings(patch) {
+  const settings = { ...readImagePreviewSettings(), ...('privacyShortcut' in patch && { privacyShortcutCustomized: true }), ...patch };
+  localStorage.setItem(imagePreviewSettingsKey, JSON.stringify(settings));
+  window.dispatchEvent(new Event(imagePreviewSettingsChanged));
+  return settings;
 }
 
 /**

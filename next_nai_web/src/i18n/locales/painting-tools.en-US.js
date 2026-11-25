@@ -572,4 +572,86 @@ const paintingToolsenUS = {
   }
 };
 
+Object.assign(paintingToolsenUS.painting.tools.promptEditor, {
+  "tokenCountWithLimit": "Tokens: {count} / {limit}"
+});
+Object.assign(paintingToolsenUS.painting.tools.notebook, {
+  "transfer": "Transfer notes"
+});
+Object.assign(paintingToolsenUS.painting.tools.notebook.transferDialog, {
+  "title": "Transfer notes to a new account",
+  "targetAccount": "New account username or email",
+  "targetPassword": "New account password",
+  "submit": "Transfer"
+});
+Object.assign(paintingToolsenUS.painting.tools.notebook.errors, {
+  "NOTE_EXPORT_INVALID_RESPONSE": "The export service returned invalid data. Please try again later.",
+  "NOTE_SOURCE_MIGRATED": "This account's notes were migrated. Continue in the target account.",
+  "NOTE_TRANSFER_ALREADY_CLAIMED": "These notes were already migrated to another account.",
+  "NOTE_TRANSFER_DATA_INVALID": "The note data cannot be migrated automatically.",
+  "NOTE_TRANSFER_LIMIT_EXCEEDED": "The transfer would exceed the target account's 200-note limit.",
+  "NOTE_TRANSFER_SOURCE_MIGRATED": "This account is already being handled by the order migration flow.",
+  "NOTE_TRANSFER_TARGET_AUTH_INVALID": "The target account or password is incorrect.",
+  "NOTE_TRANSFER_TARGET_CREDENTIALS_REQUIRED": "Enter the target account username or email and password.",
+  "NOTE_TRANSFER_TARGET_INVALID": "This target account cannot receive an automatic note transfer.",
+  "NOTE_TRANSFER_TARGET_MIGRATED": "The target account already moved its notes elsewhere and cannot receive this transfer.",
+  "NOTE_TRANSFER_TARGET_SAME_ACCOUNT": "The target account must be different from the current account.",
+  "NOTE_TRANSFER_TITLE_CONFLICT": "The target account has a note with the same title. Resolve the conflict first."
+});
+Object.assign(paintingToolsenUS.painting.tools.metadata, {
+  "preview": {
+    "title": "Image import preview",
+    "layout": "Preview layout",
+    "desktop": "Desktop",
+    "mobile": "Mobile",
+    "reset": "Reset sample",
+    "reopen": "Open import dialog",
+    "upload": "Upload your image",
+    "result": "Import result"
+  },
+  "selectImage": "Import image"
+});
+Object.assign(paintingToolsenUS.painting.tools.batch, {
+  "verificationRequired": "Verification is required to continue. Select “Complete verification” below.",
+  "continueAfterVerification": "Verification complete — continue",
+  "completeVerification": "Complete verification",
+  "errorSummary": "Batch generation error summary ({count})",
+  "noErrors": "No errors recorded",
+  "errorTypeAnalysis": "Error type analysis",
+  "errorDetails": "Error details",
+  "copyError": "Copy this error",
+  "occurredAt": "Occurred at",
+  "possibleSolutions": "Possible solutions",
+  "solutions": "• 402: Contact the site administrator immediately.\n• 403: Complete CAPTCHA verification again. If the account is suspended, follow the error instructions or contact an administrator.\n• 429: Try again later.\n• 500: Disable unrelated parameter settings.\n• 502 or 521: Wait and try again.\n• 504: Check your network connection.\n• Security component load failure: Check the network; on iOS Safari, try another browser.\n• Request encryption failure: Refresh the page and make sure the device clock is synchronized.\n• Other errors: Check the network or try again later.",
+  "copyAllErrors": "Copy all errors",
+  "errorsCopied": "Error information copied to the clipboard"
+});
+Object.assign(paintingToolsenUS.painting.tools.batch.errors, {
+  "maxConsecutive": "Batch generation stopped after too many consecutive failures.",
+  "highFailureRate": "Batch generation stopped because the failure rate was too high."
+});
+Object.assign(paintingToolsenUS.painting.tools.batch.errors.categories, {
+  "captcha": "CAPTCHA verification is required."
+});
+Object.assign(paintingToolsenUS.painting.tools.batch.analysis.verification, {
+  "title": "Verification errors",
+  "description": "CAPTCHA verification is required"
+});
+Object.assign(paintingToolsenUS.painting.tools.batch.analysis.network, {
+  "title": "Network errors",
+  "description": "Network connection or timeout problems"
+});
+Object.assign(paintingToolsenUS.painting.tools.batch.analysis.server, {
+  "title": "Server errors",
+  "description": "The server could not process the request"
+});
+Object.assign(paintingToolsenUS.painting.tools.batch.analysis.parameter, {
+  "title": "Parameter or rate-limit errors",
+  "description": "Invalid generation parameters or too many requests"
+});
+Object.assign(paintingToolsenUS.painting.tools.batch.analysis.other, {
+  "title": "Other errors",
+  "description": "Unclassified errors"
+});
+
 export default paintingToolsenUS;

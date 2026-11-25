@@ -84,7 +84,7 @@ const Img2ImgPanel = ({
       >
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
           <ImageIcon sx={{ mr: 1, fontSize: 18, color: 'text.secondary' }} />
-          <Typography sx={{ fontSize: 15, fontWeight: 500 }}>{t('painting.workspace.parameters.img2img')}</Typography>
+          <Typography sx={{ fontSize: '0.875rem', fontWeight: 600 }}>{t('painting.workspace.parameters.img2img')}</Typography>
           {imagePreview && <Typography component="span" variant="caption" color="primary.main" sx={{ ml: 1, whiteSpace: 'nowrap' }}>{t('painting.workspace.parameters.enabled')}</Typography>}
         </Box>
       </AccordionSummary>

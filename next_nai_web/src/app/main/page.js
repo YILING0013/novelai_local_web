@@ -56,6 +56,8 @@ import SettingsPage from '@/components/settings/SettingsPage';
 import GalleryWorkspace from '@/components/gallery/GalleryWorkspace';
 import LocalInferencePage from '@/components/local-inference/LocalInferencePage';
 import apiClient from '@/utils/ApiClient';
+import TutorialsPage from '@/components/tutorials/TutorialsPage';
+import SchoolOutlinedIcon from '@mui/icons-material/SchoolOutlined';
 import { useI18n } from '@/i18n/I18nProvider';
 import LanguageSwitcher from '@/components/i18n/LanguageSwitcher';
 import { useAppTheme } from '@/providers/AppThemeProvider';
@@ -190,6 +192,7 @@ export default function MainPage() {
       { id: PAGE_IDS.IMAGE_PROCESSING, labelKey: 'painting.workspace.tabs.imageProcessing', icon: <ImageProcessingIcon />, color: readPageColor(storage, PAGE_IDS.IMAGE_PROCESSING), confirmOnClose: true },
       { id: PAGE_IDS.IMAGE_TAGGING, labelKey: 'pages.imageTagging', icon: <TaggingIcon />, component: <LocalInferencePage kind="tagger" />, color: readPageColor(storage, PAGE_IDS.IMAGE_TAGGING), confirmOnClose: false },
       { id: PAGE_IDS.LOCAL_UPSCALING, labelKey: 'pages.localUpscaling', icon: <UpscalingIcon />, component: <LocalInferencePage kind="upscale" />, color: readPageColor(storage, PAGE_IDS.LOCAL_UPSCALING), confirmOnClose: false },
+      { id: PAGE_IDS.TUTORIALS, labelKey: 'pages.tutorials', icon: <SchoolOutlinedIcon />, component: <TutorialsPage />, color: readPageColor(storage, PAGE_IDS.TUTORIALS), confirmOnClose: false },
       { id: PAGE_IDS.SETTINGS, labelKey: 'pages.settings', icon: <SettingsIcon />, color: readPageColor(storage, PAGE_IDS.SETTINGS), confirmOnClose: false },
     ];
   });

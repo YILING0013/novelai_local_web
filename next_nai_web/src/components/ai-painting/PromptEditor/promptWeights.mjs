@@ -5,9 +5,10 @@
  * @param {number} end 选区终点。
  * @param {number} direction 加权为 1，降权为 -1。
  * @param {'numeric'|'brackets'} defaultMode 无权重文字使用的默认格式。
+ * @param {number} step 数字权重的增减幅度；括号权重始终增减一层。
  * @returns {{text: string, start: number, end: number}} 更新后的文本和可继续操作的选区或光标。
  */
-export function adjustPromptWeight(text, start, end, direction, defaultMode = 'numeric') {
+export function adjustPromptWeight(text, start, end, direction, defaultMode = 'numeric', step = 0.1) {
   const caretOnly = start === end;
 
   const ranges = [];
@@ -94,7 +95,7 @@ export function adjustPromptWeight(text, start, end, direction, defaultMode = 'n
     let replacement;
     let prefixChange;
     if (numeric) {
-      const weight = Number((Number(numeric[1]) + direction / 10).toFixed(10));
+      const weight = Number((Number(numeric[1]) + direction * step).toFixed(10));
       const prefix = weight === 1 ? '' : `${Number.isInteger(weight) ? weight.toFixed(1) : weight}::`;
       replacement = weight === 1 ? numeric[2].replace(/(\d) $/, '$1') : `${prefix}${numeric[2]}::`;
       prefixChange = prefix.length - numeric[1].length - 2;
@@ -103,7 +104,7 @@ export function adjustPromptWeight(text, start, end, direction, defaultMode = 'n
       replacement = removeLayer ? selected.slice(1, -1) : direction > 0 ? `{${selected}}` : `[${selected}]`;
       prefixChange = removeLayer ? -1 : 1;
     } else {
-      const prefix = `${(1 + direction / 10).toFixed(1)}::`;
+      const prefix = `${Number((1 + direction * step).toFixed(10))}::`;
       // 避免画师名或标签末尾的数字紧贴结束符，被当作下一段权重。
       const suffix = /\d$/.test(selected) ? ' ::' : '::';
       replacement = `${prefix}${selected}${suffix}`;

@@ -766,16 +766,73 @@ pub async fn generate(c: &Shared, caller: &str, sess: &Session, op: &str, b: &V)
     };
     let db = c.db.lock().unwrap();
     let settings = load(&db, "settings", "settings")?.unwrap_or(json!({}));
+    // 桌面和 Android 共用这个原生后端，生成后的实际种子用于输出文件名。
+    let prefix = settings["fileNamePrefix"].as_str().unwrap_or("AI_Image");
+    let prompt = saved_params["positivePrompt"].as_str().unwrap_or("").trim();
+    let seed_text = seed.as_u64().map(|s| s.to_string()).unwrap_or_else(id);
+    let now = chrono::Local::now();
+    let random = |length| {
+        use rand::{distributions::Alphanumeric, Rng};
+        rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(length)
+            .map(char::from)
+            .collect::<String>()
+    };
+    let stem = match settings["namingMethod"].as_str().unwrap_or("seed") {
+        "custom" => {
+            static TOKENS: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+                regex::Regex::new(r"\{(\w+)(?::(\d{1,3}))?\}").unwrap()
+            });
+            let template = settings["fileNameTemplate"]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .unwrap_or("{prefix}_{seed}_{date}");
+            TOKENS
+                .replace_all(template, |caps: &regex::Captures<'_>| {
+                    let limit = caps
+                        .get(2)
+                        .and_then(|n| n.as_str().parse::<usize>().ok())
+                        .filter(|n| *n > 0)
+                        .map(|n| n.min(120));
+                    match &caps[1] {
+                        "prefix" => prefix.to_owned(),
+                        "seed" => seed_text.clone(),
+                        "prompt" => prompt.chars().take(limit.unwrap_or(32)).collect(),
+                        "random" => random(limit.unwrap_or(8)),
+                        "date" => now.format("%Y-%m-%d").to_string(),
+                        "time" => now.format("%H-%M-%S").to_string(),
+                        "timestamp" => now.timestamp_millis().to_string(),
+                        _ => caps[0].to_owned(),
+                    }
+                })
+                .into_owned()
+        }
+        method => {
+            let label = match method {
+                "prompt32" if !prompt.is_empty() => prompt.chars().take(32).collect(),
+                "random" => random(8),
+                "datetime" | "localDateTime" => now.format("%Y-%m-%d_%H-%M-%S").to_string(),
+                "timestamp" => now.timestamp_millis().to_string(),
+                _ => seed_text.clone(),
+            };
+            format!("{prefix}_{label}")
+        }
+    };
+    let cleaned: String = stem
+        .chars()
+        .map(|c| {
+            if c.is_control() || c.is_whitespace() || r#"<>:"/\|?*"#.contains(c) {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let stem = cleaned.trim_matches(['.', '_', '-']);
     let filename = format!(
-        "{}_{}.{}",
-        settings["fileNamePrefix"]
-            .as_str()
-            .unwrap_or("AI_Image")
-            .chars()
-            .filter(|c| c.is_alphanumeric() || *c == '_')
-            .take(80)
-            .collect::<String>(),
-        seed.as_u64().map(|s| s.to_string()).unwrap_or_else(id),
+        "{}.{}",
+        if stem.is_empty() { &seed_text } else { stem },
         image::guess_format(&stored).unwrap_or(f).extensions_str()[0]
     );
     match crate::library::import(

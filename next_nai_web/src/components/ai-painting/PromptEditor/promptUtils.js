@@ -59,15 +59,54 @@ export const uncommentText = (text, start, end) => {
   return { text: updated, start, end: end - removed };
 };
 
+/**
+ * 在提示词选区切换注释。注释中的部分选区解除整块注释，混有有效词条时沿用整词注释。
+ * @param {string} text 当前编辑内容。
+ * @param {number} start 选区起点。
+ * @param {number} end 选区终点。
+ * @returns {{text: string, start: number, end: number}} 新内容和选区。
+ */
+export function togglePromptComment(text, start, end) {
+  if (start === end) return { text, start, end };
+  const selected = getPromptCommentRanges(text).filter((range) => range.start < end && range.end > start);
+  let offset = start;
+  const onlyComments = selected.length && selected.every((range) => {
+    const gap = text.slice(offset, Math.max(offset, range.start));
+    offset = range.end;
+    return !/[^,\s]/u.test(gap);
+  }) && !/[^,\s]/u.test(text.slice(Math.min(offset, end), end));
+  return onlyComments
+    ? uncommentText(text, Math.min(start, selected[0].start), Math.max(end, selected.at(-1).end))
+    : commentText(text, start, end);
+}
+
+/**
+ * 处理编辑器自己的 Ctrl+/，只在有选区且实际改动文本时拦截浏览器事件。
+ * @param {object} event 输入框键盘事件。
+ * @param {Function} commit 提交文本并恢复选区的编辑器回调。
+ * @returns {boolean} 是否处理了快捷键。
+ */
+export function handlePromptCommentKey(event, commit) {
+  const input = event.currentTarget;
+  if (event.defaultPrevented || event.nativeEvent?.isComposing || event.keyCode === 229 || input.readOnly
+      || !event.ctrlKey || event.altKey || event.metaKey || event.shiftKey || event.key !== '/') return false;
+  const result = togglePromptComment(input.value, input.selectionStart, input.selectionEnd);
+  if (result.text === input.value) return false;
+  event.preventDefault();
+  event.stopPropagation();
+  commit(result);
+  return true;
+}
+
 // Renamed and updated for consistency
-const processSequentialItemsInCategory = (category) => {
+const processSequentialItemsInCategory = (category, storage) => {
   if (!category || !category.items || category.items.length === 0) {
     return [];
   }
   
   // 使用ID确保唯一性，如果ID不存在则回退到名称 (与RandomPromptConfig.js一致)
   const storageKey = `category_item_position_${category.id || category.name}`; 
-  let currentPosition = parseInt(localStorage.getItem(storageKey), 10);
+  let currentPosition = parseInt(storage.getItem(storageKey), 10);
 
   // 如果localStorage没有，则使用类别配置的起始位置，若无则为0
   if (isNaN(currentPosition) || currentPosition === null) {
@@ -88,7 +127,7 @@ const processSequentialItemsInCategory = (category) => {
   }
   
   const nextPosition = (currentPosition + extractCount) % category.items.length;
-  localStorage.setItem(storageKey, nextPosition.toString());
+  storage.setItem(storageKey, nextPosition.toString());
   
   return result;
 };
@@ -99,7 +138,7 @@ const processSequentialItemsInCategory = (category) => {
  * @param {Object} randomPromptConfig - 随机提示词配置 { categories: [], collections: [] }
  * @returns {string} - 处理后的文本
  */
-export const processRandomPrompts = (text, randomPromptConfig) => {
+export const processRandomPrompts = (text, randomPromptConfig, storage = globalThis.localStorage) => {
   if (!text || !randomPromptConfig || (!randomPromptConfig.categories && !randomPromptConfig.collections)) {
     return text;
   }
@@ -118,7 +157,7 @@ export const processRandomPrompts = (text, randomPromptConfig) => {
     
     let selectedItems;
     if (extractMode === 'sequential') {
-      selectedItems = processSequentialItemsInCategory(category);
+      selectedItems = processSequentialItemsInCategory(category, storage);
     } else { // random
       selectedItems = [...items]
         .sort(() => 0.5 - Math.random())
@@ -173,7 +212,7 @@ export const processRandomPrompts = (text, randomPromptConfig) => {
       if (categoryExtractMode === 'sequential') {
         // 使用ID确保唯一性，如果ID不存在则回退到名称 (与RandomPromptConfig.js一致)
         const storageKey = `collection_category_position_${collection.id || collection.name}`;
-        let currentCollectionCatPos = parseInt(localStorage.getItem(storageKey), 10);
+        let currentCollectionCatPos = parseInt(storage.getItem(storageKey), 10);
 
         // 如果localStorage没有，则使用集合配置的起始位置，若无则为0
         if (isNaN(currentCollectionCatPos) || currentCollectionCatPos === null) {
@@ -189,7 +228,7 @@ export const processRandomPrompts = (text, randomPromptConfig) => {
           categoriesToProcess.push(availableCategoriesInCollection[catIndex]);
         }
         const nextCollectionCatPos = (currentCollectionCatPos + numToPick) % availableCategoriesInCollection.length;
-        localStorage.setItem(storageKey, nextCollectionCatPos.toString());
+        storage.setItem(storageKey, nextCollectionCatPos.toString());
       } else { // random category extraction from collection
         categoriesToProcess = [...availableCategoriesInCollection]
           .sort(() => 0.5 - Math.random())
@@ -210,7 +249,7 @@ export const processRandomPrompts = (text, randomPromptConfig) => {
       
       let selectedItemsFromCategory;
       if (extractMode === 'sequential') {
-        selectedItemsFromCategory = processSequentialItemsInCategory(category);
+        selectedItemsFromCategory = processSequentialItemsInCategory(category, storage);
       } else { // random
         selectedItemsFromCategory = [...items]
           .sort(() => 0.5 - Math.random())
@@ -300,7 +339,7 @@ export const extractActiveContent = (text, options = {}) => {
   const activeText = removePromptComments(text);
   if (options?.processRandomPrompts && options.randomPromptConfig) {
     // 随机词条本身也可能带注释；展开后只清理注释，不再次抽取随机内容。
-    return removePromptComments(processRandomPrompts(activeText, options.randomPromptConfig));
+    return removePromptComments(processRandomPrompts(activeText, options.randomPromptConfig, options.randomCursorStorage));
   }
   return activeText;
 };

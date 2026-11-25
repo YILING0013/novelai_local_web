@@ -5,10 +5,15 @@
 export const DOWNLOAD_NAMING_METHODS = [
   { value: 'seed', labelKey: 'settings.naming.seed' },
   { value: 'prompt32', labelKey: 'settings.naming.prompt32' },
-  { value: 'timestamp', labelKey: 'settings.naming.timestamp' },
   { value: 'localDateTime', labelKey: 'settings.naming.localDateTime' },
+  { value: 'timestamp', labelKey: 'settings.naming.timestamp' },
   { value: 'random', labelKey: 'settings.naming.random' },
+  { value: 'custom', labelKey: 'settings.naming.custom' },
 ];
+
+// 自定义模板可用的变量；{prompt:20}、{random:6} 这类写法可指定长度。
+export const FILE_NAME_TEMPLATE_TOKENS = ['prefix', 'seed', 'prompt', 'date', 'time', 'timestamp', 'random'];
+export const DEFAULT_FILE_NAME_TEMPLATE = '{prefix}_{seed}_{date}';
 
 /**
  * 生成随机字符串
@@ -29,7 +34,7 @@ export const generateRandomString = (length = 8) => {
 };
   
 /**
- * 格式化日期为指定格式
+ * 按浏览器当前时区格式化日期为指定格式。
  *
  * Args:
  *   date: 日期对象。
@@ -84,14 +89,40 @@ export const sanitizeFileNamePart = (value, fallback = 'image') => {
  * Returns:
  *   string: 正面提示词前 32 个字符，缺失时返回空字符串。
  */
-export const getPositivePromptNamePart = (image = {}) => {
+export const getPositivePromptNamePart = (image = {}, length = 32) => {
   const prompt = image.prompt
     || image.positivePrompt
     || image.metadata?.positivePrompt
     || image.metadata?.prompt
     || '';
 
-  return Array.from(String(prompt).trim()).slice(0, 32).join('');
+  return Array.from(String(prompt).trim()).slice(0, length).join('');
+};
+
+/**
+ * 按用户模板拼出文件名主体，例如 "{prefix}_{seed}_{date}"。
+ * 变量值和模板里的普通文字都会清理非法字符；不认识的变量原样保留，便于在预览里发现拼写错误。
+ * @param {string} template 用户填写的模板。
+ * @param {object} image 图像对象，提供 seed、prompt 等信息。
+ * @param {object} settings 图像命名设置，提供 fileNamePrefix。
+ * @param {string|number} fallbackName 没有种子时使用的名称。
+ * @returns {string} 不含扩展名的文件名，模板结果为空时返回空字符串。
+ */
+export const renderFileNameTemplate = (template, image, settings, fallbackName) => {
+  const now = new Date();
+  const values = {
+    prefix: () => settings.fileNamePrefix,
+    seed: () => image.seed ?? fallbackName,
+    prompt: (length) => getPositivePromptNamePart(image, length || 32),
+    date: () => formatDate(now, 'yyyy-MM-dd'),
+    time: () => formatDate(now, 'HH-mm-ss'),
+    timestamp: () => now.getTime(),
+    random: (length) => generateRandomString(length || 8),
+  };
+  const name = String(template || DEFAULT_FILE_NAME_TEMPLATE).replace(/\{(\w+)(?::(\d{1,3}))?\}/g, (token, key, length) => (
+    Object.hasOwn(values, key) ? sanitizeFileNamePart(values[key](Math.min(Number(length) || 0, 120)), '') : token
+  ));
+  return sanitizeFileNamePart(name, '');
 };
 
 const normalizeExtension = (extension = 'png') => (
@@ -121,6 +152,11 @@ export const generateFileName = (image = {}, imageSettings = {}, options = {}) =
 
   const settings = { ...defaultSettings, ...imageSettings };
   const fallbackName = options.fallbackName || image.seed || image.id || Math.floor(Math.random() * 1000000000);
+  const extension = normalizeExtension(options.extension || (image.type === 'video' ? 'mp4' : 'png'));
+  // 自定义模板自己决定前缀和各部分顺序，不再套用下面的固定拼法。
+  if (settings.namingMethod === 'custom') {
+    return `${renderFileNameTemplate(settings.fileNameTemplate, image, settings, fallbackName) || sanitizeFileNamePart(fallbackName)}.${extension}`;
+  }
   let coreName = '';
 
   // 根据命名预设生成主体，手动下载和自动下载共享同一套规则。
@@ -131,8 +167,8 @@ export const generateFileName = (image = {}, imageSettings = {}, options = {}) =
     case 'timestamp':
       coreName = Date.now();
       break;
-    case 'datetime': // 保留旧版已保存的规则。
     case 'localDateTime':
+      // 使用本地日期字段，年月日和时分秒都遵循用户设备当前时区。
       coreName = formatDate(new Date(), 'yyyy-MM-dd_HH-mm-ss');
       break;
     case 'random':
@@ -153,7 +189,6 @@ export const generateFileName = (image = {}, imageSettings = {}, options = {}) =
     .map((part) => sanitizeFileNamePart(part, ''))
     .filter(Boolean);
 
-  const extension = normalizeExtension(options.extension || (image.type === 'video' ? 'mp4' : 'png'));
   return `${nameParts.join('_') || sanitizeFileNamePart(fallbackName)}.${extension}`;
 };
   
@@ -171,6 +206,7 @@ export const getImageSettings = () => {
     fileNamePrefix: localStorage.getItem('fileNamePrefix') || 'AI_Image',
     fileNameSuffix: '',
     namingMethod: localStorage.getItem('namingMethod') || 'seed',
+    fileNameTemplate: localStorage.getItem('fileNameTemplate') || DEFAULT_FILE_NAME_TEMPLATE,
     randomStringLength: 8,
     includeDateInName: false,
     dateFormat: 'yyyyMMdd_HHmmss'

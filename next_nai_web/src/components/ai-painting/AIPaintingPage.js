@@ -4,7 +4,8 @@ import { MODEL_OPTIONS } from './utils/generationOptions';
 import { generateFileName, getImageSettings } from './tools/ImageTools/ImageSaveUtils';
 import usePreviewImageDrag from './usePreviewImageDrag';
 import { hasFileDrag, readDroppedFiles } from './tools/ImageTools/previewImageDragData.mjs';
-import { defaultImagePreviewSettings, exportPreviewImage, getPrivacyShortcut, imagePreviewSettingsKey, readImagePreviewSettings } from './tools/ImageTools/previewImageExport';
+import { getWorkspaceShortcut } from './tools/ImageTools/workspaceShortcuts.mjs';
+import { defaultImagePreviewSettings, exportPreviewImage, imagePreviewSettingsKey, readImagePreviewSettings } from './tools/ImageTools/previewImageExport';
 import { readQuickImagePresets } from './ImageProcessing/quickImageAdjustments';
 import QuickImageAdjustment from './ImageProcessing/QuickImageAdjustment';
 // AIPaintingPage.js
@@ -328,7 +329,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
   const previewSettings = savedPreviewSettings ?? defaultImagePreviewSettings;
 
   useEffect(() => {
-    setPreviewSettings(readImagePreviewSettings());
+    const refresh = () => setPreviewSettings(readImagePreviewSettings());
+    refresh();
+    window.addEventListener('novelai:workspace-image-preview-changed', refresh);
+    return () => window.removeEventListener('novelai:workspace-image-preview-changed', refresh);
   }, []);
 
   useEffect(() => {
@@ -345,7 +349,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
     const togglePrivacy = (event) => {
       if (event.defaultPrevented || event.repeat || event.isComposing
         || event.target?.closest?.('input, textarea, select, [contenteditable="true"], [role="textbox"]')) return;
-      if (getPrivacyShortcut(event) !== previewSettings.privacyShortcut) return;
+      if (getWorkspaceShortcut(event) !== previewSettings.privacyShortcut) return;
       event.preventDefault();
       setPreviewSettings((saved) => ({ ...(saved ?? defaultImagePreviewSettings), privacyMode: !(saved?.privacyMode) }));
     };
@@ -1100,24 +1104,29 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
   }, []);
 
   // 处理应用笔记元数据（包括提示词和角色卡片）
-  const handleApplyMetadataFromNote = (note) => {
+  const handleApplyMetadataFromNote = (note, applyModel, modelOptions, changeParameter) => {
     let characters;
     try {
-      characters = normalizeNoteCharacters(note.character_tabs);
+      characters = normalizeNoteCharacters(note.character_tabs ?? note.characterTabs, note.model);
     } catch {
       showNotification(t('painting.tools.notebook.errors.NOTE_CHARACTER_JSON_INVALID'), 'error');
       return false;
     }
-    setPositivePrompt(note.text_content1 || '');
-    setNegativePrompt(note.text_content2 || '');
-    // 更新 ParameterPanel 的 characterTabs
+    const mappedModel = applyModel && note.model;
+    if (mappedModel && !modelOptions.some((option) => option.value === mappedModel)) {
+      showNotification(t('painting.workspace.errors.modelNotAvailableForAccount'), 'warning');
+      return false;
+    }
+    // 模型切换与手工选择共用参数面板的默认值；等待切换期间也要把提示词写进目标模型的缓存。
+    if (mappedModel && mappedModel !== preferredGenerationParams.model) changeParameter('model', mappedModel);
+    const promptModel = mappedModel || preferredGenerationParams.model;
+    setPositivePrompt(note.text_content1 || '', promptModel);
+    setNegativePrompt(note.text_content2 || '', promptModel);
+    if (characters.length && isNovelAIV5Model(mappedModel || effectiveModel) && note.character_position_mode) {
+      changeParameter('characterPositionMode', note.character_position_mode);
+    }
     setCharacterTabsFromNote(characters);
-
-    // 可以在这里展开 ParameterPanel 中的角色控制区域
-    // onExpandedPanelsChange('character', true); // 假设有这个函数
-    setExpandedPanels(prev => ({ ...prev, character: true }));
-
-
+    if (characters.length) setExpandedPanels(prev => ({ ...prev, character: true }));
     showNotification(t('painting.workspace.notifications.noteApplied'), 'success');
     return true;
   };
@@ -1134,7 +1143,8 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
       const activeNegative = extractActiveContent(negativePrompt, {
       });
       // 保存对话框已解析过的角色卡，确保预览内容与实际保存一致。
-      await apiClient.saveTexts(title, activePositive, activeNegative, imageUrl, characterTabsToSave, groupId);
+      await apiClient.saveTexts(title, activePositive, activeNegative, imageUrl, characterTabsToSave, groupId,
+        generationParams.model, isNovelAIV5Model(generationParams.model) ? parameterEditorRef.current.getSnapshot().params.characterPositionMode : null);
       showNotification(t('painting.workspace.notifications.noteSaved'), 'success');
       return true; // 指示保存成功
     } catch (error) {
@@ -1507,6 +1517,23 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
     showNotification(t('painting.workspace.notifications.sentToInpaint'), 'success');
     return true;
   }, [currentItem, positivePrompt, showNotification, t]);
+
+  const importHistoryImages = async (files) => {
+    const results = await Promise.allSettled(files.filter((file) => file.type.startsWith('image/')).map(async (file) => {
+      const bitmap = await createImageBitmap(file);
+      const { width, height } = bitmap;
+      bitmap.close();
+      const src = createObjectUrlFromBlob(file);
+      return { src, width, height, cachedBlob: file, objectUrlToRevoke: src };
+    }));
+    for (const result of results) {
+      if (result.status === 'fulfilled') appendGeneratedItem(result.value);
+    }
+    if (!results.length || results.some((result) => result.status === 'rejected')) {
+      showNotification(t('painting.workspace.gallery.historyImportFailed'), 'warning');
+    }
+  };
+
 
   const handleExportInpaintToGallery = useCallback((item) => {
     appendGeneratedItem({
@@ -2541,7 +2568,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
   const previewCanDrag = Boolean(active && leftPanelMode === 'generation' && currentItem && currentItem.type !== 'video'
     && !adjustmentActive);
   const previewDrag = usePreviewImageDrag({
-    enabled: previewCanDrag, getFile: getPreviewFile, privacyMode: previewSettings.privacyMode,
+    enabled: previewCanDrag && previewSettings.displayImageDrag, getFile: getPreviewFile, privacyMode: previewSettings.privacyMode,
     onError: (error) => {
       const key = ['invalidCustomMetadata', 'imageTooLarge'].includes(error.message) ? error.message : 'copyExportFailed';
       showNotification(t(`painting.workspace.gallery.${key}`), 'error');
@@ -2554,7 +2581,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
       <Box sx={{ flexShrink: 0, minWidth: 0, pb: 1 }}>
         <ParameterPanel
           parameterToolbarContainer={leftPanelMode === 'comic' ? comicToolbarContainer : (isMobile ? drawerToolbarContainer : parameterToolbarContainer)}
-          renderPromptPanel={(characterControlSummary, characterControlContent) => (
+          renderPromptPanel={(characterControlSummary, characterControlContent, modelOptions, changeParameter) => (
             <PromptPanel
                   positivePrompt={positivePrompt}
               negativePrompt={negativePrompt}
@@ -2563,7 +2590,8 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
               onPositivePromptChange={setPositivePrompt}
               onNegativePromptChange={setNegativePrompt}
               onSaveCurrentNote={handleSaveCurrentNote}
-              onApplyNoteContent={handleApplyMetadataFromNote}
+              modelOptions={modelOptions}
+              onApplyNoteContent={(note, applyModel) => handleApplyMetadataFromNote(note, applyModel, modelOptions, changeParameter)}
               onError={reportWorkspaceFailure}
               characterControlSummary={characterControlSummary}
               characterControlContent={characterControlContent}
@@ -2602,6 +2630,14 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
     </>
   );
 
+
+  const comicCharacterPlacement = leftPanelMode === 'comic' && isNovelAIV5Model(generationParams.model)
+    && generationParams.characterPositionMode === 'custom' ? {
+      width: Number(generationParams.width),
+      height: Number(generationParams.height),
+      characters: characterTabsForPromptTokens,
+      onMove: (index, center) => parameterEditorRef.current?.setCharacterCenter(index, center),
+    } : null;
 
   const comicGenerationAction = { ...getGenerateButtonState(), loading: comicGenerationBusy || comicAIBusy || isGenerating };
   const closeComicEditor = () => {
@@ -2898,7 +2934,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
             )}
             {comicWorkspaceVisited && (
               <Box sx={{ display: leftPanelMode === 'comic' ? 'block' : 'none', flex: 1, minHeight: 0, minWidth: 0 }}>
-                <ComicWorkspace
+                <ComicWorkspace characterPlacement={comicCharacterPlacement}
                   ref={comicWorkspaceRef}
                   active={active && leftPanelMode === 'comic'}
                   generatedItems={generatedItems}
@@ -2961,7 +2997,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
                   disableVibeAction={referenceCounts.active > 0}
                   showReferenceAction={canUseReference}
                   disableReferenceAction={hasActiveVibes}
-                  privacyMode={previewSettings.privacyMode}
+                  previewSettings={previewSettings} privacyMode={previewSettings.privacyMode && previewSettings.privacyScope !== 'history'}
                   imageDrag={previewCanDrag ? { ...previewDrag, mode: previewSettings.copyMode } : null}
                   onAdjustImage={() => {
                     setMobileDrawerOpen(false);
@@ -3000,6 +3036,9 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
                   items={generatedItems}
                   currentItemId={currentItem?.id}
                   onSelectItem={handleSelectPreview}
+                  onImportImages={importHistoryImages}
+                  onAdjustImage={currentItem && (() => setAdjustmentItemId(id => id === currentItem.id ? null : currentItem.id))}
+                  adjustmentActive={Boolean(adjustmentItemId)}
                   onDeleteItem={handleDeletePreview}
                   previewSettings={previewSettings}
                   quickImagePresets={quickImagePresets}
@@ -3810,8 +3849,14 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
 
 // 包装了Context Provider的根组件
 const AIPaintingPage = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange, renderModeTools, desktopEditor, androidLayout, sharedImage, onSharedImageHandled }) => {
+  const [directory, setDirectory] = useState(() => localStorage.getItem('outputDirectory') || '');
+  useEffect(() => {
+    const changed = event => setDirectory(event.detail?.outputDirectory || '');
+    window.addEventListener('imageSettingsUpdate', changed);
+    return () => window.removeEventListener('imageSettingsUpdate', changed);
+  }, []);
   return (
-    <GenerationProvider>
+    <GenerationProvider key={JSON.stringify([userId, directory])} owner={userId} directory={directory}>
       <AIPaintingPageContent userId={userId} accountSnapshot={accountSnapshot} active={active} workContext={workContext} onWorkContextChange={onWorkContextChange} renderModeTools={renderModeTools} desktopEditor={desktopEditor} androidLayout={androidLayout} sharedImage={sharedImage} onSharedImageHandled={onSharedImageHandled} />
     </GenerationProvider>
   );
