@@ -168,3 +168,27 @@ test('V3 版本恢复自动 SMEA 开关，不被当前默认值替换', () => {
   assert.equal(restored.parameterState.params.autoSmea, true);
   assert.equal(buildNovelAIImageRequestParams(restored.parameterState.params, true).autoSmea, true);
 });
+
+test('V5 精确参考从原始请求恢复同装开关、服装、零强度及缺省设置', () => {
+  const { parameterState } = restoreVersionWorkspace({ model: 'nai-diffusion-5-full', director_reference_images: ['a', 'b', 'c'],
+    director_reference_descriptions: ['character&style_anyoutfit', { caption: { base_caption: 'costume' } }],
+    director_reference_strength_values: [0, 4.75] }, defaults);
+  assert.deepEqual(parameterState.referenceImages.map(({ type, strength, fidelity }) => [type, strength, fidelity]),
+    [['character&style_anyoutfit', 0, undefined], ['costume', 4.75, undefined], ['character&style', 1, undefined]]);
+});
+
+test('重新编辑临时 High 版本时保留首选 Medium 与实际 High 采样参数', () => {
+  const medium = 'nai-diffusion-5-full-medium';
+  const version = {
+    model: 'nai-diffusion-5-full', sampler: 'k_euler', steps: 26, cfg_rescale: 0.4, seed: 21,
+    editor_state: { parameterState: { params: { model: medium, steps: 14 }, referenceImages: [{ data: 'ref' }] } },
+  };
+  const { params, referenceImages } = restoreVersionWorkspace(version, defaults).parameterState;
+  assert.equal(params.model, medium);
+  assert.equal(params.steps, 14);
+  assert.equal(params.seed, 21);
+  assert.deepEqual(params.v5HighSettings, { steps: 26, sampler: 'k_euler', promptGuidanceRescale: 0.4 });
+  assert.equal(referenceImages[0].data, 'ref');
+  delete version.editor_state;
+  assert.equal(restoreVersionWorkspace(version, defaults).parameterState.params.model, 'nai-diffusion-5-full');
+});

@@ -281,11 +281,65 @@ def test_director_cached_references_are_sent_as_official_string_array(client, fa
     assert "local-cache-key-must-not-pass" not in str(call[2])
 
 
+@pytest.mark.parametrize(("model", "img2img"), [("nai-diffusion-5-full", False), ("nai-diffusion-5-curated", True)])
+def test_v5_reference_types_and_strengths_reach_the_official_client(client, fake_client, model, img2img):
+    csrf = login(client)
+    modes = ["character", "character_mainoutfit", "style", "costume", "character&style_anyoutfit", "character&style"]
+    images = [png_base64(*size) for size in [(1024, 1024), (832, 1216), (256, 4096)]] * 2
+    controls = {
+        "director_reference_descriptions": [{"caption": {"base_caption": mode, "char_captions": []}, "legacy_uc": False} for mode in modes],
+        "director_reference_strength_values": [0, 1, 1.5, 3, 4.5, 5],
+        "director_reference_secondary_strength_values": [0] * len(modes),
+        "director_reference_information_extracted": [1] * len(modes),
+    }
+    body = {**generation_body(), "model": model, **controls}
+    if img2img:
+        body.update(action=True, image=PNG_BASE64, director_reference_images=images)
+    else:
+        # 旧蓝图可能同时保存官方数组；编辑器当前选择的缓存数组优先。
+        body["director_reference_images"] = [PNG_BASE64]
+        body["director_reference_images_cached"] = [{"data": image, "cache_secret_key": "only-local"} for image in images]
+
+    response = post_generate(client, csrf, body)
+
+    assert response.status_code == 200
+    official = next(call[2] for call in fake_client.calls if call[0] == "generate")
+    assert official["model"] == model
+    assert official["action"] == ("img2img" if img2img else "generate")
+    if img2img:
+        assert official["parameters"]["image"] == PNG_BASE64
+    assert official["parameters"]["director_reference_images"] == images
+    assert "director_reference_images_cached" not in official["parameters"]
+    for field, values in controls.items():
+        assert official["parameters"][field] == values
+
+
+@pytest.mark.parametrize(("fields", "error_code"), [
+    ({"director_reference_strength_values": [5.1]}, "NOVELAI_REQUEST_FORMAT_INVALID"),
+    ({"director_reference_strength_values": []}, "NOVELAI_REQUEST_FORMAT_INVALID"),
+    ({"director_reference_secondary_strength_values": [0.5]}, "NOVELAI_REQUEST_FORMAT_INVALID"),
+    ({"director_reference_images_cached": [], "director_reference_images": [PNG_BASE64]}, "NOVELAI_REQUEST_FORMAT_INVALID"),
+    ({"director_reference_images_cached": [{"data": PNG_BASE64}] * 13}, "NOVELAI_REFERENCE_LIMIT_EXCEEDED"),
+    ({"director_reference_images_cached": [{"data": png_base64(1024, 1536)}]}, "NOVELAI_REQUEST_FORMAT_INVALID"),
+])
+def test_invalid_v5_references_never_reach_official_generation(client, fake_client, fields, error_code):
+    csrf = login(client)
+    body = {
+        **generation_body(), "model": "nai-diffusion-5-full",
+        "director_reference_images_cached": [{"data": png_base64(1024, 1024)}], **fields,
+    }
+    response = post_generate(client, csrf, body)
+    assert response.status_code == 400
+    assert response.get_json()["code"] == error_code
+    assert not any(call[0] == "generate" for call in fake_client.calls)
+
+
 @pytest.mark.parametrize(("model", "fields", "error_code"), [
     ("nai-diffusion-5-curated", {"mask": PNG_BASE64}, "NOVELAI_INPAINT_MODEL_NOT_SUPPORTED"),
     ("nai-diffusion-5-curated", {"action": "infill"}, "NOVELAI_INPAINT_MODEL_NOT_SUPPORTED"),
     ("nai-diffusion-5-full", {"reference_image_multiple": [PNG_BASE64]}, "MODEL_CAPABILITY_NOT_SUPPORTED"),
-    ("nai-diffusion-5-curated", {"director_reference_images_cached": [{"data": PNG_BASE64}]}, "MODEL_CAPABILITY_NOT_SUPPORTED"),
+    ("nai-diffusion-5-full-medium", {"director_reference_images_cached": [{"data": PNG_BASE64}]}, "NOVELAI_REFERENCE_HIGH_EFFORT_REQUIRED"),
+    ("nai-diffusion-5-full", {"mask": PNG_BASE64, "director_reference_images_cached": [{"data": PNG_BASE64}]}, "NOVELAI_INPAINT_REFERENCE_NOT_SUPPORTED"),
     *[
         (model, {"mask": PNG_BASE64, "reference_image_multiple": [PNG_BASE64]}, "NOVELAI_INPAINT_VIBE_NOT_SUPPORTED")
         for model in ("nai-diffusion-4-full", "nai-diffusion-4-curated-preview", "nai-diffusion-4-5-full", "nai-diffusion-4-5-curated")
@@ -324,6 +378,7 @@ def test_v45_inpainting_preserves_official_reference_images(client, fake_client,
         "image": PNG_BASE64,
         "mask": PNG_BASE64,
         "director_reference_images_cached": [{"data": reference}],
+        "director_reference_descriptions": [],
     })
 
     response = post_generate(client, csrf, body)
@@ -334,6 +389,7 @@ def test_v45_inpainting_preserves_official_reference_images(client, fake_client,
     assert official["action"] == "infill"
     assert official["parameters"]["mask"] == PNG_BASE64
     assert official["parameters"]["director_reference_images"] == [reference]
+    assert official["parameters"]["director_reference_descriptions"] == []
     assert "director_reference_images_cached" not in official["parameters"]
 
 

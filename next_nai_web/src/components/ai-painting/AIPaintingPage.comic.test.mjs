@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
+import { resolveWorkspaceReferences, restoreRequestReferenceImages } from './utils/novelAIReferenceParams.mjs';
 import { estimateNovelAIGenerationCost } from './utils/novelAICost.mjs';
 import { getPanelResolutionParameters } from './utils/parameterMapping.js';
 import { isNovelAIV4OrAboveModel as isV4Model } from './utils/modelUtils.js';
@@ -153,9 +154,9 @@ test('全部分镜预估使用当前编辑、各自暂存和未暂存框形，�
   const costStart = source.indexOf('  const calculateGenerationCost = useCallback(');
   const implementation = source.slice(costStart, source.indexOf('  // 获取按钮状态的函数', costStart));
   const params = { model: 'nai-diffusion-4-5-full', width: 1024, height: 1024, steps: 28, batchSize: 8 };
-  const liveAccountSnapshot = { subscription: { active: false } };
+  const liveAccountSnapshot = { subscription: { active: false, tier: 3 } };
   const context = { useCallback: (fn) => fn, estimateNovelAIGenerationCost, isV4Model, panelBounds, getPanelResolutionParameters,
-    liveAccountSnapshot, generationParams: params, comicTargetRef: { current: { panelId: 'selected' } }, imageToImageCostParameters: null };
+    resolveWorkspaceReferences, restoreRequestReferenceImages, referenceCounts: { active: 0 }, liveAccountSnapshot, generationParams: params, comicTargetRef: { current: { panelId: 'selected' } }, imageToImageCostParameters: null };
   const estimate = runInNewContext(`${implementation}\ngetComicBatchCost`, context);
   const savedState = { params: { ...params, model: 'nai-diffusion-5-full', strength: 0.5, use_upscale_credits: true }, imagePreview: 'data:image/png;base64,synthetic' };
   const page = { layers: [{ id: 'visible', visible: true, locked: false }, { id: 'locked', visible: true, locked: true }, { id: 'hidden', visible: false }], panels: [
@@ -171,7 +172,11 @@ test('全部分镜预估使用当前编辑、各自暂存和未暂存框形，�
   params.steps = 20;
   assert.equal(estimate(page).total, 46, '修改当前步数会同时更新当前框及未暂存框的预估');
   liveAccountSnapshot.subscription.active = true;
-  assert.equal(estimate(page).total, 15, '订阅免费图为 0，暂存的大图仍收费');
+  assert.equal(estimate(page).total, 0, 'Opus 在免费规格内免除基础费');
+  savedState.referenceImages = [{ data: 'a' }, { data: 'b', disabled: true }];
+  assert.equal(estimate(page).total, 5, '暂存分镜只计启用的参考图');
+  liveAccountSnapshot.v5 = { is_negative: true };
+  assert.equal(estimate(page).total, 20, 'V5 额度用尽，暂存分镜应收取 High 基础费和参考费');
   savedState.params.width = 4096;
   savedState.params.height = 4096;
   assert.equal(estimate(page).total, null, '存在超限分镜时不能展示不完整的低价总数');

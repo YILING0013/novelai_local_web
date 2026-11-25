@@ -99,7 +99,7 @@ test('Medium 的外部和缓存参数固定 14 步、Euler A，移除自定义�
   }
 });
 
-test('NovelAI V5 strips only Character Reference and Vibe fields', () => {
+test('NovelAI V5 keeps Precise Reference and strips Vibe fields', () => {
   const params = {
     model: 'nai-diffusion-5-curated',
     positivePrompt: '1girl',
@@ -146,13 +146,15 @@ test('NovelAI V5 strips only Character Reference and Vibe fields', () => {
   assert.equal(sanitized.image, 'source');
   assert.equal(sanitized.mask, 'mask');
   assert.equal(sanitized.action, true);
-  for (const unsupportedKey of [
+  for (const key of [
     'director_reference_images',
     'director_reference_images_cached',
     'director_reference_descriptions',
     'director_reference_strength_values',
     'director_reference_secondary_strength_values',
     'director_reference_information_extracted',
+  ]) assert.deepEqual(sanitized[key], params[key]);
+  for (const unsupportedKey of [
     'vibeTransfer',
     'reference_image_multiple',
     'reference_information_extracted_multiple',

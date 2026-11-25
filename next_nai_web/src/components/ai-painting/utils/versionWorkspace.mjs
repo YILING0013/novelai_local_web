@@ -1,3 +1,5 @@
+import { NOVELAI_V5_MEDIUM_DEFAULT_PARAMS, NOVELAI_V5_MEDIUM_MODEL_ID } from './novelAIV5Params.mjs';
+import { restoreRequestReferenceImages } from './novelAIReferenceParams.mjs';
 import { mapImageParametersToUI } from './parameterMapping.js';
 import { isNovelAIV4OrAboveModel } from './modelUtils.js';
 
@@ -48,20 +50,15 @@ export function restoreVersionWorkspace(parameters, defaults) {
   }
   const dataUrl = (value) => value?.startsWith('data:') ? value : `data:image/png;base64,${value}`;
   // 历史快照可能保存本地缓存对象，也可能保存官方请求中的纯 Base64 数组。
-  const legacyReferences = parameters.director_reference_images_cached?.length
-    ? parameters.director_reference_images_cached : parameters.director_reference_images || [];
   const referenceImages = savedState?.referenceImages
     ? savedState.referenceImages.map((image) => ({ ...structuredClone(image), displayUrl: dataUrl(image.data), cache_secret_key: null }))
-    : legacyReferences.map((image, index) => ({
-    id: `version-reference-${index}`, data: typeof image === 'string' ? image : image.data,
-    displayUrl: dataUrl(typeof image === 'string' ? image : image.data),
-    type: parameters.director_reference_descriptions?.[index]?.caption?.base_caption || 'character',
-    strength: parameters.director_reference_strength_values?.[index] ?? 0.6,
-    fidelity: 1 - (parameters.director_reference_secondary_strength_values?.[index] ?? 0),
-    disabled: false,
-    // 参考图控件会为恢复的图片重新创建缓存密钥；历史不保存密钥。
-    cache_secret_key: null,
-  }));
+    : restoreRequestReferenceImages(parameters);
+  if (savedState?.params?.model === NOVELAI_V5_MEDIUM_MODEL_ID && params.model === 'nai-diffusion-5-full' && referenceImages.length) {
+    // 版本记录实际发送的 High，同时保留编辑前的 Medium 偏好，移除参考图时才能恢复。
+    const { steps, sampler, promptGuidanceRescale } = params;
+    params.v5HighSettings = { steps, sampler, promptGuidanceRescale };
+    Object.assign(params, NOVELAI_V5_MEDIUM_DEFAULT_PARAMS, { model: NOVELAI_V5_MEDIUM_MODEL_ID });
+  }
   const v4 = isNovelAIV4OrAboveModel(params.model);
   const singleVibe = !v4 && !parameters.reference_image_multiple?.length && parameters.reference_image;
   const vibeImages = editor?.vibeImages

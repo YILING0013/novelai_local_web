@@ -60,6 +60,139 @@ fn medium_uses_fixed_sampler_and_only_enabled_characters() {
     .is_err());
 }
 #[test]
+fn precise_references_preserve_per_image_settings_and_enforce_model_limits() {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    let png = |width, height| {
+        let mut data = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::new_luma8(width, height)
+            .write_to(&mut data, image::ImageFormat::Png)
+            .unwrap();
+        STANDARD.encode(data.into_inner())
+    };
+    let portrait = png(768, 1344);
+    let square = png(1024, 1024);
+    let descriptions = json!([
+        {"caption":{"base_caption":"character_mainoutfit","char_captions":[]},"legacy_uc":false},
+        {"caption":{"base_caption":"costume","char_captions":[]},"legacy_uc":false}
+    ]);
+    let mut body = json!({
+        "director_reference_images_cached":[{"data":portrait, "cache_secret_key":"local-only"},{"data":square}],
+        "director_reference_descriptions":descriptions,
+        "director_reference_strength_values":[0,5],"director_reference_secondary_strength_values":[0,0],
+        "director_reference_information_extracted":[1,1]
+    });
+    for (model, action) in [
+        ("nai-diffusion-5-curated", "generate"),
+        ("nai-diffusion-5-full", "img2img"),
+    ] {
+        body["model"] = json!(model);
+        if action == "img2img" {
+            body["image"] = json!(square);
+        }
+        let request = generation::payload(&body).unwrap();
+        let params = &request["parameters"];
+        assert_eq!(request["action"], action);
+        assert_eq!(
+            params["director_reference_images"],
+            json!([portrait, square])
+        );
+        assert!(params.get("director_reference_images_cached").is_none());
+        for field in [
+            "director_reference_descriptions",
+            "director_reference_strength_values",
+            "director_reference_secondary_strength_values",
+            "director_reference_information_extracted",
+        ] {
+            assert_eq!(params[field], body[field]);
+        }
+    }
+    for (field, value, code) in [
+        (
+            "model",
+            json!("nai-diffusion-5-full-medium"),
+            "NOVELAI_REFERENCE_HIGH_EFFORT_REQUIRED",
+        ),
+        (
+            "model",
+            json!("nai-diffusion-4-full"),
+            "NOVELAI_REFERENCE_MODEL_NOT_SUPPORTED",
+        ),
+        (
+            "mask",
+            json!(square),
+            "NOVELAI_INPAINT_REFERENCE_NOT_SUPPORTED",
+        ),
+        (
+            "reference_image_multiple",
+            json!(["vibe"]),
+            "MODEL_CAPABILITY_NOT_SUPPORTED",
+        ),
+        (
+            "director_reference_strength_values",
+            json!([1, 5.1]),
+            "NOVELAI_REQUEST_FORMAT_INVALID",
+        ),
+        (
+            "director_reference_secondary_strength_values",
+            json!([0, 0.1]),
+            "NOVELAI_REQUEST_FORMAT_INVALID",
+        ),
+        (
+            "director_reference_descriptions",
+            json!([{}]),
+            "NOVELAI_REQUEST_FORMAT_INVALID",
+        ),
+        (
+            "director_reference_images_cached",
+            json!(vec![json!({"data":"x"}); 13]),
+            "NOVELAI_REFERENCE_LIMIT_EXCEEDED",
+        ),
+    ] {
+        let mut invalid = body.clone();
+        invalid[field] = value;
+        let error = generation::payload(&invalid).unwrap_err();
+        assert_eq!((error.0, error.1.as_str()), (400, code), "{field}");
+    }
+    let mut raw = body.clone();
+    raw.as_object_mut()
+        .unwrap()
+        .remove("director_reference_images_cached");
+    raw["director_reference_images"] = json!([portrait, square]);
+    raw["director_reference_descriptions"] = json!([]);
+    assert_eq!(
+        generation::payload(&raw).unwrap()["parameters"]["director_reference_images"],
+        raw["director_reference_images"]
+    );
+    let mut incomplete = STANDARD.decode(&square).unwrap();
+    incomplete.truncate(incomplete.len() / 2);
+    raw["director_reference_images"][0] = json!(STANDARD.encode(incomplete));
+    assert_eq!(
+        generation::payload(&raw).unwrap_err().1,
+        "NOVELAI_REQUEST_FORMAT_INVALID"
+    );
+    let old_size = png(1024, 1536);
+    let mut request = json!({"model":"nai-diffusion-5-full","director_reference_images_cached":[{"data":old_size}]});
+    assert_eq!(
+        generation::payload(&request).unwrap_err().1,
+        "NOVELAI_REQUEST_FORMAT_INVALID"
+    );
+    request["model"] = json!("nai-diffusion-4-5-full");
+    request["mask"] = json!(square);
+    request["image"] = json!(square);
+    request["director_reference_secondary_strength_values"] = json!([0.8]);
+    let v45 = generation::payload(&request).unwrap();
+    assert_eq!(v45["action"], "infill");
+    assert_eq!(
+        v45["parameters"]["director_reference_images"],
+        json!([old_size])
+    );
+    assert_eq!(
+        v45["parameters"]["director_reference_secondary_strength_values"],
+        json!([0.8])
+    );
+}
+
+#[test]
 fn edit_and_strip_png_without_destroying_an_unknown_comment() {
     let img = image::DynamicImage::new_rgba8(80, 100);
     let doc = json!({"png":{"Comment":"preserved text"},"stealth":{"prompt":"original"}});

@@ -1,5 +1,6 @@
 use crate::service::*;
 use base64::{engine::general_purpose::STANDARD, Engine};
+use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader};
 use serde_json::{json, Value as V};
 use std::io::Cursor;
 const MODELS: [&str; 9] = [
@@ -191,6 +192,107 @@ fn normalize_v5(par: &mut V, b: &V, prompt: &str, medium: bool) {
         par.as_object_mut().unwrap().remove("cfg_rescale");
     }
 }
+/// 将编辑器的参考图与逐图设置写入官方请求。V5 和 V4.5 使用各自的尺寸与强度范围。
+fn apply_director_references(par: &mut V, b: &V, v5: bool) -> Res<()> {
+    let invalid =
+        |message: &str| Fault(400, "NOVELAI_REQUEST_FORMAT_INVALID".into(), message.into());
+    let cached = b["director_reference_images_cached"]
+        .as_array()
+        .filter(|images| !images.is_empty());
+    let images = cached.or_else(|| b["director_reference_images"].as_array());
+    let count = images.map_or(0, Vec::len);
+    if count > 12 {
+        return Err(Fault(
+            400,
+            "NOVELAI_REFERENCE_LIMIT_EXCEEDED".into(),
+            "At most 12 precise references are supported.".into(),
+        ));
+    }
+    for (field, maximum) in [
+        (
+            "director_reference_strength_values",
+            if v5 { 5. } else { 1. },
+        ),
+        (
+            "director_reference_secondary_strength_values",
+            if v5 { 0. } else { 1. },
+        ),
+        ("director_reference_information_extracted", 1.),
+    ] {
+        if let Some(values) = b.get(field) {
+            if !values.as_array().is_some_and(|items| {
+                items.len() == count
+                    && items
+                        .iter()
+                        .all(|v| v.as_f64().is_some_and(|n| (0.0..=maximum).contains(&n)))
+            }) {
+                return Err(invalid(&format!(
+                    "{field} must match the images and contain values between 0 and {maximum}."
+                )));
+            }
+            par[field] = values.clone();
+        }
+    }
+    if let Some(descriptions) = b.get("director_reference_descriptions") {
+        if !descriptions
+            .as_array()
+            .is_some_and(|items| items.is_empty() || items.len() == count)
+        {
+            return Err(invalid("Reference descriptions must match the images."));
+        }
+        par["director_reference_descriptions"] = descriptions.clone();
+    }
+    if let Some(images) = images {
+        let mut data = Vec::with_capacity(count);
+        for entry in images {
+            let value = if cached.is_some() {
+                &entry["data"]
+            } else {
+                entry
+            };
+            let encoded = value
+                .as_str()
+                .ok_or_else(|| invalid("Each reference must include image data."))?;
+            let raw = bytes(encoded)?;
+            let reader = ImageReader::new(Cursor::new(&raw)).with_guessed_format()?;
+            if raw.len() > 20 * 1024 * 1024
+                || !matches!(
+                    reader.format(),
+                    Some(ImageFormat::Png | ImageFormat::Jpeg | ImageFormat::WebP)
+                )
+            {
+                return Err(invalid(
+                    "Use a PNG, JPEG, or WebP reference of up to 20 MiB.",
+                ));
+            }
+            let decoder = reader
+                .into_decoder()
+                .map_err(|_| invalid("Invalid precise reference image."))?;
+            let (width, height) = decoder.dimensions();
+            let (short, long) = (width.min(height), width.max(height));
+            // V5 长边按 64 分档，短边取 1024² 像素预算内的最大 64 倍数。
+            let allowed = if v5 {
+                (1024..=4096).contains(&long)
+                    && long % 64 == 0
+                    && short == 1_048_576 / long / 64 * 64
+            } else {
+                matches!((short, long), (1024, 1536) | (1472, 1472))
+            };
+            if !allowed {
+                return Err(invalid(
+                    "Unsupported precise reference resolution for the selected model.",
+                ));
+            }
+            // 确认像素也能完整解码，避免把只有合法文件头的损坏图片提交给官方。
+            DynamicImage::from_decoder(decoder)
+                .map_err(|_| invalid("Invalid precise reference image."))?;
+            // 桌面端和 Android 直连官方接口，发送完整原图数组，无需缓存密钥。
+            data.push(STANDARD.encode(raw));
+        }
+        par["director_reference_images"] = json!(data);
+    }
+    Ok(())
+}
 pub fn payload(b: &V) -> Res<V> {
     if ["captcha_token", "recaptcha_token", "turnstile_token"]
         .iter()
@@ -201,6 +303,14 @@ pub fn payload(b: &V) -> Res<V> {
     let m = model(b)?;
     let v5 = m.contains("diffusion-5");
     let modern = v5 || m.contains("diffusion-4");
+    for field in [
+        "director_reference_images_cached",
+        "director_reference_images",
+    ] {
+        if b.get(field).is_some_and(|value| !value.is_array()) {
+            return Err(Fault::bad(&format!("{field} must be an array.")));
+        }
+    }
     let prompt = b["positivePrompt"]
         .as_str()
         .or(b["prompt"].as_str())
@@ -213,14 +323,48 @@ pub fn payload(b: &V) -> Res<V> {
         })
     };
     let director = active("director_reference_");
-    let vibe = active("reference_");
-    if v5 && (director || vibe)
-        || director && (!m.contains("diffusion-4-5") || vibe)
-        || vibe && modern && !s(b, "mask").is_empty()
-    {
-        return Err(Fault::bad(
-            "The selected model does not support this combination of image references.",
-        ));
+    let vibe = active("reference_") || !s(b, "reference_image").is_empty();
+    let infill = !s(b, "mask").is_empty() || b["action"] == "infill";
+    let conflict = if infill && m == "nai-diffusion-5-curated" {
+        Some((
+            "NOVELAI_INPAINT_MODEL_NOT_SUPPORTED",
+            "V5 Curated does not support inpainting.",
+        ))
+    } else if director && v5 && infill {
+        Some((
+            "NOVELAI_INPAINT_REFERENCE_NOT_SUPPORTED",
+            "V5 inpainting does not support precise reference.",
+        ))
+    } else if director && m.ends_with("medium") {
+        Some((
+            "NOVELAI_REFERENCE_HIGH_EFFORT_REQUIRED",
+            "V5 precise reference requires High effort.",
+        ))
+    } else if vibe && v5 {
+        Some((
+            "MODEL_CAPABILITY_NOT_SUPPORTED",
+            "V5 does not support Vibe.",
+        ))
+    } else if director && !v5 && !m.contains("diffusion-4-5") {
+        Some((
+            "NOVELAI_REFERENCE_MODEL_NOT_SUPPORTED",
+            "Precise reference requires a V4.5 or V5 model.",
+        ))
+    } else if director && vibe {
+        Some((
+            "NOVELAI_REFERENCE_VIBE_CONFLICT",
+            "Precise reference and Vibe cannot be used together.",
+        ))
+    } else if vibe && modern && infill {
+        Some((
+            "NOVELAI_INPAINT_VIBE_NOT_SUPPORTED",
+            "V4 and V4.5 inpainting do not support Vibe.",
+        ))
+    } else {
+        None
+    };
+    if let Some((code, message)) = conflict {
+        return Err(Fault(400, code.into(), message.into()));
     }
     let (mut w, mut h) = (
         b["width"].as_u64().unwrap_or(if v5 { 832 } else { 512 }),
@@ -294,7 +438,7 @@ pub fn payload(b: &V) -> Res<V> {
         par["noise"] = json!(b["noise"].as_f64().unwrap_or(0.1));
     }
     if !s(b, "mask").is_empty() {
-        if m == "nai-diffusion-5-curated" || action != "img2img" {
+        if action != "img2img" {
             return Err(Fault::bad("Unsupported mask."));
         }
         action = "infill";
@@ -338,11 +482,6 @@ pub fn payload(b: &V) -> Res<V> {
             "reference_image_multiple",
             "reference_strength_multiple",
             "reference_information_extracted_multiple",
-            "director_reference_images",
-            "director_reference_descriptions",
-            "director_reference_strength_values",
-            "director_reference_secondary_strength_values",
-            "director_reference_information_extracted",
         ] {
             if let Some(v) = b.get(k) {
                 par[k] = v.clone()
@@ -371,17 +510,9 @@ pub fn payload(b: &V) -> Res<V> {
         } else {
             V::Null
         };
-        if let Some(cached) = b["director_reference_images_cached"]
-            .as_array()
-            .filter(|a| !a.is_empty())
-        {
-            let values = cached
-                .iter()
-                .take(12)
-                .map(|v| bytes(s(v, "data")).map(|v| STANDARD.encode(v)))
-                .collect::<Res<Vec<_>>>()?;
-            par["director_reference_images"] = json!(values);
-        }
+    }
+    if director {
+        apply_director_references(&mut par, b, v5)?;
     }
     if action == "infill" {
         if par["inpaintImg2ImgStrength"]

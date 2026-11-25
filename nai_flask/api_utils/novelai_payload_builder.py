@@ -98,7 +98,7 @@ DIRECTOR_REFERENCE_MODELS = {
     "nai-diffusion-4-5-curated",
     "nai-diffusion-4-5-full-inpainting",
     "nai-diffusion-4-5-curated-inpainting",
-}
+} | (V5_MODELS - V5_MEDIUM_MODELS)
 DIRECTOR_REFERENCE_ALLOWED_RESOLUTIONS = frozenset({
     (1024, 1536),
     (1536, 1024),
@@ -188,14 +188,25 @@ def validate_novelai_request_capabilities(model_name, values, official_format=Fa
         for field_name in VIBE_PARAM_KEYS
     )
 
-    if is_v5 and (has_director_reference or has_vibe):
+    if is_v5 and has_director_reference and is_inpaint:
         raise ExposableError(
-            "V5 models do not currently support Director reference or Vibe.",
+            "V5 inpainting does not support precise reference. Remove the mask or the reference images.",
+            code="NOVELAI_INPAINT_REFERENCE_NOT_SUPPORTED",
+        )
+    if model_name in V5_MEDIUM_MODELS and has_director_reference:
+        # 使用参考图需要 High，只有前端能向用户展示并选择实际生成档位。
+        raise ExposableError(
+            "V5 precise reference requires High effort. Select High or remove the reference images.",
+            code="NOVELAI_REFERENCE_HIGH_EFFORT_REQUIRED",
+        )
+    if is_v5 and has_vibe:
+        raise ExposableError(
+            "V5 models do not currently support Vibe.",
             code="MODEL_CAPABILITY_NOT_SUPPORTED",
         )
     if has_director_reference and not is_director_reference_model(model_name):
         raise ExposableError(
-            "Precise reference is only supported by V4.5 models, including inpainting.",
+            "Precise reference requires a V4.5 or V5 model.",
             code="NOVELAI_REFERENCE_MODEL_NOT_SUPPORTED",
         )
     if has_director_reference and has_vibe:
@@ -287,7 +298,6 @@ def normalize_v5_request(request_data):
         "skip_cfg_above_sigma",
         "ucPreset",
         "use_new_shared_trial",
-        *DIRECTOR_REFERENCE_PARAM_KEYS,
         *VIBE_PARAM_KEYS,
     ):
         parameters.pop(field_name, None)
@@ -377,7 +387,7 @@ def is_director_reference_model(model_name):
         model_name: 待判断的完整模型 ID。
 
     Returns:
-        bool: 仅 NAI Diffusion 4.5 Full、Curated 及对应重绘模型返回 True。
+        bool: V4.5（含局部重绘）、V5 Full High 和 V5 Curated 返回 True。
     """
     return str(model_name or "") in DIRECTOR_REFERENCE_MODELS
 
@@ -391,7 +401,7 @@ def filter_director_reference_fields(model_name, values):
         values: 包含生成参数的原始映射。
 
     Returns:
-        dict: 浅拷贝后的安全参数；4.5 模型保留角色参考字段，其它模型全部剥离。
+        dict: 支持精确参考的模型保留原参数，其他模型移除精确参考字段。
     """
     filtered_values = dict(values or {})
     if is_director_reference_model(model_name):
@@ -403,12 +413,13 @@ def filter_director_reference_fields(model_name, values):
     return filtered_values
 
 
-def validate_director_reference_images(images):
+def validate_director_reference_images(images, model_name=None):
     """
-    校验角色参考请求中的每张 Base64 图像及其固定分辨率。
+    校验精确参考图像的 Base64 内容和当前模型接收的分辨率。
 
     Args:
         images: director_reference_images_cached 数组，每项必须携带 data 图像内容。
+        model_name: 当前生成模型 ID，省略时使用 V4.5 固定尺寸。
 
     Returns:
         None: 所有图像均可解码且分辨率符合前端生成规格时正常返回。
@@ -447,7 +458,16 @@ def validate_director_reference_images(images):
                 f"Director reference image {index} must be a valid Base64 image."
             ) from None
 
-        if resolution not in DIRECTOR_REFERENCE_ALLOWED_RESOLUTIONS:
+        if model_name in V5_MODELS:
+            # V5 的长边按 64 分档，短边在 1024² 像素预算内向下取 64 的倍数。
+            short_side, long_side = sorted(resolution)
+            if not (1024 <= long_side <= 4096 and long_side % 64 == 0
+                    and short_side == (1024 ** 2 // long_side // 64) * 64):
+                raise ExposableError(
+                    f"Director reference image {index} must use a V5 precise reference resolution bucket.",
+                    code="NOVELAI_REQUEST_FORMAT_INVALID",
+                )
+        elif resolution not in DIRECTOR_REFERENCE_ALLOWED_RESOLUTIONS:
             raise ExposableError(
                 f"Director reference image {index} must have resolution "
                 "1024x1536, 1536x1024, or 1472x1472."
@@ -891,18 +911,30 @@ def build_novelai_payload(
             payload["data"]["parameters"]["reference_information_extracted_multiple"] = data.get("reference_information_extracted_multiple", [])
             payload["data"]["parameters"]["reference_strength_multiple"] = data.get("reference_strength_multiple", [])
 
-    if data.get("director_reference_images_cached"):
-        max_items = 12
-        director_references = data.get("director_reference_images_cached", [])[:max_items]
-        validate_director_reference_images(director_references)
-        payload["data"]["parameters"].update({
-            # 本地版没有服务端 cache_secret_key；官方只接收纯 Base64 string[]。
-            "director_reference_images": [reference["data"] for reference in director_references],
-            "director_reference_descriptions": data.get("director_reference_descriptions", [])[:max_items],
-            "director_reference_strength_values": data.get("director_reference_strength_values", [])[:max_items],
-            "director_reference_secondary_strength_values": data.get("director_reference_secondary_strength_values", [])[:max_items],
-            "director_reference_information_extracted": data.get("director_reference_information_extracted", [])[:max_items],
-        })
+    director_references = data.get("director_reference_images_cached", [])
+    if any(data.get(field) for field in DIRECTOR_REFERENCE_PARAM_KEYS):
+        validate_director_reference_images(director_references, model_name)
+        parameters = payload["data"]["parameters"]
+        # 官方只接收图片 Base64；本机蓝图与参考库使用的缓存键不随图发送。
+        parameters["director_reference_images"] = [reference["data"] for reference in director_references]
+        for field, maximum in (
+            ("director_reference_descriptions", None),
+            ("director_reference_strength_values", 5 if model_name in V5_MODELS else 1),
+            ("director_reference_secondary_strength_values", 0 if model_name in V5_MODELS else 1),
+            ("director_reference_information_extracted", 1),
+        ):
+            if field not in data:
+                continue
+            values = data[field]
+            # 空描述代表未指定类型，其他显式数组必须逐图对应。
+            if field == "director_reference_descriptions" and values == []:
+                parameters[field] = []
+                continue
+            if not isinstance(values, list) or len(values) != len(director_references):
+                raise ExposableError(f"{field} must match the reference image count.", code="NOVELAI_REQUEST_FORMAT_INVALID")
+            if maximum is not None and any(type(value) not in (int, float) or not 0 <= value <= maximum for value in values):
+                raise ExposableError(f"{field} must contain values between 0 and {maximum}.", code="NOVELAI_REQUEST_FORMAT_INVALID")
+            parameters[field] = values
 
     if decrisp:
         payload["data"]["parameters"]["dynamic_thresholding"] = True

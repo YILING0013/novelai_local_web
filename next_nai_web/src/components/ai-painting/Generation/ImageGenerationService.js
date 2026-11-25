@@ -37,7 +37,8 @@ function buildGenerationRequest(params) {
   requestBody.negativePrompt = extractActiveContent(requestBody.negativePrompt);
 
   if (
-    isNovelAIDirectorReferenceModel(params.model)
+    !params.image_tool && !params.imageToImage?.directorTools?.active
+    && isNovelAIDirectorReferenceModel(params.model, Boolean(params.imageToImage?.mask))
     && Array.isArray(params.director_reference_images_cached)
     && params.director_reference_images_cached.length > 0
   ) {
@@ -136,6 +137,11 @@ function buildGenerationRequest(params) {
  * @returns {Promise<object>} 原生成上下文可直接消费的结果。
  */
 const generateImage = async (requestParams, onProgress = () => {}) => {
+  if (requestParams.model === 'nai-diffusion-5-full-medium'
+    && (requestParams.director_reference_images_cached?.length || requestParams.director_reference_images?.length)
+    && !requestParams.image_tool && !requestParams.imageToImage?.directorTools?.active) {
+    return createGenerationFailure(GENERATION_ERROR_CODES.NOVELAI_REFERENCE_HIGH_EFFORT_REQUIRED);
+  }
   if (requestParams.model === 'nai-diffusion-5-curated' && requestParams.imageToImage?.mask) {
     return createGenerationFailure(GENERATION_ERROR_CODES.NOVELAI_INPAINT_MODEL_NOT_SUPPORTED);
   }

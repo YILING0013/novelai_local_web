@@ -79,7 +79,7 @@ test('V5 不套用旧模型的最小像素夹紧，并拒绝单张超过 140 点
   }), 105);
 });
 
-test('有效订阅的普通小图显示 0，未订阅小图仍显示公式成本', () => {
+test('Opus 的普通小图免基础费，其余订阅与无订阅按公式计费', () => {
   const imageOptions = {
     model: 'nai-diffusion-4-5-full',
     width: 832,
@@ -89,8 +89,7 @@ test('有效订阅的普通小图显示 0，未订阅小图仍显示公式成本
 
   assert.deepEqual(estimateNovelAIGenerationCost({
     ...imageOptions,
-    subscriptionActive: true,
-    useUpscaleCredits: false,
+    accountSnapshot: { subscription: { active: true, tier: 3 } },
   }), {
     rawPerImage: 20,
     perImage: 0,
@@ -101,8 +100,7 @@ test('有效订阅的普通小图显示 0，未订阅小图仍显示公式成本
 
   assert.deepEqual(estimateNovelAIGenerationCost({
     ...imageOptions,
-    subscriptionActive: false,
-    useUpscaleCredits: false,
+    accountSnapshot: { subscription: { active: true, tier: 2 } },
     batchSize: 4,
   }), {
     rawPerImage: 20,
@@ -116,16 +114,15 @@ test('有效订阅的普通小图显示 0，未订阅小图仍显示公式成本
 test('有效订阅的大图仍计费，连续生成同时给出单张和本批总消耗', () => {
   assert.deepEqual(estimateNovelAIGenerationCost({
     model: 'nai-diffusion-5-full',
-    width: 1024,
+    width: 1152,
     height: 1024,
     steps: 28,
-    subscriptionActive: true,
-    useUpscaleCredits: true,
+    accountSnapshot: { subscription: { active: true, tier: 3 } },
     batchSize: 8,
   }), {
-    rawPerImage: 30,
-    perImage: 30,
-    total: 240,
+    rawPerImage: 35,
+    perImage: 35,
+    total: 280,
     count: 8,
     subscriptionFree: false,
   });
@@ -137,8 +134,6 @@ test('超出单张成本上限时不计算负数总消耗', () => {
     width: 2048,
     height: 1536,
     steps: 47,
-    subscriptionActive: false,
-    useUpscaleCredits: true,
     batchSize: 4,
   }), {
     rawPerImage: -3,
@@ -147,4 +142,14 @@ test('超出单张成本上限时不计算负数总消耗', () => {
     count: 4,
     subscriptionFree: false,
   });
+});
+
+test('V5 批量参考逐张另加 5 Anlas，Opus 额度用尽时恢复 High 基础价格', () => {
+  const options = { model: 'nai-diffusion-5-full', width: 832, height: 1216, steps: 23, referenceCount: 2, batchSize: 3 };
+  for (const [tier, active, negative, expected] of [[3, true, false, 10], [3, true, true, 36], [2, true, false, 36], [3, false, false, 36]]) {
+    const accountSnapshot = { subscription: { tier, active }, v5: { is_negative: negative } };
+    const quote = estimateNovelAIGenerationCost({ ...options, accountSnapshot });
+    assert.equal(quote.perImage, expected);
+    assert.equal(quote.total, expected * 3);
+  }
 });

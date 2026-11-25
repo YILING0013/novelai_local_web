@@ -37,12 +37,6 @@ export const NOVELAI_V5_DEFAULT_PARAMS = Object.freeze({
 });
 
 const NOVELAI_V5_UNSUPPORTED_PARAM_KEYS = Object.freeze([
-  'director_reference_images',
-  'director_reference_images_cached',
-  'director_reference_descriptions',
-  'director_reference_strength_values',
-  'director_reference_secondary_strength_values',
-  'director_reference_information_extracted',
   'vibeTransfer',
   'reference_image_multiple',
   'reference_information_extracted_multiple',
@@ -144,7 +138,7 @@ export const buildNovelAIV5CharacterControl = (characterTabs = [], useCoords = f
 };
 
 /**
- * 删除 V5 不支持的参考参数，并应用 Medium 的固定生成设置。
+ * 删除 V5 不支持的 Vibe 参数，并应用 Medium 的固定生成设置。
  *
  * @param {object} params 当前生成参数。
  * @returns {object} V5 返回净化后的新对象，其他模型保持原对象不变。

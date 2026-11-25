@@ -50,7 +50,8 @@ const ImageParameterPanel = ({
     onDownloadVibe,
     onDownloadBundle,
     onDownloadZip,
-    onReferenceImageChange,
+    referenceModel,
+    isInpaintMode,
     referenceImages,
     imageImportRequest,
     onImageImportHandled,
@@ -118,9 +119,10 @@ const ImageParameterPanel = ({
         />
       )}
 
-      {isNovelAIDirectorReferenceModel(params.model) && (
+      {isNovelAIDirectorReferenceModel(referenceModel, isInpaintMode) && (
         <ImageReferenceControl
-          onReferenceImageChange={onReferenceImageChange}
+          key={isV5Model ? 'v5' : 'v45'}
+          isV5={isV5Model}
           images={referenceImages}
           imageImportRequest={imageImportRequest}
           onImageImportHandled={onImageImportHandled}

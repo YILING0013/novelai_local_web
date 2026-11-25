@@ -68,8 +68,8 @@ export const calculateNovelAIImageCost = ({
  *   原始单张成本、实际单张成本、本批总成本、数量及是否命中订阅小图免费条件。
  */
 export const estimateNovelAIGenerationCost = ({
-  subscriptionActive = false,
-  useUpscaleCredits = false,
+  accountSnapshot = null,
+  referenceCount = 0,
   batchSize = 1,
   ...imageOptions
 }) => {
@@ -86,9 +86,12 @@ export const estimateNovelAIGenerationCost = ({
     };
   }
 
-  // 本地版按官方账户快照判断：有效订阅的普通小图不扣 Anlas，大图仍按公式计费。
-  const subscriptionFree = subscriptionActive === true && useUpscaleCredits !== true;
-  const perImage = subscriptionFree ? 0 : rawPerImage;
+  // Opus 免除符合规格的单张基础费；每张启用的精确参考仍需 5 Anlas，连续生成按张累计。
+  const { model, width, height, steps } = imageOptions;
+  const effectiveSteps = model === 'nai-diffusion-5-full-medium' || model === 'nai-diffusion-5-full-medium-inpainting' ? 14 : steps;
+  const subscriptionFree = accountSnapshot?.subscription?.active === true && accountSnapshot.subscription.tier >= 3
+    && width * height <= 1048576 && effectiveSteps <= 28 && !(V5_MODEL_FAMILY.has(model) && accountSnapshot.v5?.is_negative);
+  const perImage = (subscriptionFree ? 0 : rawPerImage) + referenceCount * 5;
 
   return {
     rawPerImage,

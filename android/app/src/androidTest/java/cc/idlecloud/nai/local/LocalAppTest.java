@@ -360,6 +360,65 @@ public class LocalAppTest {
     }
 
     @Test
+    public void mobilePreciseReferenceUsesHighAndRestoresMedium() throws Exception {
+        try (ActivityScenario<MainActivity> activity = ActivityScenario.launch(MainActivity.class)) {
+            waitFor(activity, "Boolean(document.querySelector('[data-mobile-titlebar]'))");
+            // 账户快照仅用于打开 APK 内的绘画页；上传合成图片和编辑参考设置均在本机完成。
+            evaluate(activity, """
+                    (() => {
+                      const request = window.fetch;
+                      const snapshot = { subscription: { active: true, tier: 3 }, anlas: { total: 500 }, information: {} };
+                      window.fetch = (input, init) => {
+                        const path = new URL(input instanceof Request ? input.url : input, location.href).pathname;
+                        if (path === '/api/session') return Promise.resolve(Response.json({ authenticated: true, account_snapshot: snapshot }));
+                        if (path === '/api/account') return Promise.resolve(Response.json({ account_snapshot: snapshot }));
+                        return request(input, init);
+                      };
+                      location.hash = '#/main?page=ai-painting';
+                    })()
+                    """);
+            tap(activity, "[data-mobile-generation-footer] button[aria-label=打开参数面板], [data-mobile-generation-footer] button[aria-label=\"Open parameters\"]");
+            String model = "document.querySelector('[data-mobile-parameter-header]') && [...document.querySelectorAll('[role=combobox][aria-labelledby*=\"model-select-label\"]')].find(e=>e.getClientRects().length && getComputedStyle(e).visibility==='visible')";
+            waitFor(activity, "Boolean(" + model + ")");
+            evaluate(activity, "(" + model + ").dispatchEvent(new MouseEvent('mousedown', {bubbles:true, button:0}))");
+            String medium = "document.querySelector('[role=option][data-value=nai-diffusion-5-full-medium]')";
+            waitFor(activity, "Boolean(" + medium + ")");
+            evaluate(activity, medium + ".click()");
+            String reference = "[...document.querySelectorAll('.MuiAccordionSummary-root')].find(e=>e.getClientRects().length && /Precise Reference|精确参考/i.test(e.textContent))";
+            waitFor(activity, "Boolean(" + reference + ")");
+            evaluate(activity, "window.refTestPanel = (" + reference + ").closest('.MuiAccordion-root'); if ((" + reference + ").getAttribute('aria-expanded') !== 'true') (" + reference + ").click()");
+            evaluate(activity, """
+                    (() => {
+                      const canvas = document.createElement('canvas');
+                      canvas.width = 96;
+                      canvas.height = 64;
+                      canvas.getContext('2d').fillRect(0, 0, 96, 64);
+                      canvas.toBlob(blob => {
+                        const transfer = new DataTransfer();
+                        transfer.items.add(new File([blob], 'synthetic-reference.png', {type: 'image/png'}));
+                        const input = window.refTestPanel.querySelector('input[type=file]');
+                        input.files = transfer.files;
+                        input.dispatchEvent(new Event('change', {bubbles:true}));
+                      }, 'image/png');
+                    })()
+                    """);
+            waitFor(activity, "(" + model + ").textContent.includes('Full (High)')");
+            String type = "window.refTestPanel.querySelector('[role=combobox]')";
+            waitFor(activity, "Boolean(" + type + ")");
+            evaluate(activity, type + ".dispatchEvent(new MouseEvent('mousedown', {bubbles:true, button:0}))");
+            String outfit = "document.querySelector('[role=option][data-value=costume]')";
+            waitFor(activity, "Boolean(" + outfit + ")");
+            evaluate(activity, outfit + ".click()");
+            waitFor(activity, "window.refTestPanel.querySelector('input[type=range]')?.max === '5' && window.refTestPanel.querySelectorAll('input[type=range]').length === 1");
+            waitFor(activity, "[...window.refTestPanel.querySelectorAll('img')].some(e=>e.naturalWidth >= 1024 && e.naturalWidth * e.naturalHeight <= 1048576)");
+            String remove = "[...window.refTestPanel.querySelectorAll('button[aria-label]')].find(e=>/delete reference image|remove reference image|删除参考图/i.test(e.ariaLabel))";
+            waitFor(activity, "Boolean(" + remove + ")");
+            evaluate(activity, "(" + remove + ").click()");
+            waitFor(activity, "(" + model + ").textContent.includes('Full (Medium)')");
+        }
+    }
+
+    @Test
     public void cpuModelLoadsWhenRequested() throws Exception {
         org.junit.Assume.assumeTrue("true".equals(InstrumentationRegistry.getArguments().getString("loadModel")));
         AndroidCore.open(InstrumentationRegistry.getInstrumentation().getTargetContext());

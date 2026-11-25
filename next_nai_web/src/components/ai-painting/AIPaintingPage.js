@@ -88,7 +88,7 @@ import { extractActiveContent } from './PromptEditor';
 import { applyImageParametersToUI } from './utils/parameterMapping';
 import { extractMetadataFromFile, extractMetadataFromImageSrc } from './utils/metadataUtils';
 import { clearVibePanelState, getVibePanelState, saveVibePanelState } from './utils/vibeDB';
-import imageCacheManager from './utils/imageCacheManager';
+import { getModelForPreciseReferences, getEffectiveReferenceParams, resolveWorkspaceReferences, restoreRequestReferenceImages } from './utils/novelAIReferenceParams.mjs';
 import { sha256 as hashAccountIdentity } from './utils/cryptoUtils';
 import {
   DEFAULT_PAINTING_MODEL_ID,
@@ -515,7 +515,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
   const [imageImportRequest, setImageImportRequest] = useState(null);
   const [liveAccountSnapshot, setLiveAccountSnapshot] = useState(accountSnapshot);
   const [anlasDialogOpen, setAnlasDialogOpen] = useState(false);
-  const [generationParams, setGenerationParams] = useState(() => {
+  const [preferredGenerationParams, setGenerationParams] = useState(() => {
     // 尝试从localStorage中读取参数
     try {
       const defaults = {
@@ -526,6 +526,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
         seed: '',
         batchSize: 1,
         model: accountDefaultModel,
+        v5HighSettings: null,
       };
 
       // 从缓存中读取各参数值
@@ -561,9 +562,22 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
         seed: '',
         batchSize: 1,
         model: accountDefaultModel,
+        v5HighSettings: null,
       };
     }
   });
+
+  const [imageToImageCostParameters, setImageToImageCostParameters] = useState(null);
+  const [referenceCounts, setReferenceCounts] = useState({ v5Added: 0, active: 0 });
+  const referenceInpaint = leftPanelMode === 'inpaint' || Boolean(imageToImageCostParameters?.mask);
+  const referenceUnavailable = referenceInpaint || Boolean(imageToImageCostParameters?.directorTools);
+  const effectiveModel = getModelForPreciseReferences(preferredGenerationParams.model, referenceCounts.v5Added, referenceUnavailable);
+  const generationParams = useMemo(() => getEffectiveReferenceParams(preferredGenerationParams, effectiveModel),
+    [effectiveModel, preferredGenerationParams]);
+  const canUseReference = !imageToImageCostParameters?.directorTools
+    && isNovelAIDirectorReferenceModel(getModelForPreciseReferences(effectiveModel, 1, referenceUnavailable), referenceInpaint);
+  const canUseVibe = isNovelAIVibeModel(effectiveModel, referenceInpaint);
+  const hasActiveVibes = canUseVibe && vibeImages.some((image) => !image.isTemporarilyDisabled);
 
   useEffect(() => {
     setLiveAccountSnapshot(accountSnapshot);
@@ -577,11 +591,11 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
     return () => window.removeEventListener('novelai:account-updated', handleAccountUpdate);
   }, []);
   const [promptsByModel, setPromptsByModel] = useState(() => (
-    loadModelPromptCache(generationParams.model)
+    loadModelPromptCache(preferredGenerationParams.model)
   ));
-  const activePromptModelRef = useRef(generationParams.model);
-  activePromptModelRef.current = generationParams.model;
-  const activePrompts = promptsByModel[generationParams.model] || {
+  const activePromptModelRef = useRef(preferredGenerationParams.model);
+  activePromptModelRef.current = preferredGenerationParams.model;
+  const activePrompts = promptsByModel[preferredGenerationParams.model] || {
     positivePrompt: '',
     negativePrompt: '',
   };
@@ -641,7 +655,6 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   // 添加图像数据状态
   const [externalImageData, setExternalImageData] = useState(null);
-  const [imageToImageCostParameters, setImageToImageCostParameters] = useState(null);
   const [inpaintCostParameters, setInpaintCostParameters] = useState(null);
   const isV5Model = isNovelAIV5Model(generationParams.model);
 
@@ -883,7 +896,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
 
 
   // 按 NovelAI 当前计费顺序计算生成点数。
-  const calculateGenerationCost = useCallback((params, currentEditParameters) => {
+  const calculateGenerationCost = useCallback((params, currentEditParameters, referenceCount) => {
     const isSmeaSupported = !isV4Model(params.model);
     const editParameters = currentEditParameters === undefined
       ? params.imageToImage
@@ -899,11 +912,11 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
       hasMask: Boolean(editParameters?.mask),
       strength: editParameters?.strength,
       inpaintImg2ImgStrength: editParameters?.inpaintStrength,
-      subscriptionActive: liveAccountSnapshot?.subscription?.active === true,
-      useUpscaleCredits: params.use_upscale_credits === true,
+      accountSnapshot: liveAccountSnapshot,
+      referenceCount,
       batchSize: params.batchSize,
     });
-  }, [liveAccountSnapshot?.subscription?.active]);
+  }, [liveAccountSnapshot]);
 
   /**
    * 按全部分镜实际生成规则累计点数，每个可编辑画框只生成一张。
@@ -916,13 +929,17 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
     for (const panel of panels) {
       const isSelected = panel.id === comicTargetRef.current?.panelId;
       const savedState = !isSelected && panel.task?.params.parameterState;
-      const params = { ...(savedState ? savedState.params : generationParams), batchSize: 1 };
+      const savedReferences = savedState && resolveWorkspaceReferences(savedState.params, savedState.referenceImages || restoreRequestReferenceImages(savedState.params),
+        panel.task.params.vibeImages || [], Boolean(savedState.imagePreview && savedState.restoredMask?.mask),
+        Boolean(savedState.imagePreview && savedState.directorToolParams));
+      const params = { ...(savedReferences ? savedReferences.params : generationParams), batchSize: 1 };
       // 未暂存的其它画框会按框形匹配尺寸，预估也使用同样的尺寸。
       if (!panel.task && !isSelected) Object.assign(params, getPanelResolutionParameters(params, panelBounds(panel)));
       const imageParameters = savedState
-        ? { image: savedState.imagePreview, strength: params.strength }
+        ? { image: savedState.imagePreview, strength: params.strength, ...savedState.restoredMask }
         : imageToImageCostParameters;
-      const cost = calculateGenerationCost(params, imageParameters);
+      const referenceCount = savedReferences ? savedReferences.referenceParams?.director_reference_images_cached.length || 0 : referenceCounts.active;
+      const cost = calculateGenerationCost(params, imageParameters, referenceCount);
       if (cost.total === null) return { count: panels.length, total: null };
       total += cost.total;
     }
@@ -946,13 +963,11 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
     }
     const isInpaintMode = leftPanelMode === 'inpaint';
     const isV4 = isV4Model(generationParams.model);
-    const hasImageReference = Boolean(
-      isNovelAIDirectorReferenceModel(generationParams.model)
-      && generationParams.director_reference_images_cached?.length
-    );
+    const hasImageReference = referenceCounts.active > 0;
     const estimatedCost = calculateGenerationCost(
       generationParams,
       isInpaintMode ? inpaintCostParameters : imageToImageCostParameters,
+      referenceCounts.active,
     );
     const costLabel = estimatedCost.perImage === -3
       ? null
@@ -1218,21 +1233,14 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
   // 参数变更处理
   const handleParamChange = useCallback((param, value) => {
     const resolvedValue = value;
-    const shouldClearDirectorReference = param === 'model'
-      && !isNovelAIDirectorReferenceModel(resolvedValue);
-
-    if (shouldClearDirectorReference) {
-      // 切离白名单模型时同步失效已验证的参考图缓存，重新进入 4.5 后必须重新上传。
-      imageCacheManager.clear();
-    }
-
     setGenerationParams((previousParams) => {
       const nextParams = {
         ...previousParams,
         [param]: resolvedValue,
       };
 
-      if (shouldClearDirectorReference) {
+      if (param === 'model' && (!isNovelAIDirectorReferenceModel(resolvedValue)
+        || isNovelAIV5Model(resolvedValue) !== isNovelAIV5Model(previousParams.model))) {
         NOVELAI_DIRECTOR_REFERENCE_PARAM_KEYS.forEach((key) => delete nextParams[key]);
       }
 
@@ -2306,12 +2314,14 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
         }
 
       case 'use-as-reference': {
+        if (!canUseReference || hasActiveVibes) return false;
         const blob = currentItem.cachedBlob || await fetchUrlAsBlob(currentItem.src);
         await handleUseDroppedImage('reference', new File([blob], String(currentItem.id), { type: blob.type }));
         return true;
       }
 
       case 'use-as-vibe':
+        if (!canUseVibe || referenceCounts.active) return false;
         try {
           const response = await fetch(currentItem.src);
           const blob = await response.blob();
@@ -2566,7 +2576,8 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
           editorStateRef={parameterEditorRef}
           isolated={leftPanelMode === 'comic'}
           comicPanelBounds={leftPanelMode === 'comic' ? comicPanelBounds : null}
-          params={generationParams}
+          params={preferredGenerationParams}
+          onReferenceCountsChange={setReferenceCounts}
           isInpaintMode={leftPanelMode === 'inpaint'}
           onParamChange={handleEditorParamChange}
           getAllParametersRef={getAllParametersRef}
@@ -2946,10 +2957,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
                   generatedItemsCount={generatedItems.length}
                   onApplyImageParameters={handleApplyImageParameters}
                   onError={reportWorkspaceFailure}
-                  hideVibeAction={!isNovelAIVibeModel(generationParams.model)}
-                  disableVibeAction={Boolean(generationParams.director_reference_images_cached?.length)}
-                  showReferenceAction={isNovelAIDirectorReferenceModel(generationParams.model)}
-                  disableReferenceAction={vibeImages.some((image) => !image.isTemporarilyDisabled)}
+                  hideVibeAction={!canUseVibe}
+                  disableVibeAction={referenceCounts.active > 0}
+                  showReferenceAction={canUseReference}
+                  disableReferenceAction={hasActiveVibes}
                   privacyMode={previewSettings.privacyMode}
                   imageDrag={previewCanDrag ? { ...previewDrag, mode: previewSettings.copyMode } : null}
                   onAdjustImage={() => {
@@ -3780,8 +3791,8 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
         reading={pageMetadataDialog.reading}
         imageActions={[
           ...(generationParams.model.startsWith('nai-diffusion') ? ['img2img', 'inpaint'] : []),
-          ...(!generationParams.director_reference_images_cached?.length && isNovelAIVibeModel(generationParams.model) ? ['vibe'] : []),
-          ...(!vibeImages.some(image => !image.isTemporarilyDisabled) && isNovelAIDirectorReferenceModel(generationParams.model) ? ['reference'] : []),
+          ...(!referenceCounts.active && canUseVibe ? ['vibe'] : []),
+          ...(!hasActiveVibes && canUseReference ? ['reference'] : []),
           'editor',
         ]}
         onUseImage={handleUseDroppedImage}

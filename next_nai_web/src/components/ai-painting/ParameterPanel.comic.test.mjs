@@ -84,6 +84,7 @@ function createPanel(overrides = {}, cached = {}) {
     },
     '@mui/material': new Proxy({}, { get: (_target, name) => name === 'useTheme' ? () => theme : name }),
     '@mui/icons-material': new Proxy({}, { get: (_target, name) => name }),
+    './utils/novelAIReferenceParams.mjs': referenceParams,
     './utils/modelUtils': modelUtils,
     './utils/parameterMapping': parameterMapping,
     './utils/versionWorkspace.mjs': versionWorkspace,
@@ -92,6 +93,7 @@ function createPanel(overrides = {}, cached = {}) {
     '../../utils/ApiClient': { __esModule: true, default: { getRandomPromptConfig: async () => ({ enabled: false }) } },
     '@/i18n/I18nProvider': { useI18n: () => ({ t: (key) => key }) },
   };
+  dependencies.react.useLayoutEffect = dependencies.react.useEffect;
   const imports = new Proxy(dependencies, { get: (target, key) => target[key] || new Proxy(
     { __esModule: true, default: key }, { get: (value, name) => value[name] ?? name },
   ) });
@@ -328,4 +330,85 @@ test('普通生成和未选择画框时不显示漫画推荐按钮', () => {
     assert.ok(!basic?.props.resolutionAction);
     assert.equal(elements(tree, 'Button').some((node) => node.props.children === 'painting.workspace.parameters.useRecommendedResolution'), false);
   }
+});
+
+test('Medium 面板添加、停用、移除参考及切换重绘时，实际模型、步数与参考费用数量一致', () => {
+  const medium = 'nai-diffusion-5-full-medium', high = 'nai-diffusion-5-full';
+  const selected = { model: medium, steps: 14, v5HighSettings: { steps: 26, sampler: 'k_euler', promptGuidanceRescale: 0.4 } };
+  let counts;
+  const panel = createPanel({ params: selected, editorState: { params: selected }, positivePrompt: 'original',
+    onReferenceCountsChange: (value) => { counts = value; } });
+  let tree = panel.render();
+  const imagePanel = () => elements(tree, './ParameterPanelUI/ImageParameterPanel')[0].props;
+  const mediumOption = () => elements(tree, 'MenuItem').find((option) => option.props.value === medium);
+  assert.equal(panel.request().model, medium);
+  imagePanel().setReferenceImages([{ data: 'pixels', type: 'costume', strength: 3.75 }]);
+  tree = panel.render();
+  assert.equal(panel.request().model, high);
+  assert.equal(panel.request().steps, 26);
+  assert.equal(panel.request().sampler, 'k_euler');
+  assert.equal(panel.request().positivePrompt, 'original');
+  assert.equal(counts.active, 1);
+  assert.equal(mediumOption().props.disabled, true);
+  assert.ok(elements(tree, 'Alert').some((alert) => alert.props.role === 'status'));
+  assert.equal(panel.request().director_reference_descriptions[0].caption.base_caption, 'costume');
+  imagePanel().setReferenceImages((images) => images.map((image) => ({ ...image, disabled: true })));
+  tree = panel.render();
+  assert.equal(panel.request().model, high);
+  assert.equal(counts.active, 0);
+  assert.equal(counts.v5Added, 1);
+  assert.equal(panel.request().director_reference_images_cached, undefined);
+  panel.update({ isInpaintMode: true });
+  tree = panel.render();
+  assert.equal(panel.request().model, medium);
+  assert.equal(panel.request().steps, 14);
+  panel.update({ isInpaintMode: false });
+  tree = panel.render();
+  assert.equal(panel.request().model, high);
+  imagePanel().setReferenceImages([]);
+  tree = panel.render();
+  assert.equal(panel.request().model, medium);
+  assert.equal(mediumOption().props.disabled, false);
+  assert.equal(counts.v5Added, 0);
+});
+
+test('切换模型和重新打开分镜后，两代参考图与 High 的采样值各自恢复', () => {
+  const high = 'nai-diffusion-5-full', medium = 'nai-diffusion-5-full-medium', v45 = 'nai-diffusion-4-5-full';
+  let panel = createPanel({ params: { model: high, steps: 26, sampler: 'k_euler', promptGuidanceRescale: 0.3 } });
+  const controls = () => elements(panel.render(), './ParameterPanelUI/ImageParameterPanel')[0].props;
+  controls().setReferenceImages([{ data: 'v5', type: 'costume' }]);
+  controls().handleParamChange('model', v45);
+  controls().setReferenceImages([{ data: 'v45', type: 'style', fidelity: 0.8 }]);
+  panel.render();
+  const snapshot = panel.snapshot();
+  assert.equal(panel.request().director_reference_images_cached[0].data, 'v45');
+  assert.equal(panel.request().version_editor.parameterState.v5ReferenceImages, undefined);
+  panel = createPanel({ editorState: snapshot, params: snapshot.params });
+  controls().handleParamChange('model', medium);
+  let ui = controls();
+  assert.equal(panel.request().model, high);
+  assert.equal(panel.request().steps, 26);
+  assert.equal(panel.request().director_reference_images_cached[0].data, 'v5');
+  ui.handleParamChange('steps', 25);
+  ui = controls();
+  assert.equal(panel.request().steps, 25);
+  ui.setReferenceImages([]);
+  panel.render();
+  assert.equal(panel.request().model, medium);
+  assert.equal(panel.request().steps, 14);
+  controls().handleParamChange('model', v45);
+  panel.render();
+  assert.equal(panel.request().director_reference_images_cached[0].data, 'v45');
+});
+
+test('老分镜只有请求数组时恢复参考卡片且连续生成仍发送同一张图', () => {
+  const params = { model: 'nai-diffusion-4-5-full', director_reference_images: ['old'],
+    director_reference_descriptions: ['style'], director_reference_strength_values: [0] };
+  const state = { params };
+  const panel = createPanel({ params, editorState: state });
+  panel.render();
+  assert.deepEqual(panel.snapshot().referenceImages.map((ref) => [ref.data, ref.type, ref.strength]), [['old', 'style', 0]]);
+  const request = panel.request({ parameterState: state, promptsByModel: {}, vibeImages: [] });
+  assert.equal(request.director_reference_images_cached[0].data, 'old');
+  assert.equal(request.director_reference_strength_values[0], 0);
 });

@@ -1,3 +1,5 @@
+import { isNovelAIV5Model } from '../ai-painting/utils/novelAIV5Params.mjs';
+import { readDirectorReferenceSettings } from '../ai-painting/utils/novelAIReferenceParams.mjs';
 /**
  * 从完整编辑快照或旧版请求中读取参考图，保留预览和实际生成配置。
  * @param {object} parameters 版本参数快照。
@@ -6,13 +8,12 @@
 export function versionReferences(parameters = {}) {
   const editor = parameters.editor_state;
   const state = editor?.parameterState;
+  const isV5 = isNovelAIV5Model(parameters.model || state?.params?.model);
   const imageUrl = (value) => typeof value === 'string' && value ? (value.startsWith('data:') ? value : 'data:image/png;base64,' + value) : null;
   const legacyReferences = parameters.director_reference_images_cached?.length ? parameters.director_reference_images_cached : parameters.director_reference_images || [];
   const references = state?.referenceImages ?? legacyReferences.map((item, index) => ({
     data: typeof item === 'string' ? item : item.data,
-    type: parameters.director_reference_descriptions?.[index]?.caption?.base_caption || 'character',
-    strength: parameters.director_reference_strength_values?.[index],
-    fidelity: 1 - (parameters.director_reference_secondary_strength_values?.[index] ?? 0),
+    ...readDirectorReferenceSettings(parameters, index),
   }));
   const legacyVibes = parameters.reference_image_multiple?.length ? parameters.reference_image_multiple : parameters.reference_image ? [parameters.reference_image] : [];
   const vibes = editor?.vibeImages ?? legacyVibes.map((item, index) => ({
@@ -25,7 +26,7 @@ export function versionReferences(parameters = {}) {
       key: 'reference-' + index, kind: 'reference', name: item.name || 'Reference ' + (index + 1),
       preview: imageUrl(item.originalImage || item.data), usedImage: imageUrl(item.data),
       content: imageUrl(item.data), original: imageUrl(item.originalImage || item.data),
-      settings: { type: item.type, strength: item.strength, fidelity: item.fidelity, disabled: Boolean(item.disabled) },
+      settings: { type: item.type, strength: item.strength, ...(!isV5 && { fidelity: item.fidelity }), disabled: Boolean(item.disabled) },
     })),
     ...vibes.map((item, index) => ({
       key: 'vibe-' + index, kind: 'vibe', name: item.name || item.filename || 'Vibe ' + (index + 1),

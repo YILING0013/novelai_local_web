@@ -3,7 +3,7 @@
 import { hasFileDrag, readDroppedFiles } from '../../../tools/ImageTools/previewImageDragData.mjs';
 import { imageDropHighlight } from '../imageDropHighlight';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -14,12 +14,15 @@ import {
   Select,
   MenuItem,
   FormControl,
+  FormControlLabel,
+  Switch,
   Paper,
   Stack,
   Accordion,
   AccordionSummary,
   AccordionDetails,
 } from '@mui/material';
+import { getReferenceImageLayout } from '../../../utils/novelAIReferenceParams.mjs';
 import { alpha } from '@mui/material/styles';
 import {
   Info as InfoIcon,
@@ -50,12 +53,17 @@ const referenceActionSx = {
   '&:hover': { bgcolor: 'action.focus' },
 };
 
-const ImageReferenceControl = ({ images, setImages, onReferenceImageChange, disabled = false, expanded, onExpandedChange, imageImportRequest, onImageImportHandled }) => {
+const ImageReferenceControl = ({ isV5, images, setImages, disabled = false, expanded, onExpandedChange, imageImportRequest, onImageImportHandled }) => {
   const { t } = useI18n();
   // 多图状态: { id, data: base64, displayUrl, type, strength, fidelity, disabled, cache_secret_key }
   const [masterKey, setMasterKey] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const refImageInputRef = useRef(null);
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   // 初始化 masterKey（页面加载时生成一次）
   useEffect(() => {
@@ -89,59 +97,6 @@ const ImageReferenceControl = ({ images, setImages, onReferenceImageChange, disa
     return () => { isMounted = false; };
   }, [masterKey, images, setImages]);
 
-  // 使用 ref 保持回调函数的稳定引用，避免 useEffect 无限循环
-  const onReferenceImageChangeRef = useRef(onReferenceImageChange);
-  useEffect(() => {
-    onReferenceImageChangeRef.current = onReferenceImageChange;
-  }, [onReferenceImageChange]);
-
-  // 通知父组件参数变化
-  useEffect(() => {
-    if (disabled) return;
-
-    // 过滤掉被禁用或没有 key 的图片
-    const activeImages = images.filter(img => !img.disabled && img.cache_secret_key);
-
-    if (activeImages.length === 0) {
-      if (onReferenceImageChangeRef.current) {
-        onReferenceImageChangeRef.current(null);
-      }
-      return;
-    }
-
-    // 构建参数
-    const cachedImages = activeImages.map(img => ({
-      cache_secret_key: img.cache_secret_key,
-      data: img.data
-    }));
-
-    const descriptions = activeImages.map(img => ({
-      caption: {
-        base_caption: img.type || "character",
-        char_captions: []
-      },
-      legacy_uc: false
-    }));
-
-    const strengthValues = activeImages.map(img => img.strength ?? 0.6);
-    const secondaryStrengthValues = activeImages.map(img => {
-      const fid = img.fidelity ?? 1.0;
-      return parseFloat((1 - fid).toFixed(2));
-    });
-    const infoExtracted = activeImages.map(() => 1);
-
-    if (onReferenceImageChangeRef.current) {
-      onReferenceImageChangeRef.current({
-        director_reference_images_cached: cachedImages,
-        director_reference_descriptions: descriptions,
-        director_reference_strength_values: strengthValues,
-        director_reference_secondary_strength_values: secondaryStrengthValues,
-        director_reference_information_extracted: infoExtracted,
-      });
-    }
-
-  }, [images, disabled]);
-
   // 添加图片处理
   const addReferenceImage = (file) => {
     if (disabled || !file) return;
@@ -163,49 +118,18 @@ const ImageReferenceControl = ({ images, setImages, onReferenceImageChange, disa
     reader.onload = (event) => {
       const img = new Image();
       img.onload = () => {
-        const originalW = img.naturalWidth;
-        const originalH = img.naturalHeight;
-        const originalRatio = originalW / originalH;
-
-        const targets = [
-          { w: 1024, h: 1536 },
-          { w: 1536, h: 1024 },
-          { w: 1472, h: 1472 },
-        ];
-
-        let bestTarget = targets[0];
-        let minDiff = Math.abs(originalRatio - bestTarget.w / bestTarget.h);
-
-        for (let i = 1; i < targets.length; i++) {
-          const target = targets[i];
-          const targetRatio = target.w / target.h;
-          const diff = Math.abs(originalRatio - targetRatio);
-          if (diff < minDiff) {
-            minDiff = diff;
-            bestTarget = target;
-          }
-        }
-
+        if (!mounted.current) return;
+        const { canvasWidth, canvasHeight, drawWidth, drawHeight, x, y } =
+          getReferenceImageLayout(img.naturalWidth, img.naturalHeight, isV5);
         const canvas = document.createElement('canvas');
-        canvas.width = bestTarget.w;
-        canvas.height = bestTarget.h;
+        canvas.width = canvasWidth;
+        canvas.height = canvasHeight;
         const ctx = canvas.getContext('2d');
-
-        let newW, newH;
-        if (originalRatio > bestTarget.w / bestTarget.h) {
-          newW = bestTarget.w;
-          newH = bestTarget.w / originalRatio;
-        } else {
-          newH = bestTarget.h;
-          newW = bestTarget.h * originalRatio;
+        if (!isV5) {
+          ctx.fillStyle = 'black';
+          ctx.fillRect(0, 0, canvasWidth, canvasHeight);
         }
-
-        ctx.fillStyle = 'black';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        const offsetX = (canvas.width - newW) / 2;
-        const offsetY = (canvas.height - newH) / 2;
-        ctx.drawImage(img, offsetX, offsetY, newW, newH);
+        ctx.drawImage(img, x, y, drawWidth, drawHeight);
 
         const dataUrl = canvas.toDataURL('image/png');
         const base64 = dataUrl.split(',')[1];
@@ -218,8 +142,8 @@ const ImageReferenceControl = ({ images, setImages, onReferenceImageChange, disa
             originalImage: event.target.result,
             data: base64,
             displayUrl: dataUrl,
-            type: "character",
-            strength: 0.6,
+            type: isV5 ? "character&style" : "character",
+            strength: isV5 ? 1 : 0.6,
             fidelity: 1.0,
             disabled: false,
             cache_secret_key: null
@@ -308,7 +232,7 @@ const ImageReferenceControl = ({ images, setImages, onReferenceImageChange, disa
           </Typography>
           <Tooltip title={disabled
             ? t('painting.workspace.parameters.removeVibesFirst')
-            : t('painting.workspace.parameters.characterReferencesHelp')} arrow>
+            : t(isV5 ? 'painting.workspace.parameters.v5ReferenceHelp' : 'painting.workspace.parameters.characterReferencesHelp')} arrow>
             <InfoIcon sx={{ ml: 0.75, fontSize: 16, color: 'text.secondary' }} />
           </Tooltip>
         </Box>
@@ -316,7 +240,11 @@ const ImageReferenceControl = ({ images, setImages, onReferenceImageChange, disa
       <AccordionDetails sx={{ px: 0, pt: 1, pb: 2, opacity: disabled ? 0.5 : 1, transition: 'opacity 0.2s' }}>
 
         <Stack spacing={1.25}>
-          {images.map((img, index) => (
+          {images.map((img, index) => {
+            // 保存官方描述，恢复历史作品时也能区分角色组合的服装开关。
+            const type = ({ character_mainoutfit: 'character', 'character&style_anyoutfit': 'character&style' })[img.type] || img.type;
+            const sameOutfit = img.type === 'character_mainoutfit' || img.type === 'character&style';
+            return (
             <Paper key={img.id} variant="outlined" sx={{ bgcolor: 'transparent', borderRadius: 1, overflow: 'hidden', backgroundImage: 'none' }}>
               {/* 类型靠左、操作靠右；标题栏底色与正文形成轻微层次。 */}
               <Box sx={{
@@ -331,7 +259,7 @@ const ImageReferenceControl = ({ images, setImages, onReferenceImageChange, disa
               }}>
                 <FormControl size="small" sx={{ minWidth: 96, maxWidth: 'calc(100% - 72px)' }}>
                   <Select
-                    value={img.type}
+                    value={type}
                     onChange={(e) => updateImage(img.id, 'type', e.target.value)}
                     disabled={img.disabled || disabled}
                     inputProps={{ 'aria-label': t('painting.workspace.parameters.referenceType') }}
@@ -339,6 +267,7 @@ const ImageReferenceControl = ({ images, setImages, onReferenceImageChange, disa
                   >
                     <MenuItem value="character" sx={{ fontSize: '0.75rem' }}>{t('painting.workspace.parameters.referenceTypeCharacter')}</MenuItem>
                     <MenuItem value="style" sx={{ fontSize: '0.75rem' }}>{t('painting.workspace.parameters.referenceTypeStyle')}</MenuItem>
+                    {isV5 && <MenuItem value="costume" sx={{ fontSize: '0.75rem' }}>{t('painting.workspace.parameters.referenceTypeOutfit')}</MenuItem>}
                     <MenuItem value="character&style" sx={{ fontSize: '0.75rem' }}>{t('painting.workspace.parameters.referenceTypeCharacterAndStyle')}</MenuItem>
                   </Select>
                 </FormControl>
@@ -401,30 +330,45 @@ const ImageReferenceControl = ({ images, setImages, onReferenceImageChange, disa
                       value={img.strength}
                       aria-label={t('painting.workspace.parameters.strengthShort')}
                       onChange={(e, v) => updateImage(img.id, 'strength', v)}
-                      min={0} max={1} step={0.05}
+                      min={0} max={isV5 ? 5 : 1} step={0.05}
                       sx={{ flexGrow: 1 }}
                       disabled={img.disabled || disabled}
                     />
                   </Box>
 
-                  {/* Fidelity 滑块 */}
-                  <Box sx={{ display: 'flex', alignItems: 'center', minHeight: 30 }}>
-                    <Typography sx={{ minWidth: 52, color: 'text.secondary', fontSize: 12 }}>{t('painting.workspace.parameters.fidelityShort')}</Typography>
-                    <Typography sx={{ minWidth: 32, fontSize: 12, mr: 1 }}>{img.fidelity.toFixed(2)}</Typography>
-                    <Slider
-                      size="small"
-                      value={img.fidelity}
-                      aria-label={t('painting.workspace.parameters.fidelityShort')}
-                      onChange={(e, v) => updateImage(img.id, 'fidelity', v)}
-                      min={0} max={1} step={0.05}
-                      sx={{ flexGrow: 1 }}
-                      disabled={img.disabled || disabled}
+                  {isV5 && (type === 'character' || type === 'character&style') && (
+                    <FormControlLabel
+                      sx={{ m: 0, '& .MuiFormControlLabel-label': { fontSize: 12 } }}
+                      control={<Switch size="small" checked={sameOutfit} disabled={img.disabled || disabled}
+                        onChange={(_, checked) => {
+                          const nextType = type === 'character'
+                            ? (checked ? 'character_mainoutfit' : 'character')
+                            : (checked ? 'character&style' : 'character&style_anyoutfit');
+                          updateImage(img.id, 'type', nextType);
+                        }} />}
+                      label={t('painting.workspace.parameters.preferSameOutfit')}
                     />
-                  </Box>
+                  )}
+                  {!isV5 && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', minHeight: 30 }}>
+                      <Typography sx={{ minWidth: 52, color: 'text.secondary', fontSize: 12 }}>{t('painting.workspace.parameters.fidelityShort')}</Typography>
+                      <Typography sx={{ minWidth: 32, fontSize: 12, mr: 1 }}>{img.fidelity.toFixed(2)}</Typography>
+                      <Slider
+                        size="small"
+                        value={img.fidelity}
+                        aria-label={t('painting.workspace.parameters.fidelityShort')}
+                        onChange={(e, v) => updateImage(img.id, 'fidelity', v)}
+                        min={0} max={1} step={0.05}
+                        sx={{ flexGrow: 1 }}
+                        disabled={img.disabled || disabled}
+                      />
+                    </Box>
+                  )}
                 </Box>
               </Box>
             </Paper>
-          ))}
+            );
+          })}
         </Stack>
 
         {/* 添加按钮 */}

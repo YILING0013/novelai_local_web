@@ -4,10 +4,11 @@ import { summarizeGenerationParameters } from './Generation/generationDebug.mjs'
 import { hasFileDrag, readDroppedFiles } from './tools/ImageTools/previewImageDragData.mjs';
 import { downloadBlobToFile } from '@/utils/mediaAssets';
 
+import { getModelForPreciseReferences, resolveWorkspaceReferences, restoreRequestReferenceImages } from './utils/novelAIReferenceParams.mjs';
 import { MODEL_OPTIONS } from './utils/generationOptions';
 
 
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { resizeImage, checkResolutionLimit } from './tools/ImageTools/ImageResizer';
 import MetadataDialog from './tools/ImageTools/MetadataDialog';
 import { extractActiveContent, ExpandedPromptDialog } from './PromptEditor';
@@ -87,6 +88,7 @@ const getV4ModelType = (modelName) => {
   return null;
 };
 
+const EMPTY_REFERENCES = [];
 const MAX_ACTIVE_VIBES = 4;
 const MAX_ACTIVE_CHARACTERS = 6;
 
@@ -109,6 +111,7 @@ const ParameterPanel = ({
   editorSessionKey = 0,
   isInpaintMode = false,
   onParamChange,
+  onReferenceCountsChange,
   getAllParametersRef = null,
   expandedPanels = {},
   onExpandedPanelsChange = () => { },
@@ -136,6 +139,7 @@ const ParameterPanel = ({
   const accountDefaultModel = normalizePaintingModelId('nai-diffusion-4-5-full');
   const defaultParams = useMemo(() => ({
     model: accountDefaultModel,
+    v5HighSettings: null,
     width: 1024,
     height: 1024,
     steps: 28,
@@ -161,7 +165,7 @@ const ParameterPanel = ({
     autoSmea: false,
   }), [accountDefaultModel]);
 
-  const [params, setParams] = useState(() => ({ ...defaultParams, ...initialEditorState?.params }));
+  const [preferredParams, setParams] = useState(() => ({ ...defaultParams, ...initialEditorState?.params }));
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [metadataDialogOpen, setMetadataDialogOpen] = useState(false);
   const [extractedMetadata, setExtractedMetadata] = useState(null);
@@ -172,7 +176,15 @@ const ParameterPanel = ({
   const [editorKey, setEditorKey] = useState(0);
   const [editorOpen, setEditorOpen] = useState(false);
   const [characterTabs, setCharacterTabs] = useState(initialEditorState?.characterTabs || []);
-  const [referenceImages, setReferenceImages] = useState(initialEditorState?.referenceImages || []);
+  // 两代模型使用不同裁切尺寸，分别保存图片以便来回切换。
+  const initialV5 = isNovelAIV5Model(initialEditorState?.params?.model);
+  const restoredImages = () => initialEditorState?.referenceImages || restoreRequestReferenceImages(initialEditorState?.params || {});
+  const [v45Images, setV45Images] = useState(() => initialEditorState?.v45ReferenceImages || (initialV5 ? [] : restoredImages()));
+  const [v5Images, setV5Images] = useState(() => initialEditorState?.v5ReferenceImages || (initialV5 ? restoredImages() : []));
+  const preferV5 = isNovelAIV5Model(preferredParams.model);
+  const preferV45 = !preferV5 && isNovelAIDirectorReferenceModel(preferredParams.model);
+  const referenceImages = preferV5 ? v5Images : preferV45 ? v45Images : EMPTY_REFERENCES;
+  const setReferenceImages = preferV5 ? setV5Images : setV45Images;
   const [loadedFromCache, setLoadedFromCache] = useState(false);
   const [randomPromptEnabled, setRandomPromptEnabled] = useState(false);
   const [randomPromptConfig, setRandomPromptConfig] = useState(null);
@@ -190,6 +202,19 @@ const ParameterPanel = ({
   const [directorToolParams, setDirectorToolParams] = useState(initialEditorState?.directorToolParams || null);
   const [restoredMask, setRestoredMask] = useState(initialEditorState?.restoredMask || null);
 
+  const referenceInpaint = isInpaintMode || Boolean(imagePreview && restoredMask?.mask);
+  const usingDirectorTool = Boolean(imagePreview && directorToolParams);
+  const { params, referenceParams, hasActiveVibes } = useMemo(
+    () => resolveWorkspaceReferences(preferredParams, referenceImages, vibeImages, referenceInpaint, usingDirectorTool),
+    [preferredParams, referenceImages, vibeImages, referenceInpaint, usingDirectorTool],
+  );
+  const referenceRequiresHigh = params.model !== preferredParams.model;
+  const v5Added = v5Images.length;
+  const activeReferenceCount = referenceParams?.director_reference_images_cached.length || 0;
+  useLayoutEffect(() => {
+    onReferenceCountsChange?.({ v5Added, active: activeReferenceCount });
+  }, [onReferenceCountsChange, v5Added, activeReferenceCount]);
+
   useEffect(() => {
     if (!editorStateRef) return;
     // 保存编辑态而非请求体，保留禁用的角色、参考图和各模型尚未提交的选项。
@@ -197,61 +222,15 @@ const ParameterPanel = ({
       key: editorSessionKey,
       defaultParams,
       getSnapshot: () => ({
-        params, imagePreview, editedImageData, directorToolParams, restoredMask,
+        params: preferredParams, imagePreview, editedImageData, directorToolParams, restoredMask,
         characterTabs, referenceImages,
+        // 漫画画格切换会卸载面板。备用图片仅随草稿保留，生成版本只存当前模型的一组。
+        ...(!preferV45 && v45Images.length > 0 && { v45ReferenceImages: v45Images }),
+        ...(!preferV5 && v5Images.length > 0 && { v5ReferenceImages: v5Images }),
       }),
     };
-  }, [editorStateRef, editorSessionKey, defaultParams, params, imagePreview, editedImageData,
-    directorToolParams, restoredMask, characterTabs, referenceImages]);
-
-  const handleReferenceImageChange = (refData) => {
-    const supportedRefData = isNovelAIDirectorReferenceModel(params.model) ? refData : null;
-    // 新的多图参数格式
-    const newValues = supportedRefData ? {
-      director_reference_images_cached: supportedRefData.director_reference_images_cached,
-      director_reference_descriptions: supportedRefData.director_reference_descriptions,
-      director_reference_strength_values: supportedRefData.director_reference_strength_values,
-      director_reference_secondary_strength_values: supportedRefData.director_reference_secondary_strength_values,
-      director_reference_information_extracted: supportedRefData.director_reference_information_extracted
-    } : {
-      director_reference_images_cached: undefined,
-      director_reference_descriptions: undefined,
-      director_reference_strength_values: undefined,
-      director_reference_secondary_strength_values: undefined,
-      director_reference_information_extracted: undefined
-    };
-
-    // 更新本地 state 和父组件 state (不存储 cached images 到 localStorage)
-    Object.keys(newValues).forEach(key => {
-      const value = newValues[key];
-
-      setParams(prev => {
-        const newParams = { ...prev };
-        if (value !== undefined) {
-          newParams[key] = value;
-          // 不保存 cached images 到 localStorage，因为它们太大且有缓存机制
-          if (key !== 'director_reference_images_cached') {
-            try {
-              if (!isolated) localStorage.setItem(`aiImageParams_${key}`, JSON.stringify(value));
-            } catch (e) {
-              console.error(`保存参数到localStorage失败 (key: ${key}):`, e);
-              if (e.name === 'QuotaExceededError') {
-                setToast({ open: true, message: t('painting.workspace.errors.storageFull'), severity: 'warning' });
-              }
-            }
-          }
-        } else {
-          delete newParams[key];
-          if (!isolated) localStorage.removeItem(`aiImageParams_${key}`);
-        }
-        return newParams;
-      });
-
-      if (onParamChange) {
-        setTimeout(() => onParamChange(key, value), 0);
-      }
-    });
-  };
+  }, [editorStateRef, editorSessionKey, defaultParams, preferredParams, imagePreview, editedImageData,
+    directorToolParams, restoredMask, characterTabs, referenceImages, preferV45, preferV5, v45Images, v5Images]);
 
   // 处理重置参数确认
   const handleResetParamsConfirm = () => setResetDialogOpen(true);
@@ -447,9 +426,9 @@ const ParameterPanel = ({
     if (!onImageToImageCostParametersChange) return;
 
     onImageToImageCostParametersChange(imagePreview
-      ? { image: true, strength: params.strength }
+      ? { image: true, strength: params.strength, mask: Boolean(restoredMask?.mask), inpaintStrength: restoredMask?.inpaintStrength, directorTools: usingDirectorTool }
       : null);
-  }, [imagePreview, onImageToImageCostParametersChange, params.strength]);
+  }, [imagePreview, onImageToImageCostParametersChange, params.strength, restoredMask, usingDirectorTool]);
 
   const handleSmeaChange = (e) => {
     if (isV4Model(params.model)) return;
@@ -489,6 +468,11 @@ const ParameterPanel = ({
     }
     if (param === 'autoSmea' && isV4Model(params.model)) return;
 
+    // 临时使用 High 时只编辑 High 的采样设置，移除参考图后 Medium 仍按固定采样器和步数工作。
+    if (referenceRequiresHigh && Object.hasOwn(NOVELAI_V5_MEDIUM_DEFAULT_PARAMS, param)) {
+      value = { steps: params.steps, sampler: params.sampler, promptGuidanceRescale: params.promptGuidanceRescale, [param]: value };
+      param = 'v5HighSettings';
+    }
     const resolvedValue = param === 'model'
       ? normalizePaintingModelId(value, defaultParams.model)
       : value;
@@ -497,12 +481,18 @@ const ParameterPanel = ({
       && !isNovelAIV5Model(params.model);
     const modelDefaults = {
       ...(enteringV5 ? NOVELAI_V5_DEFAULT_PARAMS : {}),
-      ...(param === 'model' && resolvedValue === NOVELAI_V5_MEDIUM_MODEL_ID
-        ? NOVELAI_V5_MEDIUM_DEFAULT_PARAMS : {}),
+      ...(param === 'model' && params.model === 'nai-diffusion-5-full' && resolvedValue !== params.model
+        ? { v5HighSettings: { steps: params.steps, sampler: params.sampler, promptGuidanceRescale: params.promptGuidanceRescale } } : {}),
+      ...(param === 'model' && resolvedValue === NOVELAI_V5_MEDIUM_MODEL_ID ? NOVELAI_V5_MEDIUM_DEFAULT_PARAMS : {}),
+      ...(param === 'model' && resolvedValue === 'nai-diffusion-5-full' && preferredParams.model !== resolvedValue
+        ? preferredParams.v5HighSettings || {
+          steps: NOVELAI_V5_DEFAULT_PARAMS.steps, sampler: NOVELAI_V5_DEFAULT_PARAMS.sampler,
+          promptGuidanceRescale: NOVELAI_V5_DEFAULT_PARAMS.promptGuidanceRescale,
+        } : {}),
     };
 
     const shouldClearDirectorReference = param === 'model'
-      && !isNovelAIDirectorReferenceModel(resolvedValue);
+      && (!isNovelAIDirectorReferenceModel(resolvedValue) || isNovelAIV5Model(resolvedValue) !== isNovelAIV5Model(params.model));
 
     setParams((previousParams) => {
       const nextParams = {
@@ -511,7 +501,7 @@ const ParameterPanel = ({
         [param]: resolvedValue,
       };
       if (shouldClearDirectorReference) {
-        if (!isolated) NOVELAI_DIRECTOR_REFERENCE_PARAM_KEYS.forEach((key) => delete nextParams[key]);
+        NOVELAI_DIRECTOR_REFERENCE_PARAM_KEYS.forEach((key) => delete nextParams[key]);
       }
       return nextParams;
     });
@@ -522,7 +512,7 @@ const ParameterPanel = ({
         if (!isolated) localStorage.setItem(`aiImageParams_${key}`, JSON.stringify(defaultValue));
       });
       if (shouldClearDirectorReference) {
-        // 切离 4.5 时立即清除所有角色参考派生状态，避免隐藏数据继续影响请求与 Vibe。
+        // 模型切换后清除旧版本保存的派生字段。
         if (!isolated) NOVELAI_DIRECTOR_REFERENCE_PARAM_KEYS.forEach((key) => localStorage.removeItem(`aiImageParams_${key}`));
       }
     } catch (e) {
@@ -1388,19 +1378,14 @@ const ParameterPanel = ({
     ));
   });
 
-  const getVibeTransferData = useCallback((sourceParams = params, sourceVibes = vibeImages) => {
-    if (!isNovelAIVibeModel(sourceParams.model, isInpaintMode)) {
+  const getVibeTransferData = useCallback((sourceParams, sourceVibes, inpaint) => {
+    if (!isNovelAIVibeModel(sourceParams.model, inpaint)) {
       return null;
     }
 
-    const imageReferenceActive = !!(
-      isNovelAIDirectorReferenceModel(sourceParams.model)
-      && sourceParams.director_reference_images_cached
-      && sourceParams.director_reference_images_cached.length > 0
-    );
     const activeVibes = sourceVibes.filter(item => item.isTemporarilyDisabled !== true).slice(0, MAX_ACTIVE_VIBES);
 
-    if (imageReferenceActive || activeVibes.length === 0) {
+    if (activeVibes.length === 0) {
       return null;
     }
 
@@ -1422,7 +1407,7 @@ const ParameterPanel = ({
       informationExtracted: activeVibes.map(item => item.informationExtracted),
       referenceStrength: activeVibes.map(item => item.referenceStrength)
     };
-  }, [vibeImages, params, isInpaintMode]);
+  }, []);
 
   const getCharacterData = useCallback((sourceParams = params, sourceTabs = characterTabs) => {
     if (isNovelAIV5Model(sourceParams.model)) {
@@ -1450,31 +1435,37 @@ const ParameterPanel = ({
   const getAllParameters = useCallback((snapshot = null, resolveRandomPrompts = true) => {
     // 连续生成使用每个画框保存的编辑态，无需切换可见表单或等待 React 更新。
     const state = snapshot?.parameterState;
-    const sourceParams = state?.params || params;
-    const prompts = snapshot ? (snapshot.promptsByModel[sourceParams.model] || { positivePrompt: '', negativePrompt: '' }) : { positivePrompt, negativePrompt };
+    const preferred = state?.params || preferredParams;
+    const sourceVibes = snapshot ? snapshot.vibeImages : vibeImages;
+    const prompts = snapshot ? (snapshot.promptsByModel[preferred.model] || { positivePrompt: '', negativePrompt: '' }) : { positivePrompt, negativePrompt };
     const sourceImage = state ? state.imagePreview : imagePreview;
     const sourceEditedImage = state ? state.editedImageData : editedImageData;
     const sourceDirector = state ? state.directorToolParams : directorToolParams;
+    const mask = state ? state.restoredMask : restoredMask;
+    const inpaint = isInpaintMode || Boolean(sourceImage && mask?.mask);
+    const { params: sourceParams, referenceParams: sourceReferences } = state
+      ? resolveWorkspaceReferences(preferred, state.referenceImages || restoreRequestReferenceImages(preferred), sourceVibes, inpaint, Boolean(sourceImage && sourceDirector))
+      : { params, referenceParams };
     const normalizedParams = normalizeNovelAISmeaParams(sourceParams);
     const allParams = {
       ...normalizedParams,
       positivePrompt: extractActiveContent(prompts.positivePrompt, { processRandomPrompts: resolveRandomPrompts && randomPromptEnabled, randomPromptConfig }),
       negativePrompt: extractActiveContent(prompts.negativePrompt, { processRandomPrompts: resolveRandomPrompts && randomPromptEnabled, randomPromptConfig }),
-      vibeTransfer: getVibeTransferData(sourceParams, snapshot ? snapshot.vibeImages : vibeImages),
+      vibeTransfer: sourceReferences ? null : getVibeTransferData(sourceParams, sourceVibes, inpaint),
       characterControl: getCharacterData(sourceParams, state ? state.characterTabs || [] : characterTabs),
       version_editor: createVersionEditorSnapshot(state || {
-        params: sourceParams, characterTabs, referenceImages, imagePreview, editedImageData,
+        params: preferred, characterTabs, referenceImages, imagePreview, editedImageData,
         directorToolParams, restoredMask,
-      }, snapshot ? snapshot.vibeImages : vibeImages, prompts),
+      }, sourceVibes, prompts),
     };
 
-    if (!isNovelAIDirectorReferenceModel(sourceParams.model)) {
-      NOVELAI_DIRECTOR_REFERENCE_PARAM_KEYS.forEach((key) => delete allParams[key]);
-    }
+    // 清理旧版本快照中的派生数组，只发送当前画框和模型对应的图片。
+    NOVELAI_DIRECTOR_REFERENCE_PARAM_KEYS.forEach((key) => delete allParams[key]);
+    Object.assign(allParams, sourceReferences);
 
     if (sourceImage) {
       allParams.imageToImage = {
-        ...(state ? state.restoredMask : restoredMask),
+        ...mask,
         image: sourceImage,
         strength: sourceParams.strength,
         noise: sourceParams.noise,
@@ -1482,8 +1473,8 @@ const ParameterPanel = ({
         ...(sourceDirector && { directorTools: { active: true, tool: sourceDirector.type, params: sourceDirector.params || { enabled: true } } })
       };
     }
-    return sanitizeNovelAIReferenceParams(sanitizeNovelAIV5GenerationParams(allParams), isInpaintMode);
-  }, [params, positivePrompt, negativePrompt, randomPromptEnabled, randomPromptConfig,
+    return sanitizeNovelAIReferenceParams(sanitizeNovelAIV5GenerationParams(allParams), inpaint);
+  }, [preferredParams, params, referenceParams, positivePrompt, negativePrompt, randomPromptEnabled, randomPromptConfig,
     getVibeTransferData, getCharacterData, imagePreview, editedImageData,
     directorToolParams, restoredMask, isInpaintMode, vibeImages, characterTabs, referenceImages]);
 
@@ -1653,13 +1644,7 @@ const ParameterPanel = ({
   };
 
   // 添加状态判断，用于决定是否禁用相关模块
-  const hasImageReference = !!(
-    isNovelAIDirectorReferenceModel(params.model)
-    && params.director_reference_images_cached
-    && params.director_reference_images_cached.length > 0
-  );
-  const hasActiveVibes = isNovelAIVibeModel(params.model, isInpaintMode)
-    && vibeImages.some(item => item.isTemporarilyDisabled !== true);
+  const hasImageReference = Boolean(referenceParams);
 
   return (
     <Box sx={{ p: 0 }}>
@@ -1698,7 +1683,8 @@ const ParameterPanel = ({
               sx={{ height: 44, fontSize: '0.9375rem', borderRadius: 1.5 }}
             >
               {modelOptions.map((option) => (
-                <MenuItem key={option.value} value={option.value}>
+                <MenuItem key={option.value} value={option.value}
+                  disabled={option.value === NOVELAI_V5_MEDIUM_MODEL_ID && v5Added > 0 && !referenceInpaint && !usingDirectorTool}>
                   <Box sx={{ display: 'flex', alignItems: 'center' }}>
                     {option.icon && <Box sx={{ mr: 1.5, display: 'flex', alignItems: 'center', color: 'text.secondary' }}>{option.icon}</Box>}
                     <Box>
@@ -1712,6 +1698,9 @@ const ParameterPanel = ({
           </FormControl>
         </Box>
           <Box sx={{ pb: 2.5 }}>
+          {referenceRequiresHigh && <Alert severity="info" role="status" sx={{ mb: 1 }}>
+            {t('painting.workspace.parameters.referenceHighOfficial')}
+          </Alert>}
           {restoredMask && <Alert severity="info" sx={{ mb: 1 }}
             action={<Button color="inherit" size="small" onClick={() => setRestoredMask(null)}>{t('gallery.versionWorkspace.clearMask')}</Button>}>
             {t('gallery.versionWorkspace.maskRestored')}
@@ -1774,7 +1763,6 @@ const ParameterPanel = ({
           onDownloadBundle={handleDownloadBundle}
           onDownloadZip={handleDownloadZip}
           handleVibeV4FileUpload={handleVibeV4FileUpload}
-          onReferenceImageChange={handleReferenceImageChange}
           referenceImages={referenceImages}
           imageImportRequest={imageImportRequest}
           onImageImportHandled={onImageImportHandled}
@@ -1788,6 +1776,8 @@ const ParameterPanel = ({
             ? 'painting.workspace.parameters.vibeBlockedByInpaint'
             : undefined}
           imageReferenceDisabled={hasActiveVibes}
+          referenceModel={usingDirectorTool ? null : getModelForPreciseReferences(params.model, 1, referenceInpaint)}
+          isInpaintMode={referenceInpaint}
           isV5Model={isNovelAIV5Model(params.model)}
       />
 

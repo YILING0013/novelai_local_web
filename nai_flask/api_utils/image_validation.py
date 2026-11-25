@@ -126,20 +126,19 @@ def validate_generation_images(payload: dict[str, Any]) -> None:
             for index, value in enumerate(references)
         ]
 
-    for collection_name in ("director_reference_images_cached", "director_reference_images"):
-        references = payload.get(collection_name)
-        if references is None:
-            continue
-        if not isinstance(references, list):
-            raise ExposableError(f"{collection_name} must be an array.")
-        normalized_references = []
-        for index, reference in enumerate(references):
-            if not isinstance(reference, dict) or not reference.get("data"):
-                raise ExposableError(f"{collection_name}[{index}] must contain image data.")
-            normalized_reference = dict(reference)
-            normalized_reference["data"] = validate_base64_image(
-                reference["data"],
-                f"{collection_name}[{index}].data",
-            )
-            normalized_references.append(normalized_reference)
-        payload[collection_name] = normalized_references
+    # 编辑器提交缓存对象，旧蓝图也可能保存官方的 Base64 数组；同一张图只验证、发送一次。
+    raw_references = payload.pop("director_reference_images", [])
+    references = payload.get("director_reference_images_cached", [])
+    if not isinstance(references, list):
+        raise ExposableError("director_reference_images_cached must be an array.")
+    if not references and raw_references:
+        if not isinstance(raw_references, list):
+            raise ExposableError("director_reference_images must be an array.", code="NOVELAI_REQUEST_FORMAT_INVALID")
+        references = [{"data": image} for image in raw_references]
+        payload["director_reference_images_cached"] = references
+    if len(references) > 12:
+        raise ExposableError("At most 12 precise references are supported.", code="NOVELAI_REFERENCE_LIMIT_EXCEEDED")
+    for index, reference in enumerate(references):
+        if not isinstance(reference, dict) or not reference.get("data"):
+            raise ExposableError(f"director_reference_images_cached[{index}] must contain image data.")
+        reference["data"] = validate_base64_image(reference["data"], f"director_reference_images_cached[{index}].data")
