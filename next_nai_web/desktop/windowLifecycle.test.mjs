@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import { setImmediate as settle } from 'node:timers/promises';
 import test from 'node:test';
 import React from 'react';
+import * as tutorials from '../src/content/tutorials.mjs';
 import { PAGE_IDS } from '../src/i18n/pageConfig.mjs';
 
 const { transformSync } = createRequire(import.meta.url)('next/dist/build/swc');
@@ -62,6 +63,7 @@ function mount(file, { local = false } = {}) {
     '@tauri-apps/api/core': { invoke: async () => {} },
     '@tauri-apps/plugin-dialog': { confirm: async () => { state.prompts++; return state.confirmed; } },
     '@/i18n/I18nProvider': { useI18n: () => ({ t, locale: 'zh-CN' }) },
+    '@/content/tutorials.mjs': tutorials,
     '@/i18n/pageConfig.mjs': { PAGE_IDS, readPageColor: () => '#000' },
     '@/providers/AppThemeProvider': { useAppTheme: () => ({ mode: 'dark', toggleTheme() {} }) },
     '@/utils/ApiClient': { __esModule: true, default: { getSession: async () => ({ authenticated: true }), getAccount: async () => ({}) } },

@@ -33,7 +33,7 @@ const defaultSelection = { positivePrompt: true, negativePrompt: true, character
  * @param {object} props 图片文件、可用用途、元数据及导入和使用图片的回调。
  * @returns {React.ReactElement} 支持图像用途、像素混淆与元数据导入的面板。
  */
-export default function MetadataDialog({ open, onClose, metadata, onApply, imageFile = null, imageActions = [], onUseImage, reading = false, params = defaultParams, allowedModels = null, restrictedAccount = false }) {
+export default function MetadataDialog({ open, onClose, metadata, onApply, imageFile = null, imageActions = [], onUseImage, reading = false, params = defaultParams, allowedModels = null, restrictedAccount = false, practiceInstructions, onExerciseAction }) {
   const { t } = useI18n();
   const [preview, setPreview] = useState('');
   const [draft, setDraft] = useState(metadata || {});
@@ -47,6 +47,9 @@ export default function MetadataDialog({ open, onClose, metadata, onApply, image
   const [status, setStatus] = useState(null);
   const workerRef = useRef(null);
   const nativeDrag = typeof window !== 'undefined' && window.novelaiDragImage;
+  const directionRef = useRef(null);
+  const exerciseRef = useRef(onExerciseAction);
+  exerciseRef.current = onExerciseAction;
   const dragOrigin = useRef(null);
   const activeFile = resultFile || imageFile;
   const showTools = toolsOpen || autoRepair;
@@ -78,6 +81,8 @@ export default function MetadataDialog({ open, onClose, metadata, onApply, image
         setAutoRepair(nextSuspected);
         return;
       }
+      if (directionRef.current) exerciseRef.current?.(directionRef.current);
+      directionRef.current = null;
       const stem = imageFile.name.replace(/\.[^.]+$/, '');
       setResultFile(new File([blob], `${stem}.png`, { type: 'image/png' }));
       if (!nextSuspected) {
@@ -145,6 +150,7 @@ export default function MetadataDialog({ open, onClose, metadata, onApply, image
     setToolsOpen(true);
     setStatus(null);
     setImageTask('transform');
+    directionRef.current = action;
     workerRef.current.postMessage({ direction: action });
   };
   const copyImage = async () => {
@@ -233,8 +239,9 @@ export default function MetadataDialog({ open, onClose, metadata, onApply, image
     <DialogTitle id="image-import-title" sx={{ display: 'flex', alignItems: 'center', gap: 1.25, p: { xs: 2, sm: 2.5 }, pr: 6, flexShrink: 0 }}>
       <ImageOutlined color="primary" />
       <Typography component="span" sx={{ fontSize: { xs: 17, sm: 20 }, fontWeight: 600 }}>{t('painting.tools.metadata.chooseImageAction')}</Typography>
-      <IconButton onClick={onClose} aria-label={t('painting.tools.metadata.close')} sx={{ position: 'absolute', right: 12, top: 12 }}><Close fontSize="small" /></IconButton>
+      <IconButton onClick={onClose} data-tour="dialogClose" aria-label={t('painting.tools.metadata.close')} sx={{ position: 'absolute', right: 12, top: 12 }}><Close fontSize="small" /></IconButton>
     </DialogTitle>
+      {practiceInstructions}
     <DialogContent dividers sx={{
       p: { xs: 1.5, sm: 2.5 }, minHeight: 0, overflow: showMetadata ? 'hidden' : 'auto', display: 'grid', gap: { xs: 1.5, sm: 2.5 },
       gridTemplateColumns: { xs: 'minmax(0, 1fr)', sm: showMetadata && imageFile ? 'minmax(0, 0.95fr) minmax(0, 1.05fr)' : 'minmax(0, 1fr)' },
@@ -250,7 +257,7 @@ export default function MetadataDialog({ open, onClose, metadata, onApply, image
               sx={{ display: 'block', width: '100%', height: { xs: 'clamp(120px, 30dvh, 220px)', sm: 'clamp(140px, 38dvh, 300px)' }, objectFit: 'contain', p: 1 }} />
             <Tooltip title={t('painting.tools.metadata.imageTools')}>
               <Box component="span" sx={{ position: 'absolute', right: 8, top: 8, display: 'inline-flex' }}>
-                <ToggleButton value="imageTools" size="small" selected={showTools} disabled={autoRepair || Boolean(imageTask)}
+                <ToggleButton value="imageTools" data-tour="imageTools" size="small" selected={showTools} disabled={autoRepair || Boolean(imageTask)}
                   aria-label={t('painting.tools.metadata.imageTools')} onChange={() => setToolsOpen(!toolsOpen)}
                   sx={{
                     p: 0.75, bgcolor: 'background.paper',
@@ -295,7 +302,7 @@ export default function MetadataDialog({ open, onClose, metadata, onApply, image
         {actionItems.length > 0 && <Box data-image-purpose-actions sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
           {actionItems.map(action => {
             const Icon = showTools ? (action === 'scramble' ? Shuffle : LockOpenOutlined) : actionIcons[action];
-            return <Button key={action} variant="outlined" size="small" startIcon={<Icon fontSize="small" />} onClick={() => handleImageAction(action)}
+            return <Button key={action} variant="outlined" size="small" startIcon={<Icon fontSize="small" />} data-tour={action} onClick={() => handleImageAction(action)}
               disabled={Boolean(imageTask) || (showTools && suspected === null)} sx={{
               flex: '1 0 auto', whiteSpace: 'nowrap', textTransform: 'none', color: 'text.primary', borderColor: 'divider',
               borderRadius: 1.5, minWidth: 0, minHeight: 32, px: 1, fontSize: 12, lineHeight: 1.4,
@@ -403,7 +410,7 @@ export default function MetadataDialog({ open, onClose, metadata, onApply, image
     </DialogContent>
     <DialogActions sx={{ px: { xs: 2, sm: 2.5 }, py: 1.5, gap: 1, flexShrink: 0 }}>
       <Button color="inherit" onClick={onClose}>{t('common.cancel')}</Button>
-      {showMetadata && onApply && <Button variant="contained" disabled={readingMetadata || !hasSelection} onClick={apply}>{t('painting.tools.metadata.importInformation')}</Button>}
+      {showMetadata && onApply && <Button variant="contained" disabled={readingMetadata || !hasSelection} data-tour="metadataApply" onClick={apply}>{t('painting.tools.metadata.importInformation')}</Button>}
     </DialogActions>
   </Dialog>;
 }

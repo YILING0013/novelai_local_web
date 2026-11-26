@@ -56,6 +56,11 @@ import SettingsPage from '@/components/settings/SettingsPage';
 import GalleryWorkspace from '@/components/gallery/GalleryWorkspace';
 import LocalInferencePage from '@/components/local-inference/LocalInferencePage';
 import apiClient from '@/utils/ApiClient';
+import TutorialsPage from '@/components/tutorials/TutorialsPage';
+import { DRAWING_TUTORIALS } from '@/content/tutorials.mjs';
+import DrawingPractice from '@/components/tutorials/DrawingPractice';
+import ReleaseGuide from '@/components/changelog/ReleaseGuide';
+import SchoolOutlinedIcon from '@mui/icons-material/SchoolOutlined';
 import { useI18n } from '@/i18n/I18nProvider';
 import LanguageSwitcher from '@/components/i18n/LanguageSwitcher';
 import { useAppTheme } from '@/providers/AppThemeProvider';
@@ -190,6 +195,7 @@ export default function MainPage() {
       { id: PAGE_IDS.IMAGE_PROCESSING, labelKey: 'painting.workspace.tabs.imageProcessing', icon: <ImageProcessingIcon />, color: readPageColor(storage, PAGE_IDS.IMAGE_PROCESSING), confirmOnClose: true },
       { id: PAGE_IDS.IMAGE_TAGGING, labelKey: 'pages.imageTagging', icon: <TaggingIcon />, component: <LocalInferencePage kind="tagger" />, color: readPageColor(storage, PAGE_IDS.IMAGE_TAGGING), confirmOnClose: false },
       { id: PAGE_IDS.LOCAL_UPSCALING, labelKey: 'pages.localUpscaling', icon: <UpscalingIcon />, component: <LocalInferencePage kind="upscale" />, color: readPageColor(storage, PAGE_IDS.LOCAL_UPSCALING), confirmOnClose: false },
+      { id: PAGE_IDS.TUTORIALS, labelKey: 'pages.tutorials', icon: <SchoolOutlinedIcon />, color: readPageColor(storage, PAGE_IDS.TUTORIALS), confirmOnClose: false },
       { id: PAGE_IDS.SETTINGS, labelKey: 'pages.settings', icon: <SettingsIcon />, color: readPageColor(storage, PAGE_IDS.SETTINGS), confirmOnClose: false },
     ];
   });
@@ -212,11 +218,39 @@ export default function MainPage() {
   }, []);
 
   const getPageLabel = useCallback((page) => page?.labelKey ? t(page.labelKey) : (page?.title || ''), [t]);
+  const [activeGuide, setActiveGuide] = useState(null);
+  const practiceTopic = activeGuide?.startsWith('practice:') ? activeGuide.slice(9) : null;
+  const drawingTopic = DRAWING_TUTORIALS.includes(practiceTopic || activeGuide) ? practiceTopic || activeGuide : null;
+  const promptExerciseTopic = drawingTopic ? null : practiceTopic || (activeGuide === 'suggestionPractice' ? 'suggestions' : activeGuide);
+  const [guideSource, setGuideSource] = useState(null);
+  const startGuidePractice = useCallback(() => setActiveGuide((guide) => guide === 'suggestions' ? 'suggestionPractice' : `practice:${guide}`), []);
+  const [guideEnded, setGuideEnded] = useState(false);
+  const closeReleaseGuide = useCallback(() => { setActiveGuide(null); setGuideEnded(true); }, []);
+
   const handleOpenPage = useCallback((page) => {
     setOpenPages((current) => current.some((item) => item.id === page.id) ? current : [...current, page]);
     setActivePage(page.id);
     if (isMobile) setMobileDrawerOpen(false);
   }, [isMobile]);
+
+  const startTutorial = (guide, { source = PAGE_IDS.TUTORIALS } = {}) => {
+    handleOpenPage(visiblePages.find((page) => page.id === PAGE_IDS.AI_PAINTING));
+    setGuideSource(source);
+    setGuideEnded(false);
+    setActiveGuide(guide === 'suggestions' ? guide : `practice:${guide}`);
+  };
+  useEffect(() => {
+    if (activePage !== PAGE_IDS.AI_PAINTING) {
+      setActiveGuide(null);
+      setGuideSource(null);
+      setGuideEnded(false);
+    }
+  }, [activePage]);
+  const returnFromGuide = guideSource && !activeGuide ? () => {
+    const source = visiblePages.find((page) => page.id === guideSource);
+    if (source) handleOpenPage(source);
+  } : undefined;
+
 
   useEffect(() => {
     const openRequestedPage = (event) => {
@@ -429,13 +463,22 @@ export default function MainPage() {
                           galleryRequest={processingRequest} onGalleryRequestHandled={() => setProcessingRequest(null)} />
                       : page.id === PAGE_IDS.SETTINGS
                       ? React.cloneElement(page.component, { pages: visiblePages, active: page.id === activePage })
-                      : React.cloneElement(page.component, {
+                      : page.id === PAGE_IDS.TUTORIALS
+                      ? <TutorialsPage active={activePage === PAGE_IDS.TUTORIALS} onStartGuide={startTutorial} />
+                      : page.id === PAGE_IDS.AI_PAINTING
+                      ? <><Box sx={{ display: drawingTopic ? 'none' : 'contents' }}>{React.cloneElement(page.component, {
                         userId: accountSnapshot?.information?.email || '',
                         accountSnapshot,
                         renderModeTools, desktopEditor: editorBridge,
                         workContext, onWorkContextChange: setWorkContext,
-                        active: page.id === activePage,
-                      })}
+                        active: page.id === activePage && !drawingTopic,
+                              releaseGuideActive: activeGuide === 'notebook',
+                              suggestionPractice: activeGuide === 'suggestionPractice',
+                              promptExerciseTopic,
+                              promptExerciseActive: Boolean(practiceTopic && !drawingTopic),
+                              onExitSuggestionPractice: closeReleaseGuide,
+                        tutorialTopic: activeGuide, onBack: returnFromGuide, backLabel: t('tutorials.returnToTutorial'),
+                      })}</Box>{drawingTopic && <DrawingPractice key={drawingTopic} topic={drawingTopic} onClose={closeReleaseGuide} />}</> : page.component}
                   </Box>
                 ))}
               </Box>
@@ -448,6 +491,18 @@ export default function MainPage() {
         accountSnapshot={accountSnapshot} onAccountSnapshot={applyAccountSnapshot} onLogout={logout} />
       <CloseConfirmDialog open={closeConfirmOpen} onClose={() => { setCloseConfirmOpen(false); setPageToClose(null); }}
         onConfirm={() => confirmClosePage(pageToClose)} pageName={getPageLabel(openPages.find((page) => page.id === pageToClose))} />
+      <Dialog open={Boolean(guideEnded && returnFromGuide)} onClose={() => setGuideEnded(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>{t('tutorials.sessionEnded')}</DialogTitle>
+        <DialogActions>
+          <Button onClick={() => setGuideEnded(false)}>{t('tutorials.stayInWorkspace')}</Button>
+          <Button autoFocus variant="contained" onClick={() => { setGuideEnded(false); returnFromGuide(); }}>
+            {t(guideSource === PAGE_IDS.TUTORIALS ? 'tutorials.returnToTutorial' : 'tutorials.returnToChangelog')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      {activeGuide && !drawingTopic && activeGuide !== 'suggestionPractice' && !activeGuide.startsWith('practice:') && <ReleaseGuide key={activeGuide} guide={activeGuide}
+        onClose={closeReleaseGuide} onPractice={startGuidePractice} />}
+
     </>
   );
 }

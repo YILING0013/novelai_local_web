@@ -3,7 +3,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Tab, Tabs, Tooltip, Typography, alpha, useMediaQuery, useTheme } from '@mui/material';
-import { AccountCircle, Brightness4, Brightness7, Brush, ChevronLeft, CollectionsOutlined, AutoAwesome, Logout, PersonOutline, PhotoFilter, Settings, ZoomInMap } from '@mui/icons-material';
+import { AccountCircle, Brightness4, Brightness7, Brush, ChevronLeft, CollectionsOutlined, AutoAwesome, Logout, PersonOutline, PhotoFilter, SchoolOutlined, Settings, ZoomInMap } from '@mui/icons-material';
 import { PanelLeft } from 'lucide-react';
 import { open as pick } from '@tauri-apps/plugin-dialog';
 import DesktopTitleBar from '@/desktop/DesktopTitleBar';
@@ -14,17 +14,22 @@ import { PAGE_IDS as ID, readPageColor } from '@/i18n/pageConfig.mjs';
 import LanguageSwitcher from '@/components/i18n/LanguageSwitcher';
 import api from '@/utils/ApiClient';
 import WebSettings from './WebSettings';
+import DrawingPractice from '@/components/tutorials/DrawingPractice';
+import ReleaseGuide from '@/components/changelog/ReleaseGuide';
+import { DRAWING_TUTORIALS } from '@/content/tutorials.mjs';
 import PaintingModeNavigation from '@/components/ai-painting/PaintingModeNavigation';
 const Painting=lazy(()=>import('@/components/ai-painting/AIPaintingPage'));
 const Gallery=lazy(()=>import('@/components/gallery/GalleryWorkspace'));
 const Editor=lazy(()=>import('@/components/ai-painting/ImageProcessing/ImageProcessingWorkspace'));
 const Inference=lazy(()=>import('@/components/local-inference/LocalInferencePage'));
+const Tutorials=lazy(()=>import('@/components/tutorials/TutorialsPage'));
 const Preferences=lazy(()=>import('@/components/settings/SettingsPage'));
 const Account=lazy(()=>import('@/components/account/AccountDialog'));
 const pages=[
   [ID.AI_PAINTING,'pages.aiPainting',Brush],[ID.GALLERY,'pages.gallery',CollectionsOutlined],
   [ID.IMAGE_PROCESSING,'painting.workspace.tabs.imageProcessing',PhotoFilter],
   [ID.IMAGE_TAGGING,'pages.imageTagging',AutoAwesome],[ID.LOCAL_UPSCALING,'pages.localUpscaling',ZoomInMap],
+  [ID.TUTORIALS,'pages.tutorials',SchoolOutlined],
   [ID.SETTINGS,'pages.settings',Settings]];
 export default function Workspace({ local, onLogin, android = false, appVersion, TitleBar = DesktopTitleBar,
   sharedImage, onSharedImageHandled, sharedImageRequest, onSharedImageRequestHandled }) {
@@ -37,7 +42,15 @@ export default function Workspace({ local, onLogin, android = false, appVersion,
   const requested= params.get('page');
   const referenceRequested = requested === ID.REFERENCE_GALLERY;
   const page = referenceRequested || requested === ID.LOCAL_GALLERY ? ID.GALLERY : requested === 'editor' ? ID.IMAGE_PROCESSING : requested;
-  const active=pages.some(([id])=>id===page&&(!local||id!==ID.AI_PAINTING))?page:first;
+  const [activeGuide, setActiveGuide] = useState(null);
+  const practiceTopic = activeGuide?.startsWith('practice:') ? activeGuide.slice(9) : null;
+  const drawingTopic = DRAWING_TUTORIALS.includes(practiceTopic || activeGuide) ? practiceTopic || activeGuide : null;
+  const promptExerciseTopic = drawingTopic ? null : practiceTopic || (activeGuide === 'suggestionPractice' ? 'suggestions' : activeGuide);
+  const [guideSource, setGuideSource] = useState(null);
+  const startGuidePractice = useCallback(() => setActiveGuide((guide) => guide === 'suggestions' ? 'suggestionPractice' : `practice:${guide}`), []);
+  const [guideEnded, setGuideEnded] = useState(false);
+  const closeReleaseGuide = useCallback(() => { setActiveGuide(null); setGuideEnded(true); }, []);
+  const active=pages.some(([id])=>id===page&&(!local||id!==ID.AI_PAINTING||guideSource))?page:first;
   const requestedSource = referenceRequested || params.get('source') === 'references' ? 'references' : 'outputs';
   const [gallerySource, setGallerySource] = useState(requestedSource);
   const [galleryBusy, setGalleryBusy] = useState(false);
@@ -74,6 +87,20 @@ export default function Workspace({ local, onLogin, android = false, appVersion,
     setParams(gallery ? { page: ID.GALLERY, source: reference ? 'references' : id === ID.LOCAL_GALLERY ? 'outputs' : gallerySource } : {page:id});
     if (android) setDrawerOpen(false);
   },[android,gallerySource,setParams]);
+  const startTutorial = (guide, { source = ID.TUTORIALS } = {}) => {
+    select(ID.AI_PAINTING);
+    setGuideSource(source);
+    setGuideEnded(false);
+    setActiveGuide(guide === 'suggestions' ? guide : `practice:${guide}`);
+  };
+  useEffect(() => {
+    if (active !== ID.AI_PAINTING) {
+      setActiveGuide(null);
+      setGuideSource(null);
+      setGuideEnded(false);
+    }
+  }, [active]);
+  const returnFromGuide = guideSource && !activeGuide ? () => select(guideSource) : undefined;
   useEffect(() => {
     if (!local && sharedImage && active !== ID.AI_PAINTING) select(ID.AI_PAINTING);
   }, [local, sharedImage, active, select]);
@@ -119,10 +146,15 @@ export default function Workspace({ local, onLogin, android = false, appVersion,
     finally { setLoggingOut(false); }
   };
   function render(id){
+    if (id === ID.TUTORIALS) return <Tutorials active={active === id} onStartGuide={startTutorial} />;
     const on=active===id;
-    if(id===ID.AI_PAINTING)return <Painting active={on} androidLayout={android}
+    if(id===ID.AI_PAINTING)return <><Box sx={{ display: drawingTopic ? 'none' : 'contents' }}>
+      <Painting active={on && !drawingTopic} androidLayout={android}
+      tutorialTopic={activeGuide} releaseGuideActive={activeGuide === 'notebook'} suggestionPractice={activeGuide === 'suggestionPractice'}
+      promptExerciseTopic={promptExerciseTopic} promptExerciseActive={Boolean(practiceTopic && !drawingTopic)}
+      onExitSuggestionPractice={closeReleaseGuide} onBack={returnFromGuide} backLabel={t('tutorials.returnToTutorial')} offlinePractice={local}
       userId={account?.information?.email||''} accountSnapshot={account} workContext={work} onWorkContextChange={setWork} renderModeTools={modes} desktopEditor={bridge}
-      sharedImage={local ? null : sharedImage} onSharedImageHandled={onSharedImageHandled}/>;
+      sharedImage={local ? null : sharedImage} onSharedImageHandled={onSharedImageHandled}/></Box>{drawingTopic && <DrawingPractice key={drawingTopic} topic={drawingTopic} onClose={closeReleaseGuide} />}</>;
     if(id===ID.GALLERY)return <Gallery androidLayout={android} source={gallerySource} onBusyChange={setGalleryBusy} onSourceChange={source=>setParams({page:ID.GALLERY,source})} workContext={work} onWorkContextChange={setWork}/>;
     if(id===ID.IMAGE_PROCESSING)return <Editor active={on} generatedItems={generated} getCurrentComicPage={()=>comic.current?.()}
       galleryRequest={sharedImageRequest || incoming} onGalleryRequestHandled={sharedImageRequest ? onSharedImageRequestHandled : () => setIncoming(null)}/>;
@@ -223,5 +255,17 @@ export default function Workspace({ local, onLogin, android = false, appVersion,
         <Button color="error" disabled={loggingOut} onClick={logout}>{t('main.logout')}</Button>
       </DialogActions>
     </Dialog>}
-  </>;
+        <Dialog open={Boolean(guideEnded && returnFromGuide)} onClose={() => setGuideEnded(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>{t('tutorials.sessionEnded')}</DialogTitle>
+        <DialogActions>
+          <Button onClick={() => setGuideEnded(false)}>{t('tutorials.stayInWorkspace')}</Button>
+          <Button autoFocus variant="contained" onClick={() => { setGuideEnded(false); returnFromGuide(); }}>
+            {t(guideSource === ID.TUTORIALS ? 'tutorials.returnToTutorial' : 'tutorials.returnToChangelog')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      {activeGuide && !drawingTopic && activeGuide !== 'suggestionPractice' && !activeGuide.startsWith('practice:') && <ReleaseGuide key={activeGuide} guide={activeGuide}
+        onClose={closeReleaseGuide} onPractice={startGuidePractice} />}
+
+</>;
 }

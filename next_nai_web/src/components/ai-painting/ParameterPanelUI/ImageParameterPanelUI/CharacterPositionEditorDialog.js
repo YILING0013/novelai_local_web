@@ -191,7 +191,7 @@ const CharacterPositionEditorDialog = ({
         </Stack>
 
         <Box
-          ref={setCanvasHost}
+          data-tour="positionCanvas" ref={setCanvasHost}
           sx={{
             flex: 1,
             minHeight: { xs: 240, sm: 320 },
@@ -342,7 +342,7 @@ const CharacterPositionEditorDialog = ({
       </DialogContent>
 
       <DialogActions sx={{ px: { xs: 1.5, sm: 2.5 }, py: 1.25 }}>
-        <Button variant="contained" onClick={onClose} startIcon={<GridOnIcon />}>
+        <Button variant="contained" data-tour="dialogClose" onClick={onClose} startIcon={<GridOnIcon />}>
           {t('painting.workspace.parameters.finishPositionEditing')}
         </Button>
       </DialogActions>

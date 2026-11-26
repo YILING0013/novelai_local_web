@@ -572,4 +572,86 @@ const paintingToolszhCN = {
   }
 };
 
+Object.assign(paintingToolszhCN.painting.tools.promptEditor, {
+  "tokenCountWithLimit": "Tokens：{count} / {limit}"
+});
+Object.assign(paintingToolszhCN.painting.tools.notebook, {
+  "transfer": "迁移笔记"
+});
+Object.assign(paintingToolszhCN.painting.tools.notebook.transferDialog, {
+  "title": "迁移笔记到新账号",
+  "targetAccount": "新账号用户名或邮箱",
+  "targetPassword": "新账号密码",
+  "submit": "迁移"
+});
+Object.assign(paintingToolszhCN.painting.tools.notebook.errors, {
+  "NOTE_EXPORT_INVALID_RESPONSE": "导出接口返回了无效数据，请稍后重试。",
+  "NOTE_SOURCE_MIGRATED": "该账号的笔记已迁移，请在目标新账号中继续操作。",
+  "NOTE_TRANSFER_ALREADY_CLAIMED": "这些笔记已迁移到另一个账号。",
+  "NOTE_TRANSFER_DATA_INVALID": "笔记数据异常，无法自动迁移。",
+  "NOTE_TRANSFER_LIMIT_EXCEEDED": "迁移后会超过目标账号的 200 条笔记上限。",
+  "NOTE_TRANSFER_SOURCE_MIGRATED": "该账号正在通过订单迁移入口处理，不能重复迁移。",
+  "NOTE_TRANSFER_TARGET_AUTH_INVALID": "目标新账号或密码不正确。",
+  "NOTE_TRANSFER_TARGET_CREDENTIALS_REQUIRED": "请输入目标新账号的用户名或邮箱及密码。",
+  "NOTE_TRANSFER_TARGET_INVALID": "该目标账号不能接收自动笔记迁移。",
+  "NOTE_TRANSFER_TARGET_MIGRATED": "目标账号已将笔记迁出，不能再接收迁移数据。",
+  "NOTE_TRANSFER_TARGET_SAME_ACCOUNT": "目标账号必须与当前账号不同。",
+  "NOTE_TRANSFER_TITLE_CONFLICT": "目标账号已有同名笔记，请先处理标题冲突。"
+});
+Object.assign(paintingToolszhCN.painting.tools.metadata, {
+  "preview": {
+    "title": "图像导入预览",
+    "layout": "预览布局",
+    "desktop": "桌面",
+    "mobile": "移动端",
+    "reset": "重置示例",
+    "reopen": "打开导入弹窗",
+    "upload": "上传自己的图片",
+    "result": "导入结果"
+  },
+  "selectImage": "导入图像"
+});
+Object.assign(paintingToolszhCN.painting.tools.batch, {
+  "verificationRequired": "需要重新验证才能继续。请点击下方的“请完成验证”。",
+  "continueAfterVerification": "验证已完成，继续绘制",
+  "completeVerification": "请完成验证",
+  "errorSummary": "批量绘制错误摘要（{count}）",
+  "noErrors": "没有错误记录",
+  "errorTypeAnalysis": "错误类型分析",
+  "errorDetails": "详细错误列表",
+  "copyError": "复制此错误信息",
+  "occurredAt": "发生时间",
+  "possibleSolutions": "可能的解决方案",
+  "solutions": "• 402：请立即联系网站管理员。\n• 403：请重新完成验证码验证；若账号被封禁，请按错误说明申诉或联系管理员。\n• 429：请稍后再试。\n• 500：请关闭无关参数配置。\n• 502、521：请等待一段时间后再试。\n• 504：请检查网络连接。\n• 安全组件加载失败：请检查网络；iOS 原生浏览器可尝试切换浏览器。\n• 请求加密失败：请刷新页面并确认设备时间与网络同步。\n• 其他错误：请检查网络连接或稍后再试。",
+  "copyAllErrors": "复制所有错误",
+  "errorsCopied": "错误信息已复制到剪贴板"
+});
+Object.assign(paintingToolszhCN.painting.tools.batch.errors, {
+  "maxConsecutive": "连续失败次数达到上限，批量绘制已停止。",
+  "highFailureRate": "失败率过高，批量绘制已自动停止。"
+});
+Object.assign(paintingToolszhCN.painting.tools.batch.errors.categories, {
+  "captcha": "需要完成验证码验证。"
+});
+Object.assign(paintingToolszhCN.painting.tools.batch.analysis.verification, {
+  "title": "验证相关错误",
+  "description": "需要完成验证码验证"
+});
+Object.assign(paintingToolszhCN.painting.tools.batch.analysis.network, {
+  "title": "网络错误",
+  "description": "网络连接或超时问题"
+});
+Object.assign(paintingToolszhCN.painting.tools.batch.analysis.server, {
+  "title": "服务器错误",
+  "description": "服务器未能处理请求"
+});
+Object.assign(paintingToolszhCN.painting.tools.batch.analysis.parameter, {
+  "title": "参数或限流错误",
+  "description": "生成参数无效或请求过于频繁"
+});
+Object.assign(paintingToolszhCN.painting.tools.batch.analysis.other, {
+  "title": "其他错误",
+  "description": "未分类错误"
+});
+
 export default paintingToolszhCN;

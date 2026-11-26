@@ -224,7 +224,7 @@ test('LockableSlider 的数值标签与圆点共同跟随外部值，桌面拖�
   const control = findNode(tree, (node) => node.type === 'Slider');
   assert.equal(control.props.value, 28);
   assert.equal(control.props.max, 28);
-  assert.ok(findNode(tree, (node) => node.type === 'Typography' && node.props.children === 28));
+  assert.ok(findNode(tree, (node) => Number(node.props?.value) === 28 && node.type !== 'Slider'));
   control.props.onChange({}, 17);
   assert.deepEqual(changes, [17]);
 });

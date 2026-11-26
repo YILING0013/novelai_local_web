@@ -2,27 +2,45 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, ButtonBase,
+  Tooltip, createFilterOptions, Autocomplete, Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, ButtonBase,
   Chip, FormControlLabel, IconButton, InputAdornment, Paper, Radio, RadioGroup, Slider,
   Snackbar, Stack, Switch, Tab, Tabs, TextField, ToggleButton, ToggleButtonGroup,
   Typography, useMediaQuery, useTheme, alpha,
 } from '@mui/material';
 import {
-  ArrowBack, Check, DarkModeOutlined, ExpandMore, FolderOpenOutlined, InfoOutlined, LightModeOutlined,
+  WebOutlined, ShortTextOutlined, KeyboardOutlined, TextFieldsOutlined, PhotoOutlined, HistoryOutlined, VisibilityOffOutlined, SearchOutlined, Clear, DownloadOutlined, ArrowBack, Check, DarkModeOutlined, ExpandMore, FolderOpenOutlined, InfoOutlined, LightModeOutlined,
   PaletteOutlined, Refresh, SaveOutlined, SpeedOutlined, TuneOutlined,
 } from '@mui/icons-material';
-import { generateFileName, DOWNLOAD_NAMING_METHODS } from '@/components/ai-painting/tools/ImageTools/ImageSaveUtils';
+import { generateFileName, DEFAULT_FILE_NAME_TEMPLATE, FILE_NAME_TEMPLATE_TOKENS, DOWNLOAD_NAMING_METHODS } from '@/components/ai-painting/tools/ImageTools/ImageSaveUtils';
 import GallerySourceSelect from '@/components/gallery/GallerySourceSelect';
 import apiClient from '@/utils/ApiClient';
 import { useI18n } from '@/i18n/I18nProvider';
 import { PAGE_COLOR_DEFAULTS, getPageColorStorageKey } from '@/i18n/pageConfig.mjs';
 import { DEFAULT_THEME_SETTINGS, THEME_PRESETS } from '@/providers/themePresets.mjs';
 import { useAppTheme } from '@/providers/AppThemeProvider';
+import TagSuggestionSettings from './TagSuggestionSettings';
+import usePromptEditorSettings from '@/components/ai-painting/PromptEditor/usePromptEditorSettings';
+import { invalidPromptSyntaxSymbols } from '@/components/ai-painting/PromptEditor/promptTagCompletion.mjs';
+import { readImagePreviewSettings, writeImagePreviewSettings, transparencyBackgroundSx, transparencyBackgrounds } from '@/components/ai-painting/tools/ImageTools/previewImageExport';
+import { defaultWorkspaceShortcuts, formatWorkspaceShortcut, getWorkspaceShortcut } from '@/components/ai-painting/tools/ImageTools/workspaceShortcuts.mjs';
+import { SettingsGroup, SettingsRow, SettingsSelect } from './SettingsRows';
 import MobileSettingsList from './MobileSettingsList';
 
 const sections = [
-  { id: 'appearance', icon: <PaletteOutlined /> },
-  { id: 'gallery', icon: <FolderOpenOutlined /> },
+  { id: 'interface', icon: <WebOutlined />, search: ['display', 'expandedImageShortcuts', 'displayImageDrag', 'centerNewGeneration',
+    'lockedGestureNavigation', 'transparencyBackground', 'history', 'historyImageDrag', 'historyFollowSelection', 'historyImageFit',
+    'privacy', 'privacyMode', 'privacyScope', 'privacyReveal', 'bottomBar', 'showAdjustmentEntry', 'showGalleryEntry']
+    .map((key) => `settings.interface.${key}`) },
+  { id: 'appearance', icon: <PaletteOutlined />, search: ['settings.colorSchemes', 'settings.primaryColor', 'settings.customizeScheme',
+    'settings.pageColors', 'settings.interfaceAnimation'] },
+  { id: 'prompt', icon: <ShortTextOutlined />, search: ['suggestions', 'suggestionsEnabled', 'suggestionLimit', 'suggestionLayout',
+    'suggestionTextLayout', 'suggestionSyntax', 'syntaxSymbols', 'preview', 'inlinePreview',
+    'expandedPreview', 'overlayPreview', 'translationEnabled', 'translationUnderline', 'translationTarget', 'weighting',
+    'weightShortcutsEnabled', 'keepWeightSelection', 'defaultWeightMode', 'weightStep', 'formatting', 'autoFormat',
+    'normalizeCommas', 'replaceUnderscores', 'trailingComma'].map((key) => `settings.prompt.${key}`) },
+  { id: 'shortcuts', icon: <KeyboardOutlined />, search: ['canvas', ...Object.keys(defaultWorkspaceShortcuts), 'restore']
+    .map((key) => `settings.shortcuts.${key}`) },
+  { id: 'gallery', icon: <FolderOpenOutlined />, search: ['librarySettings.outputDirectory','settings.showInspirationGallery','settings.filenameRules','settings.customPrefix','settings.downloadPreset','settings.fileNameTemplate','settings.filenamePreview'] },
 ];
 
 /** 判断输入能否被 MUI 调色函数处理，避免未输入完整的色值进入全站主题。 */
@@ -67,6 +85,14 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
   const mobile = useMediaQuery(theme.breakpoints.down('sm'));
   const { savedSettings, previewTheme, reloadFromStorage } = useAppTheme();
   const [section, setSection] = useState(mobileLayout ? null : desktopPreferences ? 'desktop' : 'appearance');
+  const promptSettings = usePromptEditorSettings();
+  const [interfaceDraft, setInterfaceDraft] = useState({});
+  const [shortcutError, setShortcutError] = useState(null);
+  const [recordingShortcut, setRecordingShortcut] = useState(null);
+  const interfaceSettings = { ...readImagePreviewSettings(), ...interfaceDraft };
+  const [promptDraft, setPromptDraft] = useState(null);
+  const editedPrompt = { ...promptSettings, ...promptDraft };
+  const invalidSymbols = invalidPromptSyntaxSymbols(editedPrompt.suggestionSyntax);
   const [themeDraft, setThemeDraft] = useState(null);
   const themeSettings = themeDraft || savedSettings;
   const { mode, primaryColors, backgroundColors, animationEnabled, animationSpeed } = themeSettings;
@@ -79,6 +105,8 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
     outputDirectory: '',
     inspirationSource: 'default',
     fileNamePrefix: localStorage.getItem('fileNamePrefix') || 'AI_Image',
+    keepImageHistory: localStorage.getItem('keepImageHistory') === 'true',
+    fileNameTemplate: localStorage.getItem('fileNameTemplate') || DEFAULT_FILE_NAME_TEMPLATE,
     namingMethod: localStorage.getItem('namingMethod') || 'seed',
   }));
   const [savedImages, setSavedImages] = useState(imageSettings);
@@ -99,7 +127,7 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
       // 后端保存值是跨浏览器的持久配置；旧浏览器缓存只补没有保存过的字段。
       for (const [key, value] of Object.entries(settings)) {
         if (desktopPreferences && key === 'themeMode' && localStorage.getItem(key)) continue;
-        if (key.startsWith('theme') || ['animationEnabled', 'animationSpeed', 'fileNamePrefix', 'namingMethod'].includes(key)) {
+        if (key.startsWith('theme') || ['animationEnabled', 'animationSpeed', 'fileNamePrefix', 'namingMethod', 'fileNameTemplate', 'keepImageHistory'].includes(key)) {
           localStorage.setItem(key, String(value));
         }
       }
@@ -133,7 +161,7 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
     ...Object.values(backgroundColors).flatMap(Object.values),
     ...Object.values(pageColors),
   ].every(isValidColor);
-  const dirty = JSON.stringify(themeSettings) !== JSON.stringify(savedSettings)
+  const dirty = Object.keys(interfaceDraft).length > 0 || Boolean(promptDraft) || JSON.stringify(themeSettings) !== JSON.stringify(savedSettings)
     || JSON.stringify(imageSettings) !== JSON.stringify(savedImages)
     || JSON.stringify(pageColors) !== JSON.stringify(savedPageColors);
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
@@ -202,6 +230,10 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
       window.dispatchEvent(new CustomEvent('themeUpdate', { detail: { ...themeSettings, pageColors } }));
       window.dispatchEvent(new CustomEvent('imageSettingsUpdate', { detail: downloadSettings }));
       window.dispatchEvent(new CustomEvent('novelai:gallery-source', { detail: imageSettings.inspirationSource }));
+      if (Object.keys(interfaceDraft).length) writeImagePreviewSettings(interfaceDraft);
+      setInterfaceDraft({});
+      if (promptDraft) promptSettings.updateSettings(promptDraft);
+      setPromptDraft(null);
       setThemeDraft(null);
       setSavedImages(imageSettings);
       setSavedPageColors(pageColors);
@@ -216,15 +248,122 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
   const resetSettings = () => {
     setThemeDraft(DEFAULT_THEME_SETTINGS);
     setPageColors(Object.fromEntries(pages.map((page) => [page.id, PAGE_COLOR_DEFAULTS[page.id] || page.color])));
-    setImageSettings({ ...imageSettings, fileNamePrefix: 'AI_Image', namingMethod: 'seed' });
+    setImageSettings({ ...imageSettings, fileNamePrefix: 'AI_Image', namingMethod: 'seed', fileNameTemplate: DEFAULT_FILE_NAME_TEMPLATE });
     setSnackbar({ severity: 'info', message: t('settings.resetMessage') });
   };
+
+  const [detail, setDetail] = useState(null);
+  useEffect(() => { setDetail(null); }, [section]);
+  const motion = (ms) => (animationEnabled ? `${ms}ms` : '0ms');
+  const showDetail = (event) => {
+    const target = event.target.closest?.('[data-setting-help]');
+    if (target && target.dataset.setting !== detail?.label) {
+      setDetail({ label: target.dataset.setting, help: target.dataset.settingHelp });
+    }
+  };
+
+  const changedInterface = Object.keys(interfaceDraft);
+  const changedPrompt = Object.keys(promptDraft || {});
+  const [searchText, setSearchText] = useState('');
+  const [highlight, setHighlight] = useState(null);
+  const primary = theme.palette.primary.main;
+  const sectionTitle = (id) => t(`settings.sections.${id}.title`);
+  const searchOptions = sections.flatMap((item) => item.search.map((key) => ({ section: item.id, label: t(key) })));
+  useEffect(() => {
+    if (!highlight) return undefined;
+    const frame = requestAnimationFrame(() => {
+      const target = contentRef.current?.querySelector(`[data-setting="${CSS.escape(highlight.label)}"]`);
+      setHighlight(null);
+      if (!target) return;
+      target.scrollIntoView({ block: 'center', behavior: animationEnabled ? 'smooth' : 'auto' });
+      target.animate([{ offset: 0, backgroundColor: alpha(primary, 0.2) }], { duration: animationEnabled ? 1800 : 1, easing: 'ease-out' });
+      if (target.dataset.settingHelp) setDetail({ label: target.dataset.setting, help: target.dataset.settingHelp });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [highlight, animationEnabled, primary]);
+
+  const updateInterface = (key, value) => {
+    setInterfaceDraft((draft) => {
+      const next = { ...draft };
+      if (value === readImagePreviewSettings()[key]) delete next[key];
+      else next[key] = value;
+      return next;
+    });
+  };
+  const interfaceLabel = (key) => t(`settings.interface.${key}`);
+  const interfaceSwitches = (keys) => keys.map((key) => <SettingsRow key={key} label={interfaceLabel(key)}
+    description={interfaceLabel(`help.${key}`)} changed={changedInterface.includes(key)}>
+    <Switch checked={interfaceSettings[key]} slotProps={{ input: { 'aria-label': interfaceLabel(key) } }}
+      onChange={(_, checked) => updateInterface(key, checked)} />
+  </SettingsRow>);
+  const promptLabel = (key) => t(`settings.prompt.${key}`);
+  const promptSwitches = (keys, disabled = false) => keys.map((key) => <SettingsRow key={key} label={promptLabel(key)}
+    description={promptLabel(`help.${key}`)} changed={changedPrompt.includes(key)}>
+    <Switch checked={prompt[key]} disabled={disabled} slotProps={{ input: { 'aria-label': promptLabel(key) } }}
+      onChange={(_, checked) => setPromptDraft((draft) => ({ ...draft, [key]: checked }))} />
+  </SettingsRow>);
+
+  const recordShortcut = (event, key) => {
+    // Esc 结束录入；焦点回到设置内容区，之后仍可用 Ctrl+S 保存。
+    if (event.key === 'Escape') {
+      contentRef.current?.focus({ preventScroll: true });
+      return;
+    }
+    const shortcut = getWorkspaceShortcut(event);
+    if (!shortcut || event.repeat || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const duplicate = Object.keys(defaultWorkspaceShortcuts).find((action) => action !== key && interfaceSettings[action] === shortcut);
+    if (duplicate) {
+      setShortcutError({ key, duplicate });
+      return;
+    }
+    setShortcutError(null);
+    setRecordingShortcut({ key, recorded: true });
+    updateInterface(key, shortcut);
+  };
+
+  const search = <Autocomplete
+          size="small" options={searchOptions} value={null} inputValue={searchText} blurOnSelect
+          onInputChange={(_, value, reason) => setSearchText(reason === 'reset' ? '' : value)}
+          onChange={(_, option) => {
+            if (!option) return;
+            setSection(option.section); onSectionChange?.(option.section);
+            setHighlight({ label: option.label });
+          }}
+          groupBy={(option) => sectionTitle(option.section)}
+          getOptionLabel={(option) => option.label}
+          // 同时匹配分区名，例如输入“快捷键”可列出该分区的全部设置。
+          filterOptions={createFilterOptions({ stringify: (option) => `${option.label} ${sectionTitle(option.section)}` })}
+          noOptionsText={t('settings.searchEmpty')}
+          popupIcon={null}
+          slotProps={{ paper: { sx: {
+            mt: 0.5, borderRadius: 1.5, border: 1, borderColor: 'divider', boxShadow: 'none',
+            '& .MuiAutocomplete-groupLabel': { lineHeight: '30px', fontSize: 12, fontWeight: 700, color: 'primary.main', bgcolor: 'background.paper' },
+          } } }}
+          renderOption={(props, option) => {
+            const { key, ...optionProps } = props;
+            return <li key={`${option.section}:${option.label}:${key}`} {...optionProps}>{option.label}</li>;
+          }}
+          sx={{ px: { xs: 1.5, sm: 1.75 }, mb: { xs: 0.75, sm: 1.5 } }}
+          renderInput={(params) => <TextField {...params} placeholder={t('settings.searchPlaceholder')}
+            InputProps={{
+              ...params.InputProps,
+              startAdornment: <InputAdornment position="start"><SearchOutlined sx={{ fontSize: 18, color: 'text.secondary' }} /></InputAdornment>,
+            }}
+            inputProps={{ ...params.inputProps, 'aria-label': t('settings.searchPlaceholder') }} />}
+        />;
 
   const fileNamePreview = generateFileName({
     seed: '1234567890', prompt: 'Golden Hour Portrait of a girl in a city garden', id: 'preview',
   }, imageSettings);
 
-  return <Paper elevation={0} sx={{
+  return <Paper elevation={0} onKeyDown={event => {
+    if ((event.ctrlKey || event.metaKey) && event.code === "KeyS") {
+      event.preventDefault();
+      if (dirty && loaded && !saving && colorsValid && !invalidSymbols.length) void saveSettings();
+    }
+  }} sx={{
     height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column',
     borderRadius: 0, overflow: 'hidden', bgcolor: 'background.default',
   }}>
@@ -238,6 +377,7 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
       {mobileLayout && !section && <Box sx={{ flex: 1, overflowY: 'auto', p: { xs: 2, sm: 4 } }}>
         <Box sx={{ maxWidth: 680, mx: 'auto' }}>
           <Typography color="text.secondary" sx={{ mb: 3 }}>{t('settings.localSettings')}</Typography>
+          <Box sx={{ mb: 2 }}>{search}</Box>
           <MobileSettingsList label={t('settings.navigation')} items={[
             ...sections.map((item) => ({ ...item, label: t(`settings.sections.${item.id}.title`), description: t(`settings.sections.${item.id}.description`) })),
             { id: 'about', icon: <InfoOutlined />, label: aboutTitle, description: ['NovelAI Local', appVersion].filter(Boolean).join(' · ') },
@@ -254,6 +394,7 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
           <Typography variant="h6">{t('settings.title')}</Typography>
           <Typography variant="caption" color="text.secondary">{t('settings.localSettings')}</Typography>
         </Box>
+        <Box sx={{ px: 1.5, mb: 1 }}>{search}</Box>
         <Tabs value={section} onChange={(_, value) => setSection(value)}
           orientation={mobile ? 'horizontal' : 'vertical'} variant="scrollable" scrollButtons="auto"
           aria-label={t('settings.navigation')}
@@ -292,10 +433,169 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
           </Button>
         </Stack> : section === 'desktop' ? desktopPreferences : (
         <Box component="fieldset" disabled={!loaded || saving} sx={{ border: 0, m: 0, p: 0, minWidth: 0, maxWidth: 1080, mx: 'auto' }}>
+        <Box key={section} sx={{
+          maxWidth: 1100, mx: 'auto', display: 'grid',
+          gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'minmax(0, 1fr) 260px' }, columnGap: 5,
+          animation: animationEnabled ? `settingsSectionEnter ${animationSpeed}ms ease-out` : 'none',
+          '@keyframes settingsSectionEnter': { from: { opacity: 0, transform: 'translateY(6px)' }, to: { opacity: 1, transform: 'none' } },
+        }}>
+          <Box sx={{ minWidth: 0 }} onMouseOver={showDetail} onFocus={showDetail}>
           <Box sx={{ mb: 3 }}>
             {!mobileLayout && <Typography variant="h5" sx={{ mb: 0.75 }}>{accessibleSectionTitle}</Typography>}
             <Typography variant="body2" color="text.secondary">{t(`settings.sections.${section}.description`)}</Typography>
           </Box>
+
+            {section === 'interface' && <Stack spacing={4}>
+              <SettingsGroup title={interfaceLabel('display')} icon={<PhotoOutlined />}>
+                {interfaceSwitches(['expandedImageShortcuts', 'displayImageDrag', 'centerNewGeneration', 'lockedGestureNavigation'])}
+                <SettingsRow label={interfaceLabel('transparencyBackground')} description={interfaceLabel('help.transparencyBackground')}
+                  changed={changedInterface.includes('transparencyBackground')} wide>
+                  <Stack direction="row" alignItems="stretch" gap={1}>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <SettingsSelect label={interfaceLabel('transparencyBackground')} value={interfaceSettings.transparencyBackground}
+                        onChange={(value) => updateInterface('transparencyBackground', value)}
+                        options={transparencyBackgrounds.map((color) => [color, interfaceLabel(`backgrounds.${color}`)])} />
+                    </Box>
+                    <Box aria-hidden sx={{
+                      width: 38, flexShrink: 0, border: 1, borderColor: 'divider', borderRadius: 1,
+                      ...transparencyBackgroundSx(interfaceSettings, theme),
+                    }} />
+                  </Stack>
+                </SettingsRow>
+                {interfaceSettings.transparencyBackground === 'custom' && <SettingsRow label={interfaceLabel('customColor')}
+                  description={interfaceLabel('help.customColor')} changed={changedInterface.includes('transparencyCustomColor')} wide>
+                  <TextField size="small" fullWidth type="color" value={interfaceSettings.transparencyCustomColor}
+                    slotProps={{ htmlInput: { 'aria-label': interfaceLabel('customColor') } }}
+                    onChange={(event) => updateInterface('transparencyCustomColor', event.target.value)} />
+                </SettingsRow>}
+              </SettingsGroup>
+              <SettingsGroup title={interfaceLabel('history')} icon={<HistoryOutlined />}>
+                {interfaceSwitches(['historyImageDrag', 'historyFollowSelection'])}
+                <SettingsRow label={interfaceLabel('historyImageFit')} description={interfaceLabel('help.historyImageFit')}
+                  changed={changedInterface.includes('historyImageFit')} wide>
+                  <SettingsSelect label={interfaceLabel('historyImageFit')} value={interfaceSettings.historyImageFit}
+                    options={['contain', 'cover'].map((key) => [key, interfaceLabel(`fitOptions.${key}`)])}
+                    onChange={(value) => updateInterface('historyImageFit', value)} />
+                </SettingsRow>
+              </SettingsGroup>
+              <SettingsGroup title={interfaceLabel('privacy')} icon={<VisibilityOffOutlined />}>
+                {interfaceSwitches(['privacyMode'])}
+                {Object.entries({ privacyScope: ['both', 'display', 'history'], privacyReveal: ['hold', 'hover', 'toggle'] })
+                  .map(([key, values]) => <SettingsRow key={key} label={interfaceLabel(key)} description={interfaceLabel(`help.${key}`)}
+                    changed={changedInterface.includes(key)} wide>
+                    <SettingsSelect label={interfaceLabel(key)} value={interfaceSettings[key]}
+                      options={values.map((value) => [value, interfaceLabel(`${key}Options.${value}`)])}
+                      onChange={(value) => updateInterface(key, value)} />
+                  </SettingsRow>)}
+              </SettingsGroup>
+              <SettingsGroup title={interfaceLabel('bottomBar')} icon={<WebOutlined />}>
+                {interfaceSwitches(['showAdjustmentEntry', 'showGalleryEntry'])}
+              </SettingsGroup>
+            </Stack>}
+
+            {section === 'prompt' && <Stack spacing={4}>
+              <SettingsGroup title={promptLabel('suggestions')} icon={<ShortTextOutlined />}>
+                <TagSuggestionSettings settings={editedPrompt} saved={promptSettings} invalidSymbols={invalidSymbols}
+                  onChange={(key, value) => setPromptDraft((draft) => ({ ...draft, [key]: value }))} />
+              </SettingsGroup>
+              <SettingsGroup title={promptLabel('preview')} icon={<PhotoOutlined />}>
+                {promptSwitches(['inlinePreview'])}
+                <SettingsRow label={promptLabel('expandedPreview')} description={promptLabel('help.expandedPreview')}
+                  changed={changedPrompt.includes('expandedPreview')} wide>
+                  <SettingsSelect label={promptLabel('expandedPreview')}
+                    value={editedPrompt.expandedPreview === null ? 'auto' : editedPrompt.expandedPreview ? 'on' : 'off'}
+                    options={['auto', 'on', 'off'].map((mode) => [mode, promptLabel(`expandedPreviewOptions.${mode}`)])}
+                    onChange={(value) => setPromptDraft((draft) => ({ ...draft, expandedPreview: value === 'auto' ? null : value === 'on' }))} />
+                </SettingsRow>
+                {promptSwitches(['overlayPreview', 'translationEnabled'])}
+                {promptSwitches(['translationUnderline'], !editedPrompt.translationEnabled)}
+                <SettingsRow label={promptLabel('translationTarget')} description={promptLabel('help.translationTarget')}
+                  changed={changedPrompt.includes('translationTarget')} wide>
+                  <SettingsSelect label={promptLabel('translationTarget')} value={editedPrompt.translationTarget} disabled={!editedPrompt.translationEnabled}
+                    options={['auto', 'zh', 'en', 'ja', 'ko'].map((language) => [language, t(`painting.tools.promptEditor.translationLanguages.${language}`)])}
+                    onChange={(value) => setPromptDraft((draft) => ({ ...draft, translationTarget: value }))} />
+                </SettingsRow>
+              </SettingsGroup>
+              <SettingsGroup title={promptLabel('weighting')} icon={<KeyboardOutlined />}>
+                {promptSwitches(['weightShortcutsEnabled', 'keepWeightSelection'])}
+                <SettingsRow label={promptLabel('defaultWeightMode')} description={promptLabel('help.defaultWeightMode')}
+                  changed={changedPrompt.includes('defaultWeightMode')} wide>
+                  <SettingsSelect label={promptLabel('defaultWeightMode')} value={editedPrompt.defaultWeightMode}
+                    options={['numeric', 'brackets'].map((mode) => [mode, t(`painting.tools.promptEditor.weightModes.${mode}`)])}
+                    onChange={(value) => setPromptDraft((draft) => ({ ...draft, defaultWeightMode: value }))} />
+                </SettingsRow>
+                <SettingsRow label={promptLabel('weightStep')} description={promptLabel('help.weightStep')}
+                  changed={changedPrompt.includes('weightStep')} wide>
+                  <SettingsSelect label={promptLabel('weightStep')} value={editedPrompt.weightStep}
+                    options={[0.05, 0.1, 0.2, 0.25, 0.5].map((step) => [step, step])}
+                    onChange={(value) => setPromptDraft((draft) => ({ ...draft, weightStep: value }))} />
+                </SettingsRow>
+              </SettingsGroup>
+              <SettingsGroup title={promptLabel('formatting')} icon={<TextFieldsOutlined />}>
+                {promptSwitches(['autoFormat'])}
+                {promptSwitches(['normalizeCommas', 'replaceUnderscores'], !editedPrompt.autoFormat)}
+                <SettingsRow label={promptLabel('trailingComma')} description={promptLabel('help.trailingComma')}
+                  changed={changedPrompt.includes('trailingComma')} wide>
+                  <SettingsSelect label={promptLabel('trailingComma')} value={editedPrompt.trailingComma} disabled={!editedPrompt.autoFormat}
+                    options={['preserve', 'remove', 'append'].map((mode) => [mode, promptLabel(`trailingOptions.${mode}`)])}
+                    onChange={(value) => setPromptDraft((draft) => ({ ...draft, trailingComma: value }))} />
+                </SettingsRow>
+              </SettingsGroup>
+            </Stack>}
+
+            {section === 'shortcuts' && <Stack spacing={4}>
+              <SettingsGroup title={t('settings.shortcuts.canvas')} icon={<KeyboardOutlined />}>
+                {Object.keys(defaultWorkspaceShortcuts).map((key) => {
+                  const name = t(`settings.shortcuts.${key}`);
+                  const recording = recordingShortcut?.key === key;
+                  const conflict = shortcutError?.key === key;
+                  const keys = interfaceSettings[key] ? formatWorkspaceShortcut(interfaceSettings[key]).split('+') : [];
+                  return <SettingsRow key={key} wide label={name} description={t(`settings.shortcuts.help.${key}`)}
+                    changed={changedInterface.includes(key)}>
+                    <Stack direction="row" alignItems="center" gap={0.5}>
+                      {/* 聚焦后直接按键录入，不需要打字；Esc 或 Tab 离开录入。 */}
+                      <ButtonBase aria-label={name} aria-invalid={conflict}
+                        onFocus={() => { setShortcutError(null); setRecordingShortcut({ key, recorded: false }); }}
+                        onBlur={() => setRecordingShortcut(null)}
+                        onKeyDown={(event) => recordShortcut(event, key)}
+                        sx={{
+                          flex: 1, minWidth: 0, minHeight: 40, px: 1, gap: 0.5, justifyContent: 'flex-start', borderRadius: 1,
+                          border: 1, borderColor: conflict ? 'error.main' : recording ? 'primary.main' : 'divider',
+                          bgcolor: recording ? alpha(conflict ? theme.palette.error.main : primary, 0.08) : 'transparent',
+                          transition: `border-color ${motion(150)} linear, background-color ${motion(150)} linear`,
+                          '&:hover': { borderColor: conflict ? 'error.main' : alpha(theme.palette.text.primary, 0.32) },
+                        }}>
+                        {recording && !recordingShortcut.recorded
+                          ? <Typography variant="body2" color="primary" sx={{
+                            fontWeight: 600,
+                            animation: animationEnabled ? 'settingsRecordPulse 1.2s ease-in-out infinite' : 'none',
+                            '@keyframes settingsRecordPulse': { '0%, 100%': { opacity: 1 }, '50%': { opacity: 0.45 } },
+                          }}>{t('settings.shortcuts.recording')}</Typography>
+                          : keys.length
+                            ? keys.map((part, index) => <Box key={index} component="kbd" sx={{
+                              minWidth: 24, height: 24, px: 0.75, display: 'inline-grid', placeItems: 'center',
+                              borderRadius: 0.75, bgcolor: alpha(theme.palette.text.primary, 0.08), color: 'text.primary',
+                              fontFamily: 'var(--font-geist-mono), ui-monospace, monospace', fontSize: 12, fontWeight: 650,
+                            }}>{part}</Box>)
+                            : <Typography variant="body2" color="text.disabled">{t('settings.shortcuts.unassigned')}</Typography>}
+                      </ButtonBase>
+                      <IconButton size="small" disabled={!interfaceSettings[key]} aria-label={t('settings.shortcuts.clearShortcut', { action: name })}
+                        onClick={() => { setShortcutError(null); updateInterface(key, ''); }}><Clear fontSize="small" /></IconButton>
+                    </Stack>
+                    {conflict && <Typography variant="caption" color="error" role="alert" sx={{ display: 'block', mt: 0.5 }}>
+                      {t('settings.shortcuts.conflict', { action: t(`settings.shortcuts.${shortcutError.duplicate}`) })}
+                    </Typography>}
+                  </SettingsRow>;
+                })}
+                <SettingsRow label={t('settings.shortcuts.restore')} description={t('settings.shortcuts.help.restore')}>
+                  <Button size="small" variant="outlined" startIcon={<Refresh />} onClick={() => {
+                    setShortcutError(null);
+                    setInterfaceDraft((draft) => ({ ...draft, ...defaultWorkspaceShortcuts }));
+                  }}>{t('settings.reset')}</Button>
+                </SettingsRow>
+              </SettingsGroup>
+            </Stack>}
+
 
           {section === 'appearance' && <Stack spacing={2.5}>
             <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1} flexWrap="wrap">
@@ -397,6 +697,7 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
 
           {section === 'gallery' && <Stack spacing={2.5}>
             <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
+              <FormControlLabel label={locale === 'zh-CN' ? '下次启动保留生成历史' : 'Keep generated images between sessions'} control={<Switch checked={imageSettings.keepImageHistory} onChange={(_, checked) => setImageSettings({ ...imageSettings, keepImageHistory: checked })} />} />
               {!fixedOutputDirectory && <TextField fullWidth size="small" label={t('librarySettings.outputDirectory')}
                 value={imageSettings.outputDirectory}
                 onChange={(event) => setImageSettings({ ...imageSettings, outputDirectory: event.target.value })}
@@ -418,7 +719,7 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
             <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
               <Typography variant="subtitle1">{t('settings.filenameRules')}</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>{t('settings.downloadSharedRule')}</Typography>
-              <TextField label={t('settings.customPrefix')} value={imageSettings.fileNamePrefix} fullWidth size="small"
+              <TextField data-setting={t('settings.customPrefix')} label={t('settings.customPrefix')} value={imageSettings.fileNamePrefix} fullWidth size="small"
                 onChange={(event) => setImageSettings({ ...imageSettings, fileNamePrefix: event.target.value })}
                 helperText={t('settings.prefixExample')} />
               <RadioGroup value={imageSettings.namingMethod} aria-label={t('settings.downloadPreset')}
@@ -427,12 +728,34 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
                 {DOWNLOAD_NAMING_METHODS.map((method) => <FormControlLabel key={method.value} value={method.value}
                   control={<Radio size="small" />} label={t(`settings.naming.${method.value}`)} />)}
               </RadioGroup>
+              {imageSettings.namingMethod === 'custom' && <TextField fullWidth size="small" sx={{ my: 1 }}
+                label={locale === 'zh-CN' ? '文件名模板' : 'Filename template'} value={imageSettings.fileNameTemplate}
+                helperText={FILE_NAME_TEMPLATE_TOKENS.map(token => '{' + token + '}').join('  ')}
+                onChange={event => setImageSettings({ ...imageSettings, fileNameTemplate: event.target.value })} />}
               <Box sx={{ p: 1.5, borderRadius: 1, bgcolor: 'background.default', border: 1, borderColor: 'divider' }}>
                 <Typography variant="caption" color="text.secondary">{t('settings.filenamePreview')}</Typography>
                 <Typography variant="body2" sx={{ mt: 0.5, fontFamily: 'monospace', overflowWrap: 'anywhere' }}>{fileNamePreview}</Typography>
               </Box>
             </Paper>
           </Stack>}
+          </Box>
+          {/* 宽屏右侧说明栏：显示鼠标所在或键盘聚焦的设置说明，未指向任何设置时显示本分区简介。 */}
+          <Box component="aside" aria-hidden sx={{
+            display: { xs: 'none', lg: 'block' }, position: 'sticky', top: 0, alignSelf: 'start',
+            pt: 0.5, pl: 3, borderLeft: 1, borderColor: 'divider', minHeight: 160,
+          }}>
+            <Typography variant="overline" color="primary" sx={{ fontWeight: 700, letterSpacing: '0.08em' }}>{t('settings.details')}</Typography>
+            <Box key={detail?.label || section} sx={{
+              animation: animationEnabled ? 'settingsDetailIn 160ms linear' : 'none',
+              '@keyframes settingsDetailIn': { from: { opacity: 0 }, to: { opacity: 1 } },
+            }}>
+              <Typography variant="subtitle1" fontWeight={700} sx={{ mt: 0.5, lineHeight: 1.4 }}>{detail?.label || sectionTitle(section)}</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1, lineHeight: 1.75 }}>
+                {detail?.help || t(`settings.sections.${section}.description`)}
+              </Typography>
+            </Box>
+          </Box>
+        </Box>
         </Box>
         )}
       </Box>}
@@ -448,10 +771,10 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
         sx={{ display: { xs: 'none', sm: 'inline-flex' }, borderColor: 'divider', color: dirty ? 'primary.main' : 'text.secondary' }} />
       <Stack direction="row" gap={1} sx={{ ml: 'auto' }}>
         {dirty && <Button disabled={saving} onClick={() => {
-          setThemeDraft(null); setPageColors(savedPageColors); setImageSettings(savedImages);
+          setInterfaceDraft({}); setPromptDraft(null); setThemeDraft(null); setPageColors(savedPageColors); setImageSettings(savedImages);
         }}>{t('settings.discard')}</Button>}
         <Button startIcon={<Refresh />} disabled={!loaded || saving} onClick={resetSettings} color="inherit">{t('settings.reset')}</Button>
-        <Button variant="contained" startIcon={<SaveOutlined />} disabled={!loaded || saving || !dirty || !colorsValid} onClick={saveSettings}>{t('settings.save')}</Button>
+        <Button variant="contained" startIcon={<SaveOutlined />} disabled={!loaded || saving || !dirty || !colorsValid || Boolean(invalidSymbols.length)} onClick={saveSettings}>{t('settings.save')}</Button>
       </Stack>
     </Box>}
     <Snackbar open={Boolean(snackbar)} autoHideDuration={4000} onClose={() => setSnackbar(null)}

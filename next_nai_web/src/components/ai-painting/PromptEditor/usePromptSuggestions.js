@@ -1,14 +1,15 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import apiClient from '@/utils/ApiClient';
 import { getPromptTagRange, insertPromptTag } from './promptTagCompletion.mjs';
+import { searchPromptTags } from './searchPromptTags.mjs';
 
 /**
  * 按 textarea 的真实排版定位光标，供悬浮菜单使用；镜像仅用于测量，不参与编辑。
  * @param {HTMLTextAreaElement} input 当前输入框。
  * @param {number} position 光标在文本中的位置。
+ * @param {number} [anchorStart=position] 标签起点，建议弹窗从本行文字左侧展开。
  * @returns {DOMRect} 视口内可见的光标矩形。
  */
-export function getCaretRect(input, position) {
+export function getCaretRect(input, position, anchorStart = position) {
   const style = getComputedStyle(input);
   const mirror = document.createElement('div');
   for (const property of ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'lineHeight', 'letterSpacing',
@@ -27,7 +28,16 @@ export function getCaretRect(input, position) {
   const caret = marker.getClientRects()[0];
   const bounds = input.getBoundingClientRect();
   const lineHeight = parseFloat(style.lineHeight);
-  const x = Math.min(bounds.right - 8, Math.max(bounds.left + 2, bounds.left + input.clientLeft + caret.left - input.scrollLeft));
+  let left = caret.left;
+  if (anchorStart < position) {
+    const start = document.createRange();
+    start.setStart(mirror.firstChild, anchorStart);
+    start.setEnd(mirror.firstChild, anchorStart + 1);
+    const text = start.getBoundingClientRect();
+    // 标签换行后，弹窗跟随光标所在行，左缘与换行处的文字对齐。
+    left = Math.abs(text.top - caret.top) < lineHeight / 2 ? text.left : parseFloat(style.paddingLeft);
+  }
+  const x = Math.min(bounds.right - 8, Math.max(bounds.left + 2, bounds.left + input.clientLeft + left - input.scrollLeft));
   const y = Math.min(bounds.bottom - lineHeight, Math.max(bounds.top, bounds.top + input.clientTop + caret.top - input.scrollTop));
   mirror.remove();
   return new DOMRect(x, y, 0, lineHeight);
@@ -38,13 +48,13 @@ export function getCaretRect(input, position) {
  * @param {object} options 当前文本、文本更新回调、原生 textarea 引用及启用状态。
  * @returns {object} 输入事件、候选列表和悬浮菜单所需的状态。
  */
-export default function usePromptSuggestions({ value, onChange, inputRef, enabled = true }) {
+export default function usePromptSuggestions({ value, onChange, onChoose, inputRef, enabled, settings }) {
+  const { suggestionSyntax: syntax, suggestionLimit, suggestionLayout, suggestionTextLayout } = settings;
   const listId = useId();
   const [context, setContext] = useState(null);
   const [tags, setTags] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
-  const [upstreamUnavailable, setUpstreamUnavailable] = useState(false);
+  const [error, setError] = useState(null);
   const [activeIndex, setActiveIndex] = useState(-1);
   const composing = useRef(false);
   const compositionStartText = useRef(null);
@@ -59,43 +69,44 @@ export default function usePromptSuggestions({ value, onChange, inputRef, enable
     setLoading(false);
   };
 
-  /**
-   * 只接受真实插入或输入法提交；调用方需传入 onChange 的原生事件。
-   * @param {HTMLTextAreaElement} input 已更新文本的输入框。
-   * @param {InputEvent|CompositionEvent} nativeEvent 本次输入的原生事件。
-   */
+  const matchInput = (input) => {
+    const { value: text, selectionStart: start, selectionEnd: end } = input;
+    const range = getPromptTagRange(text, start, end, syntax);
+    if (!range) {
+      close();
+      return;
+    }
+    const command = syntax.enabled && [syntax.category, syntax.exact, syntax.fuzzy].some((symbol) => range.query.startsWith(symbol));
+    if (!command && !/\p{Script=Han}/u.test(range.query) && !/[a-z0-9].*[a-z0-9]/i.test(range.query)) {
+      close();
+      return;
+    }
+    // 输入法提交和 input 事件可能带来同一光标与文本，只查询一次。
+    const signature = `${text}\u0000${start}:${end}`;
+    if (lastInput.current === signature) return;
+    lastInput.current = signature;
+    requestRef.current?.abort();
+    setTags([]);
+    setActiveIndex(-1);
+    setContext({ ...range, text, command, anchor: {
+      contextElement: input, getBoundingClientRect: () => getCaretRect(input, end, range.start),
+    } });
+  };
+
   const updateFromInput = (input, nativeEvent) => {
     const committedComposition = nativeEvent.type === 'compositionend' && nativeEvent.data
       && input.value !== compositionStartText.current;
-    if (!enabled || composing.current || nativeEvent.isComposing || document.activeElement !== input
-        || input.selectionStart !== input.selectionEnd
-        || (!nativeEvent.inputType?.startsWith('insert') && !committedComposition)) {
+    if (enabled && !composing.current && !nativeEvent.isComposing && document.activeElement === input
+        && input.selectionStart === input.selectionEnd && (/^(insert|delete)/.test(nativeEvent.inputType) || committedComposition)) {
+      matchInput(input);
+    } else {
       close();
-      return;
     }
-    const range = getPromptTagRange(input.value, input.selectionStart, input.selectionEnd);
-    if (!range || (!/\p{Script=Han}/u.test(range.query) && !/[a-z0-9].*[a-z0-9]/i.test(range.query))) {
-      close();
-      return;
-    }
-    lastInput.current = `${input.value}\u0000${input.selectionStart}:${input.selectionEnd}`;
-    setContext((previous) => {
-      if (previous?.text === input.value && previous.start === range.start
-          && previous.end === range.end && previous.query === range.query) return previous;
-      // 光标或文本一变就取消旧请求，避免过期候选插进另一段提示词。
-      requestRef.current?.abort();
-      const position = input.selectionEnd;
-      return { ...range, text: input.value, anchor: {
-        contextElement: input,
-        getBoundingClientRect: () => getCaretRect(input, position),
-      } };
-    });
   };
 
   useEffect(() => {
     setTags([]);
-    setError(false);
-    setUpstreamUnavailable(false);
+    setError(null);
     setActiveIndex(-1);
     if (!enabled || !context || context.text !== value) {
       if (!enabled) setContext(null);
@@ -108,40 +119,44 @@ export default function usePromptSuggestions({ value, onChange, inputRef, enable
     const timer = setTimeout(async () => {
       if (controller.signal.aborted) return;
       try {
-        const data = await apiClient.getPrompt(context.query, { signal: controller.signal });
-        if (!controller.signal.aborted) {
-          setTags(data.tags);
-          setUpstreamUnavailable(data.upstream_status === 'unavailable');
-        }
+        const matches = await searchPromptTags(context.query, { limit: suggestionLimit, syntax, signal: controller.signal });
+        if (!controller.signal.aborted) setTags(matches);
       } catch (requestError) {
-        if (!controller.signal.aborted) setError(true);
+        if (!controller.signal.aborted) setError(requestError.code === 'invalid_regex' ? 'invalidRegex' : 'suggestionsFailed');
       } finally {
         if (!controller.signal.aborted) setLoading(false);
       }
-    }, 250);
+    }, 80);
     return () => {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [context, enabled, value]);
+  }, [context, enabled, value, suggestionLimit, syntax]);
 
   const choose = (tag) => {
     const input = inputRef.current;
     if (!input || !context || input.value !== context.text) return;
-    const range = getPromptTagRange(input.value, input.selectionStart, input.selectionEnd);
-    if (!range || range.start !== context.start || range.end !== context.end) return;
-    const result = insertPromptTag(input.value, range, tag.name);
+    const range = getPromptTagRange(input.value, input.selectionStart, input.selectionEnd, syntax);
+    if (!range || range.start !== context.start || range.end !== context.end || range.query !== context.query) return;
+    const category = tag.kind === 'category';
+    // 类别继续留在当前标签里供逐级查询，只有选中词条才补逗号并结束联想。
+    const result = category
+      ? { text: input.value.slice(0, range.start) + tag.completion + input.value.slice(range.end),
+        cursor: range.start + tag.completion.length }
+      : insertPromptTag(input.value, range, tag.name);
     close();
-    onChange(result.text);
+    onChange(result.text, result.cursor);
+    onChoose?.(tag);
     requestAnimationFrame(() => {
-      input.focus();
+      if (inputRef.current !== input || input.value !== result.text || document.activeElement !== input) return;
       input.setSelectionRange(result.cursor, result.cursor);
+      if (category) matchInput(input);
     });
   };
 
-  const open = enabled && context?.text === value && (loading || error || upstreamUnavailable || tags.length > 0);
+  const open = enabled && context?.text === value && (loading || error || context?.command || tags.length > 0);
   return {
-    open: Boolean(open), anchor: context?.anchor, tags, loading, error, upstreamUnavailable,
+    open: Boolean(open), anchor: context?.anchor, tags, loading, error, suggestionLayout, suggestionTextLayout,
     activeIndex, setActiveIndex, listId, choose, close, updateFromInput,
     inputProps: {
       id: `${listId}-input`,
@@ -173,7 +188,8 @@ export default function usePromptSuggestions({ value, onChange, inputRef, enable
         compositionStartText.current = null;
       },
       onKeyDown: (event) => {
-        if (composing.current || event.nativeEvent.isComposing || event.keyCode === 229 || !open) return;
+        if (composing.current || event.nativeEvent.isComposing || event.keyCode === 229 || !open
+            || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
         if (event.key === 'Escape') {
           event.preventDefault();
           event.stopPropagation();
@@ -183,9 +199,9 @@ export default function usePromptSuggestions({ value, onChange, inputRef, enable
           setActiveIndex((index) => event.key === 'ArrowDown'
             ? (index + 1) % tags.length
             : (index <= 0 ? tags.length - 1 : index - 1));
-        } else if (tags.length && activeIndex >= 0 && (event.key === 'Enter' || event.key === 'Tab')) {
+        } else if (tags.length && (event.key === 'Tab' || (event.key === 'Enter' && activeIndex >= 0))) {
           event.preventDefault();
-          choose(tags[activeIndex]);
+          choose(tags[activeIndex] ?? tags[0]);
         }
       },
     },

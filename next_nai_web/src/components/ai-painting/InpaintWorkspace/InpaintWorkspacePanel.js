@@ -64,12 +64,12 @@ import {
   createFeatheredPatchCanvas,
   cropWorldRectToDataUrl,
   worldRectHasVisibleContent,
-  dataUrlToBlob,
   exportContentCanvas,
   extractMaskedPatchCanvas,
   getCanvasAlphaBounds,
   loadImageElement,
   mergePatchIntoContentCanvas,
+  readInpaintMetadata,
 } from '../tools/InpaintTools/exportUtils';
 import { createInpaintMaskCanvas, createInpaintMaskData } from '../tools/InpaintTools/maskUtils';
 import { createMaskGrid, drawMaskGrid, drawMaskBrushCursor, snapPoint, MASK_CELL_SIZE } from '../tools/InpaintTools/maskBrush';
@@ -552,6 +552,7 @@ const InpaintWorkspacePanel = forwardRef(({
   const stageContainerRef = useRef(null);
   const stageObserverRef = useRef(null);
   const contentCanvasRef = useRef(null);
+  const contentMetadataRef = useRef(null);
   const contentBoundsRef = useRef(null);
   const pendingPatchImageRef = useRef(null);
   const pendingPatchImagesRef = useRef(new Map());
@@ -981,8 +982,10 @@ const InpaintWorkspacePanel = forwardRef(({
     const nextCanvas = createOffscreenCanvas(image.width, image.height);
     const nextCtx = nextCanvas.getContext('2d');
     nextCtx.drawImage(image, 0, 0, nextCanvas.width, nextCanvas.height);
+    const metadata = await readInpaintMetadata(source, nextCanvas);
 
     contentCanvasRef.current = nextCanvas;
+    contentMetadataRef.current = { metadata, seed: source.seed, prompt: source.prompt };
     contentBoundsRef.current = { x: 0, y: 0, width: image.width, height: image.height };
     pendingPatchImageRef.current = null;
     featheredPatchCanvasRef.current = null;
@@ -1013,6 +1016,7 @@ const InpaintWorkspacePanel = forwardRef(({
 
   const clearWorkspace = useCallback(() => {
     contentCanvasRef.current = null;
+    contentMetadataRef.current = null;
     contentBoundsRef.current = null;
     pendingPatchImageRef.current = null;
     featheredPatchCanvasRef.current = null;
@@ -1040,6 +1044,7 @@ const InpaintWorkspacePanel = forwardRef(({
     const dataUrl = await readFileAsDataUrl(file);
     await importSourceImage({
       src: dataUrl,
+      cachedBlob: file,
       name: file.name,
       seed: '',
     });
@@ -1049,8 +1054,9 @@ const InpaintWorkspacePanel = forwardRef(({
   const importGalleryItem = useCallback(async (item) => {
     await importSourceImage({
       src: item.src,
+      cachedBlob: item.cachedBlob,
       name: `gallery_${item.id}.png`,
-      seed: item.seed || '',
+      seed: item.seed ?? '',
       prompt: item.prompt || '',
     });
     showNotification?.(t('painting.workspace.inpaint.galleryImageLoaded'), 'success');
@@ -1275,6 +1281,8 @@ const InpaintWorkspacePanel = forwardRef(({
 
     contentCanvasRef.current = mergeResult.canvas;
     contentBoundsRef.current = mergeResult.bounds;
+    const { metadata, seed, prompt } = singlePatch;
+    if (metadata.length) contentMetadataRef.current = { metadata, seed, prompt };
     clearPendingPatchSession({ resetRequest: true, resetFeather: true });
     setIsGenerationLocked(false);
     preserveMaskStrokesAfterGeneration();
@@ -1343,6 +1351,7 @@ const InpaintWorkspacePanel = forwardRef(({
     const keptPatches = allPatches.filter((p) => p.status === 'kept');
     const baseCanvas = sessionBaseCanvasRef.current || contentCanvasRef.current;
     const baseBounds = sessionBaseBoundsRef.current || contentBoundsRef.current;
+    const baseMetadata = contentMetadataRef.current;
 
     if (primaryP && baseCanvas && baseBounds) {
       const mergeResult = await mergePatchIntoContentCanvas({
@@ -1355,6 +1364,8 @@ const InpaintWorkspacePanel = forwardRef(({
       });
       contentCanvasRef.current = mergeResult.canvas;
       contentBoundsRef.current = mergeResult.bounds;
+      const { metadata, seed, prompt } = primaryP;
+      if (metadata.length) contentMetadataRef.current = { metadata, seed, prompt };
     }
 
     for (const patch of keptPatches) {
@@ -1366,18 +1377,21 @@ const InpaintWorkspacePanel = forwardRef(({
         worldRect: patch.worldRect,
         featherPixels: patchFeather,
       });
-      const exportResult = exportContentCanvas({
+      const imageMetadata = patch.metadata.length ? patch : baseMetadata;
+      const exportResult = await exportContentCanvas({
         contentCanvas: mergeResult.canvas,
         background: 'transparent',
+        metadata: imageMetadata?.metadata,
       });
 
       if (exportResult) {
         onExportToGallery?.({
-          src: exportResult.dataUrl,
+          src: await readFileAsDataUrl(exportResult.blob),
+          cachedBlob: exportResult.blob,
           width: exportResult.width,
           height: exportResult.height,
-          seed: patch.seed || sourceImage?.seed || '',
-          prompt: patch.prompt || sourceImage?.prompt || t('painting.workspace.inpaint.exportPromptFallback'),
+          seed: imageMetadata?.seed ?? '',
+          prompt: imageMetadata?.prompt || t('painting.workspace.inpaint.exportPromptFallback'),
         });
       }
     }
@@ -1395,7 +1409,7 @@ const InpaintWorkspacePanel = forwardRef(({
     } else {
       showNotification?.(t('painting.workspace.inpaint.previewClosedWithoutApply'), 'info');
     }
-  }, [clearPendingPatchSession, onExportToGallery, patchFeather, preserveMaskStrokesAfterGeneration, showNotification, sourceImage, t]);
+  }, [clearPendingPatchSession, onExportToGallery, patchFeather, preserveMaskStrokesAfterGeneration, showNotification, t]);
 
   const handleSelectPreviousPendingPatch = useCallback(() => {
     if (pendingPatchesRef.current.length <= 1) {
@@ -1440,9 +1454,11 @@ const InpaintWorkspacePanel = forwardRef(({
       return null;
     }
 
-    const exportResult = exportContentCanvas({
+    const imageMetadata = contentMetadataRef.current;
+    const exportResult = await exportContentCanvas({
       contentCanvas: contentCanvasRef.current,
       background,
+      metadata: imageMetadata?.metadata,
     });
 
     if (!exportResult) {
@@ -1452,22 +1468,22 @@ const InpaintWorkspacePanel = forwardRef(({
 
     if (shouldExportToGallery) {
       onExportToGallery?.({
-        src: exportResult.dataUrl,
+        src: await readFileAsDataUrl(exportResult.blob),
+        cachedBlob: exportResult.blob,
         width: exportResult.width,
         height: exportResult.height,
-        seed: sourceImage?.seed || '',
-        prompt: sourceImage?.prompt || t('painting.workspace.inpaint.exportPromptFallback'),
+        seed: imageMetadata?.seed ?? '',
+        prompt: imageMetadata?.prompt || t('painting.workspace.inpaint.exportPromptFallback'),
       });
       showNotification?.(t('painting.workspace.inpaint.exportedToGallery'), 'success');
       return exportResult;
     }
 
-    const blob = await dataUrlToBlob(exportResult.dataUrl);
     const fileName = `${background === 'white' ? 'inpaint-white' : 'inpaint-transparent'}-${Date.now()}.png`;
-    if (await saveAs(blob, fileName) === false) return null;
+    if (await saveAs(exportResult.blob, fileName) === false) return null;
     showNotification?.(t('painting.workspace.inpaint.fileExported'), 'success');
     return exportResult;
-  }, [onExportToGallery, showNotification, sourceImage, t]);
+  }, [onExportToGallery, showNotification, t]);
 
   const startUploadFlow = useCallback(() => {
     fileInputRef.current?.click();
@@ -2173,6 +2189,8 @@ const InpaintWorkspacePanel = forwardRef(({
         ? { src: item }
         : item;
       const image = await loadImageElement(previewItem.src);
+      // 预览 URL 会由调用方释放，裁剪后的像素也无法再还原隐写参数。
+      const metadata = await readInpaintMetadata(previewItem, image);
       const maskedPatchResult = lastRequestRef.current.generationMode === 'inpaint' && lastRequestRef.current.maskCanvas
         ? extractMaskedPatchCanvas({
           patchImage: image,
@@ -2190,10 +2208,11 @@ const InpaintWorkspacePanel = forwardRef(({
       const nextPendingPatch = {
         id: patchId,
         src: resolvedPatchSrc,
+        metadata,
         worldRect: resolvedWorldRect,
         status: 'pending',
-        seed: previewItem.seed || sourceImage?.seed || '',
-        prompt: previewItem.prompt || sourceImage?.prompt || '',
+        seed: previewItem.seed ?? '',
+        prompt: previewItem.prompt || '',
       };
       const nextPendingPatches = [...pendingPatchesRef.current, nextPendingPatch];
 
@@ -2217,7 +2236,7 @@ const InpaintWorkspacePanel = forwardRef(({
       setIsGenerationLocked(false);
     },
     clearWorkspace,
-  }), [buildGenerationPayload, clearPendingPatchSession, clearWorkspace, hasSourceImage, importSourceImage, preserveMaskStrokesAfterGeneration, sourceImage]);
+  }), [buildGenerationPayload, clearPendingPatchSession, clearWorkspace, hasSourceImage, importSourceImage, preserveMaskStrokesAfterGeneration]);
 
   const pendingPatchBarPosition = pendingPatch && viewportRect
     ? {

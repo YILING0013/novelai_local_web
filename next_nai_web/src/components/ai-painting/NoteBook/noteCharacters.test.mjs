@@ -35,6 +35,18 @@ test('损坏 JSON 与错误字段阻止保存，不能被转换为空角色卡',
   assert.equal(normalizeNoteCharacters([{ prompt: 'portrait', position: '' }])[0].position, 'C3');
 });
 
+test('V5 笔记来回编辑保留真实坐标，旧网格可重新指定 V5，边缘位置可回填到 V4', () => {
+  for (const model of ['nai-diffusion-5-full', 'nai-diffusion-5-full-medium', 'nai-diffusion-5-curated']) {
+    const tabs = [{ prompt: 'blue eyes', uc: 'hat', position: 'C3', center: { x: 0.047, y: 1 } }, { position: 'D2' }];
+    const saved = normalizeNoteCharacters(tabs, model);
+    assert.deepEqual(saved[0], { prompt: 'blue eyes', uc: 'hat', position: 'A5', center: { x: 0.047, y: 1 } });
+    assert.deepEqual(saved[1].center, { x: 0.7, y: 0.3 });
+    assert.deepEqual(normalizeNoteCharacters(JSON.stringify(saved), model), saved);
+    assert.equal(tabs[0].position, 'C3');
+    assert.equal(normalizeNoteCharacters(tabs, 'nai-diffusion-4-5-full')[0].position, 'C3');
+  }
+});
+
 test('字符数独立展示，包含正文和角色正负词且Unicode字符只计一次', () => {
   const characters = [{ name: '不计入名称', prompt: '星🌙', uc: 'rain', position: 'C3' }];
   assert.equal(getNoteContentLength('夜', '☁', characters), 8);

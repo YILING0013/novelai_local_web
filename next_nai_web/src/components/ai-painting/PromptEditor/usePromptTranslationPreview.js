@@ -1,9 +1,10 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useContext, useEffect, useId, useRef, useState } from 'react';
 import { Alert, Box, Button, Paper, Popper, Snackbar, Typography } from '@mui/material';
 import { useI18n } from '@/i18n/I18nProvider';
 import { getCaretRect } from './usePromptSuggestions';
 import usePromptEditorSettings from './usePromptEditorSettings';
 import usePromptTranslations from './usePromptTranslations';
+import EditorExerciseContext from '@/components/tutorials/EditorExerciseContext';
 
 /**
  * 外部输入框、展开编辑器和只读预览共用释义交互；点击同词关闭，编辑和滚动时收起。
@@ -12,6 +13,7 @@ import usePromptTranslations from './usePromptTranslations';
  */
 export default function usePromptTranslationPreview({ text, previewRef, overlay = false, enabled = true }) {
   const { translationEnabled, translationTarget, translationUnderline, setSetting } = usePromptEditorSettings();
+  const exercise = useContext(EditorExerciseContext);
   const translation = usePromptTranslations(text, { enabled: enabled && translationEnabled, targetLanguage: translationTarget });
   const [active, setActive] = useState(null);
   const pointer = useRef(null);
@@ -44,6 +46,7 @@ export default function usePromptTranslationPreview({ text, previewRef, overlay 
       close();
       return;
     }
+    exercise?.notify('translationHint');
     const identity = `${tag.start}:${tag.end}:${tag.key}`;
     setActive((previous) => {
       if (toggle && previous?.identity === identity && previous.pinned) return null;

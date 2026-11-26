@@ -8,6 +8,7 @@ import {
   Button,
   List,
   ListItem,
+  ListItemButton,
   ListItemText,
   Dialog,
   DialogTitle,
@@ -45,11 +46,10 @@ import {
   PlaylistPlay as SequentialIcon // 新增
 } from '@mui/icons-material';
 import { v4 as uuidv4 } from 'uuid';
-import { copyTextToClipboard } from '@/utils/browserCapabilities.mjs';
 import { useI18n } from '@/i18n/I18nProvider';
 
 // 集合表单组件
-const CollectionForm = ({ collections = [], categories = [], onChange, onInsert, generateExample }) => {
+const CollectionForm = ({ collections = [], categories = [], onChange, onInsert, generateExample, cursorStorage = globalThis.localStorage }) => {
   const theme = useTheme();
   const { t } = useI18n();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -98,7 +98,7 @@ const CollectionForm = ({ collections = [], categories = [], onChange, onInsert,
       let initialCategoryStartPosition = collection.categoryStartPosition || 0;
       if (collection.categoryExtractMode === 'sequential') {
         const storageKey = `collection_category_position_${collection.id || collection.name}`;
-        const storedPosition = localStorage.getItem(storageKey);
+        const storedPosition = cursorStorage.getItem(storageKey);
         if (storedPosition !== null) {
           initialCategoryStartPosition = parseInt(storedPosition, 10);
           if (isNaN(initialCategoryStartPosition)) initialCategoryStartPosition = collection.categoryStartPosition || 0; // 防止NaN
@@ -132,12 +132,12 @@ const CollectionForm = ({ collections = [], categories = [], onChange, onInsert,
   // 保存集合
   const handleSaveCollection = () => {
     if (!collectionName.trim()) {
-      void (window.novelaiDialog?.alert ?? window.alert)(t('painting.tools.randomPrompt.collection.errors.nameRequired'));
+      alert(t('painting.tools.randomPrompt.collection.errors.nameRequired'));
       return;
     }
     
     if (selectedCategories.length === 0) {
-      void (window.novelaiDialog?.alert ?? window.alert)(t('painting.tools.randomPrompt.collection.errors.categoryRequired'));
+      alert(t('painting.tools.randomPrompt.collection.errors.categoryRequired'));
       return;
     }
     
@@ -192,8 +192,8 @@ const CollectionForm = ({ collections = [], categories = [], onChange, onInsert,
   };
 
   // 删除集合
-  const handleDeleteCollection = async (collectionId) => {
-    if (await (window.novelaiDialog?.confirm ?? window.confirm)(t('painting.tools.randomPrompt.collection.confirmDelete'))) {
+  const handleDeleteCollection = (collectionId) => {
+    if (window.confirm(t('painting.tools.randomPrompt.collection.confirmDelete'))) {
       const updatedCollections = collections.filter(coll => coll.id !== collectionId);
       onChange(updatedCollections);
     }
@@ -253,7 +253,7 @@ const CollectionForm = ({ collections = [], categories = [], onChange, onInsert,
           variant="contained"
           color="primary"
           startIcon={<AddIcon />}
-          onClick={() => handleOpenCollectionDialog()}
+          data-tour="collectionAdd" onClick={() => handleOpenCollectionDialog()}
           disabled={categories.length === 0}
           size={isMobile ? "small" : "medium"}
           fullWidth={isMobile}
@@ -274,7 +274,7 @@ const CollectionForm = ({ collections = [], categories = [], onChange, onInsert,
         <List sx={{ mb: 2 }}>
           {collections.map((collection) => (
             <Accordion key={collection.id} sx={{ mb: 1 }}>
-              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+              <AccordionSummary data-tour="collectionExpand" expandIcon={<ExpandMoreIcon />}>
                 <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', justifyContent: 'space-between', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
                   <Typography variant="subtitle1">{collection.name}</Typography>
                   <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: isMobile ? 1 : 0 }}>
@@ -391,14 +391,14 @@ const CollectionForm = ({ collections = [], categories = [], onChange, onInsert,
                           variant="outlined"
                           size="small"
                           startIcon={<CopyIcon />}
-                          onClick={async () => {
+                          onClick={() => {
                             const syntax = `<ran_sorting_id="${collection.name}"/>`;
-                            try {
-                              await copyTextToClipboard(syntax);
-                              setSnackbar({ open: true, messageKey: 'painting.tools.randomPrompt.messages.syntaxCopied', severity: 'success' });
-                            } catch {
-                              setSnackbar({ open: true, messageKey: 'common.copyFailed', severity: 'error' });
-                            }
+                            navigator.clipboard.writeText(syntax);
+                            setSnackbar({
+                              open: true,
+                              messageKey: 'painting.tools.randomPrompt.messages.syntaxCopied',
+                              severity: 'success'
+                            });
                           }}
                           sx={{ mr: 1 }}
                         >
@@ -409,7 +409,7 @@ const CollectionForm = ({ collections = [], categories = [], onChange, onInsert,
                         variant="outlined"
                         size="small"
                         startIcon={<CasinoIcon />}
-                        onClick={() => handleShowExample(collection)}
+                        data-tour="collectionExample" onClick={() => handleShowExample(collection)}
                         sx={{ mr: 1 }}
                       >
                         {t('painting.tools.randomPrompt.example')}
@@ -419,7 +419,7 @@ const CollectionForm = ({ collections = [], categories = [], onChange, onInsert,
                         size="small"
                         color="primary"
                         startIcon={<SendIcon />}
-                        onClick={() => onInsert(collection)}
+                        data-tour="collectionInsert" onClick={() => onInsert(collection)}
                       >
                         {t('painting.tools.randomPrompt.insert')}
                       </Button>
@@ -445,7 +445,7 @@ const CollectionForm = ({ collections = [], categories = [], onChange, onInsert,
           justifyContent: 'space-between',
           alignItems: 'center' 
         }}>
-          <Typography variant="h6">
+          <Typography variant="h6" component="span">
             {editingCollection
               ? t('painting.tools.randomPrompt.collection.editTitle')
               : t('painting.tools.randomPrompt.collection.createTitle')}
@@ -463,7 +463,7 @@ const CollectionForm = ({ collections = [], categories = [], onChange, onInsert,
             <Grid item xs={12} md={6}>
               <Typography variant="subtitle1" gutterBottom>{t('painting.tools.randomPrompt.basicSettings')}</Typography>
               <TextField
-                label={t('painting.tools.randomPrompt.collection.name')}
+                data-tour={!collectionName.trim() ? 'collectionName' : undefined} label={t('painting.tools.randomPrompt.collection.name')}
                 fullWidth
                 value={collectionName}
                 onChange={(e) => setCollectionName(e.target.value)}
@@ -609,11 +609,9 @@ const CollectionForm = ({ collections = [], categories = [], onChange, onInsert,
                   >
                     <List dense sx={{ p: 0 }}>
                       {categories.map((category) => (
-                        <ListItem 
-                          key={category.id}
-                          dense
-                          button // 保持 button 样式，但点击事件由 Checkbox 和 ListItemText 区域处理
-                          onClick={() => handleCategorySelect(category.id)} // 允许点击整行选择
+                        <ListItem key={category.id} disablePadding>
+                        <ListItemButton
+                          data-tour={!selectedCategories.length ? 'collectionPick' : undefined} dense onClick={() => handleCategorySelect(category.id)}
                           sx={{
                             borderRadius: 1,
                             backgroundColor: isCategorySelected(category.id) ? 'rgba(124, 77, 255, 0.08)' : 'transparent',
@@ -624,6 +622,8 @@ const CollectionForm = ({ collections = [], categories = [], onChange, onInsert,
                           <Checkbox
                             edge="start"
                             checked={isCategorySelected(category.id)}
+                            tabIndex={-1}
+                            slotProps={{ input: { 'aria-label': category.name } }}
                             // onClick={(e) => { // 阻止事件冒泡，如果只想通过Checkbox选择
                             //   e.stopPropagation();
                             //   handleCategorySelect(category.id);
@@ -633,6 +633,7 @@ const CollectionForm = ({ collections = [], categories = [], onChange, onInsert,
                           />
                           <ListItemText 
                             primary={category.name} 
+                            slotProps={{ secondary: { component: 'div' } }}
                             secondary={
                               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
                                 <Chip 
@@ -651,6 +652,7 @@ const CollectionForm = ({ collections = [], categories = [], onChange, onInsert,
                               </Box>
                             }
                           />
+                        </ListItemButton>
                         </ListItem>
                       ))}
                     </List>
@@ -663,7 +665,7 @@ const CollectionForm = ({ collections = [], categories = [], onChange, onInsert,
         <DialogActions sx={{ p: 2 }}>
           <Button onClick={handleCloseCollectionDialog}>{t('painting.tools.common.cancel')}</Button>
           <Button 
-            onClick={handleSaveCollection} 
+            data-tour="collectionSave" onClick={handleSaveCollection}
             variant="contained" 
             color="primary"
             startIcon={<SaveIcon />}
@@ -732,7 +734,7 @@ const CollectionForm = ({ collections = [], categories = [], onChange, onInsert,
           >
             {t('painting.tools.randomPrompt.regenerate')}
           </Button>
-          <Button onClick={handleCloseExample}>{t('painting.tools.common.close')}</Button>
+          <Button data-tour="exampleClose" onClick={handleCloseExample}>{t('painting.tools.common.close')}</Button>
         </DialogActions>
       </Dialog>
       

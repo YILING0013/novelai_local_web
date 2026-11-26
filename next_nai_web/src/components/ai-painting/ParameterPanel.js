@@ -105,6 +105,7 @@ const extractBase64FromDataUrl = (dataUrl) => {
 const ParameterPanel = ({
   params: externalParams,
   isolated = false,
+  loadAccountSettings = true,
   comicPanelBounds = null,
   editorState = null,
   editorStateRef = null,
@@ -220,6 +221,7 @@ const ParameterPanel = ({
     // 保存编辑态而非请求体，保留禁用的角色、参考图和各模型尚未提交的选项。
     editorStateRef.current = {
       key: editorSessionKey,
+      setCharacterCenter: (index, center) => setCharacterTabs(tabs => tabs.map((tab, i) => i === index ? { ...tab, center } : tab)),
       defaultParams,
       getSnapshot: () => ({
         params: preferredParams, imagePreview, editedImageData, directorToolParams, restoredMask,
@@ -360,6 +362,7 @@ const ParameterPanel = ({
   }, [characterTabs, onCharacterTabsChange]);
 
   useEffect(() => {
+    if (!loadAccountSettings) return;
     const fetchRandomPromptConfig = async () => {
       try {
         const config = await apiClient.getRandomPromptConfig();
@@ -377,7 +380,7 @@ const ParameterPanel = ({
       }
     };
     fetchRandomPromptConfig();
-  }, [onError]);
+  }, [onError, loadAccountSettings]);
 
   useEffect(() => {
     if (isV4Model(params.model)) {
@@ -1663,7 +1666,7 @@ const ParameterPanel = ({
         handleOpenCharacterEditor={handleOpenCharacterEditor}
         handleCharacterToggleDisabled={handleCharacterToggleDisabled}
         isV5Model={isNovelAIV5Model(params.model)}
-        renderPromptPanel={renderPromptPanel}
+        renderPromptPanel={renderPromptPanel && ((summary, content) => renderPromptPanel(summary, content, modelOptions, handleParamChange))}
       />
       <Snackbar open={toast.open} autoHideDuration={3000} onClose={handleCloseToast} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
         <Alert onClose={handleCloseToast} severity={toast.severity} sx={{ width: '100%' }}>{toast.message}</Alert>

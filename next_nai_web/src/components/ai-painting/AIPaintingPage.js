@@ -1,10 +1,14 @@
-"use client";
+'use client';
+
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import MobileGenerationTools from './MobileGenerationTools';
 
 import { MODEL_OPTIONS } from './utils/generationOptions';
 import { generateFileName, getImageSettings } from './tools/ImageTools/ImageSaveUtils';
 import usePreviewImageDrag from './usePreviewImageDrag';
 import { hasFileDrag, readDroppedFiles } from './tools/ImageTools/previewImageDragData.mjs';
-import { defaultImagePreviewSettings, exportPreviewImage, getPrivacyShortcut, imagePreviewSettingsKey, readImagePreviewSettings } from './tools/ImageTools/previewImageExport';
+import { getWorkspaceShortcut } from './tools/ImageTools/workspaceShortcuts.mjs';
+import { defaultImagePreviewSettings, exportPreviewImage, imagePreviewSettingsKey, readImagePreviewSettings } from './tools/ImageTools/previewImageExport';
 import { readQuickImagePresets } from './ImageProcessing/quickImageAdjustments';
 import QuickImageAdjustment from './ImageProcessing/QuickImageAdjustment';
 // AIPaintingPage.js
@@ -39,7 +43,6 @@ import {
   Divider,
   Stack,
   Menu,
-  MenuItem,
   SwipeableDrawer,
   alpha
 } from '@mui/material';
@@ -58,8 +61,6 @@ import {
   ViewQuilt as ComicIcon,
   Warning as WarningIcon,
   PhotoFilter as ImageProcessingIcon,
-  AddPhotoAlternate as ImportImageIcon,
-  MoreHoriz as MoreHorizIcon,
   Check as CheckIcon,
   PlayArrow as PlayArrowIcon,
 } from '@mui/icons-material';
@@ -322,13 +323,16 @@ const getResponsiveGenerateButtonContent = ({
 // 使用GenerationContext包装的AIPaintingPage内部组件
 const ImageProcessingWorkspace = dynamic(() => import('./ImageProcessing/ImageProcessingWorkspace'), { ssr: false });
 
-const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange, renderModeTools, desktopEditor, androidLayout = false, sharedImage, onSharedImageHandled }) => {
+const AIPaintingPageContent = ({ userId, accountSnapshot = null, releaseGuideActive = false, suggestionPractice = false, promptExerciseTopic, promptExerciseActive = false, onExitSuggestionPractice, onBack, backLabel, tutorialTopic, offlinePractice = false, active = true, workContext, onWorkContextChange, renderModeTools, desktopEditor, androidLayout = false, sharedImage, onSharedImageHandled }) => {
   const { t, formatNumber, formatDate, locale } = useI18n();
   const [savedPreviewSettings, setPreviewSettings] = useState(null);
   const previewSettings = savedPreviewSettings ?? defaultImagePreviewSettings;
 
   useEffect(() => {
-    setPreviewSettings(readImagePreviewSettings());
+    const refresh = () => setPreviewSettings(readImagePreviewSettings());
+    refresh();
+    window.addEventListener('novelai:workspace-image-preview-changed', refresh);
+    return () => window.removeEventListener('novelai:workspace-image-preview-changed', refresh);
   }, []);
 
   useEffect(() => {
@@ -345,7 +349,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
     const togglePrivacy = (event) => {
       if (event.defaultPrevented || event.repeat || event.isComposing
         || event.target?.closest?.('input, textarea, select, [contenteditable="true"], [role="textbox"]')) return;
-      if (getPrivacyShortcut(event) !== previewSettings.privacyShortcut) return;
+      if (getWorkspaceShortcut(event) !== previewSettings.privacyShortcut) return;
       event.preventDefault();
       setPreviewSettings((saved) => ({ ...(saved ?? defaultImagePreviewSettings), privacyMode: !(saved?.privacyMode) }));
     };
@@ -369,8 +373,6 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const compactAndroid = androidLayout && isMobile;
   const workspaceRef = useRef(null);
-  const imageImportInputRef = useRef(null);
-  const [mobileGenerationMenuAnchor, setMobileGenerationMenuAnchor] = useState(null);
   const [comicEditorOpen, setComicEditorOpen] = useState(false);
   const parameterResizeRef = useRef(null);
   const [workspaceWidth, setWorkspaceWidth] = useState(0);
@@ -653,6 +655,15 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
 
   // 移动端抽屉状态
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const practicingPrompt = suggestionPractice || promptExerciseActive;
+  const tutorialPromptActive = offlinePractice || practicingPrompt || Boolean(promptExerciseTopic);
+  useEffect(() => {
+    if (isMobile && practicingPrompt) setMobileDrawerOpen(true);
+  }, [isMobile, practicingPrompt]);
+  const closeParameterDrawer = () => {
+    setMobileDrawerOpen(false);
+    if (practicingPrompt) onExitSuggestionPractice();
+  };
   // 添加图像数据状态
   const [externalImageData, setExternalImageData] = useState(null);
   const [inpaintCostParameters, setInpaintCostParameters] = useState(null);
@@ -1086,7 +1097,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
       action: handleGenerate,
       color: 'primary',
       icon: null,
-      disabled: false,
+      disabled: tutorialPromptActive,
       cost: estimatedCost.perImage,
       costTotal: estimatedCost.total,
       costCount: estimatedCost.count,
@@ -1100,24 +1111,29 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
   }, []);
 
   // 处理应用笔记元数据（包括提示词和角色卡片）
-  const handleApplyMetadataFromNote = (note) => {
+  const handleApplyMetadataFromNote = (note, applyModel, modelOptions, changeParameter) => {
     let characters;
     try {
-      characters = normalizeNoteCharacters(note.character_tabs);
+      characters = normalizeNoteCharacters(note.character_tabs ?? note.characterTabs, note.model);
     } catch {
       showNotification(t('painting.tools.notebook.errors.NOTE_CHARACTER_JSON_INVALID'), 'error');
       return false;
     }
-    setPositivePrompt(note.text_content1 || '');
-    setNegativePrompt(note.text_content2 || '');
-    // 更新 ParameterPanel 的 characterTabs
+    const mappedModel = applyModel && note.model;
+    if (mappedModel && !modelOptions.some((option) => option.value === mappedModel)) {
+      showNotification(t('painting.workspace.errors.modelNotAvailableForAccount'), 'warning');
+      return false;
+    }
+    // 模型切换与手工选择共用参数面板的默认值；等待切换期间也要把提示词写进目标模型的缓存。
+    if (mappedModel && mappedModel !== preferredGenerationParams.model) changeParameter('model', mappedModel);
+    const promptModel = mappedModel || preferredGenerationParams.model;
+    setPositivePrompt(note.text_content1 || '', promptModel);
+    setNegativePrompt(note.text_content2 || '', promptModel);
+    if (characters.length && isNovelAIV5Model(mappedModel || effectiveModel) && note.character_position_mode) {
+      changeParameter('characterPositionMode', note.character_position_mode);
+    }
     setCharacterTabsFromNote(characters);
-
-    // 可以在这里展开 ParameterPanel 中的角色控制区域
-    // onExpandedPanelsChange('character', true); // 假设有这个函数
-    setExpandedPanels(prev => ({ ...prev, character: true }));
-
-
+    if (characters.length) setExpandedPanels(prev => ({ ...prev, character: true }));
     showNotification(t('painting.workspace.notifications.noteApplied'), 'success');
     return true;
   };
@@ -1134,7 +1150,8 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
       const activeNegative = extractActiveContent(negativePrompt, {
       });
       // 保存对话框已解析过的角色卡，确保预览内容与实际保存一致。
-      await apiClient.saveTexts(title, activePositive, activeNegative, imageUrl, characterTabsToSave, groupId);
+      await apiClient.saveTexts(title, activePositive, activeNegative, imageUrl, characterTabsToSave, groupId,
+        generationParams.model, isNovelAIV5Model(generationParams.model) ? parameterEditorRef.current.getSnapshot().params.characterPositionMode : null);
       showNotification(t('painting.workspace.notifications.noteSaved'), 'success');
       return true; // 指示保存成功
     } catch (error) {
@@ -1508,6 +1525,23 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
     return true;
   }, [currentItem, positivePrompt, showNotification, t]);
 
+  const importHistoryImages = async (files) => {
+    const results = await Promise.allSettled(files.filter((file) => file.type.startsWith('image/')).map(async (file) => {
+      const bitmap = await createImageBitmap(file);
+      const { width, height } = bitmap;
+      bitmap.close();
+      const src = createObjectUrlFromBlob(file);
+      return { src, width, height, cachedBlob: file, objectUrlToRevoke: src };
+    }));
+    for (const result of results) {
+      if (result.status === 'fulfilled') appendGeneratedItem(result.value);
+    }
+    if (!results.length || results.some((result) => result.status === 'rejected')) {
+      showNotification(t('painting.workspace.gallery.historyImportFailed'), 'warning');
+    }
+  };
+
+
   const handleExportInpaintToGallery = useCallback((item) => {
     appendGeneratedItem({
       ...item,
@@ -1656,6 +1690,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
 
   // 源图和参数在打开弹窗时固定，切换历史图或修改侧栏不会悄悄改变本次增强。
   const handleImageTool = async (tool, settings = null) => {
+    if (tutorialPromptActive) return;
     if (imageToolBusyRef.current || comicFlightRef.current || comicAIFlightRef.current || isGenerating || batchStatus.active || inpaintPreviewBatch.active) return;
     imageToolBusyRef.current = true;
     setImageToolBusy(true);
@@ -1769,6 +1804,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
 
   const changeWorkspaceMode = (mode) => {
     if (mode === leftPanelMode) return;
+    if (mode !== 'generation' && tutorialTopic) onExitSuggestionPractice();
     if (leftPanelMode === 'comic') {
       if (comicTargetRef.current) {
         comicWorkspaceRef.current.saveTask(comicTargetRef.current, getPaintingSnapshot(), { record: false });
@@ -1784,6 +1820,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
     if (mode === 'imageProcessing') setImageProcessingVisited(true);
     setLeftPanelMode(mode);
   };
+
+  useEffect(() => {
+    if (tutorialTopic) changeWorkspaceMode('generation');
+  }, [tutorialTopic]);
 
   useEffect(() => {
     if (desktopEditor) desktopEditor.share(generatedItems, () => comicWorkspaceRef.current?.getCurrentPage());
@@ -1837,6 +1877,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
 
   // 图像生成请求
   const handleGenerate = async (allComicPanels = false) => {
+    if (tutorialPromptActive) return;
     if (imageToolBusyRef.current || comicFlightRef.current || comicAIFlightRef.current || isGenerating) return;
     let requestedModel = generationParams.model;
     const comicPage = leftPanelMode === 'comic' ? comicWorkspaceRef.current?.getCurrentPage() : null;
@@ -2237,6 +2278,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
 
   // Action button handler for ItemDisplay
   const handleActionButtonClick = async (action, _unusedParam, _displayNotification) => {
+    if (tutorialPromptActive) return false;
     // 项目操作统一使用页面通知，确保错误会进入同一个持久指示器。
     const notify = (message, severity = 'success', autoHide = true, actions = [], errorOptions = null) => (
       showNotification(message, severity, autoHide, actions, {
@@ -2541,7 +2583,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
   const previewCanDrag = Boolean(active && leftPanelMode === 'generation' && currentItem && currentItem.type !== 'video'
     && !adjustmentActive);
   const previewDrag = usePreviewImageDrag({
-    enabled: previewCanDrag, getFile: getPreviewFile, privacyMode: previewSettings.privacyMode,
+    enabled: previewCanDrag && previewSettings.displayImageDrag, getFile: getPreviewFile, privacyMode: previewSettings.privacyMode,
     onError: (error) => {
       const key = ['invalidCustomMetadata', 'imageTooLarge'].includes(error.message) ? error.message : 'copyExportFailed';
       showNotification(t(`painting.workspace.gallery.${key}`), 'error');
@@ -2553,9 +2595,16 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
       {/* 参数面板 - 传递expandedPanels和onExpandedPanelsChange */}
       <Box sx={{ flexShrink: 0, minWidth: 0, pb: 1 }}>
         <ParameterPanel
+          loadAccountSettings={!tutorialPromptActive}
           parameterToolbarContainer={leftPanelMode === 'comic' ? comicToolbarContainer : (isMobile ? drawerToolbarContainer : parameterToolbarContainer)}
-          renderPromptPanel={(characterControlSummary, characterControlContent) => (
+          renderPromptPanel={(characterControlSummary, characterControlContent, modelOptions, changeParameter) => (
             <PromptPanel
+              releaseGuideActive={releaseGuideActive}
+              suggestionPractice={suggestionPractice}
+              promptExerciseTopic={promptExerciseTopic}
+              promptExerciseActive={promptExerciseActive}
+              onExitSuggestionPractice={onExitSuggestionPractice}
+              loadAccountSettings={!tutorialPromptActive}
                   positivePrompt={positivePrompt}
               negativePrompt={negativePrompt}
               model={generationParams.model}
@@ -2563,7 +2612,8 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
               onPositivePromptChange={setPositivePrompt}
               onNegativePromptChange={setNegativePrompt}
               onSaveCurrentNote={handleSaveCurrentNote}
-              onApplyNoteContent={handleApplyMetadataFromNote}
+              modelOptions={modelOptions}
+              onApplyNoteContent={(note, applyModel) => handleApplyMetadataFromNote(note, applyModel, modelOptions, changeParameter)}
               onError={reportWorkspaceFailure}
               characterControlSummary={characterControlSummary}
               characterControlContent={characterControlContent}
@@ -2602,6 +2652,14 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
     </>
   );
 
+
+  const comicCharacterPlacement = leftPanelMode === 'comic' && isNovelAIV5Model(generationParams.model)
+    && generationParams.characterPositionMode === 'custom' ? {
+      width: Number(generationParams.width),
+      height: Number(generationParams.height),
+      characters: characterTabsForPromptTokens,
+      onMove: (index, center) => parameterEditorRef.current?.setCharacterCenter(index, center),
+    } : null;
 
   const comicGenerationAction = { ...getGenerateButtonState(), loading: comicGenerationBusy || comicAIBusy || isGenerating };
   const closeComicEditor = () => {
@@ -2867,10 +2925,11 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
               overflow: 'hidden',
             }}
           >
+            {onBack && <Tooltip title={backLabel}><IconButton size="small" aria-label={backLabel} onClick={onBack} sx={{ alignSelf: 'flex-start' }}><ArrowBackIcon fontSize="small" /></IconButton></Tooltip>}
             {!isCanvasWorkspace && <WorkVersionBar
               context={versionContext}
               onChange={changeVersionContext}
-              disabled={versionLoading || isGenerating || batchStatus.active || imageToolBusy || inpaintPreviewBatch.active}
+              disabled={tutorialPromptActive || versionLoading || isGenerating || batchStatus.active || imageToolBusy || inpaintPreviewBatch.active}
               getParameters={() => {
                 const parameters = getAllParametersRef.current();
                 const request = buildGenerationRequest({ ...parameters, positivePrompt, negativePrompt });
@@ -2898,7 +2957,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
             )}
             {comicWorkspaceVisited && (
               <Box sx={{ display: leftPanelMode === 'comic' ? 'block' : 'none', flex: 1, minHeight: 0, minWidth: 0 }}>
-                <ComicWorkspace
+                <ComicWorkspace characterPlacement={comicCharacterPlacement}
                   ref={comicWorkspaceRef}
                   active={active && leftPanelMode === 'comic'}
                   generatedItems={generatedItems}
@@ -2961,7 +3020,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
                   disableVibeAction={referenceCounts.active > 0}
                   showReferenceAction={canUseReference}
                   disableReferenceAction={hasActiveVibes}
-                  privacyMode={previewSettings.privacyMode}
+                  previewSettings={previewSettings} privacyMode={previewSettings.privacyMode && previewSettings.privacyScope !== 'history'}
                   imageDrag={previewCanDrag ? { ...previewDrag, mode: previewSettings.copyMode } : null}
                   onAdjustImage={() => {
                     setMobileDrawerOpen(false);
@@ -2980,7 +3039,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
                       setAdjustmentItemId(null);
                     }} /> : null}
                   onImageTool={handleImageTool}
-                  imageToolsDisabled={imageToolBusy || batchStatus.active || inpaintPreviewBatch.active}
+                  imageToolsDisabled={tutorialPromptActive || imageToolBusy || batchStatus.active || inpaintPreviewBatch.active}
                 />
               </Paper>
 
@@ -3000,6 +3059,9 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
                   items={generatedItems}
                   currentItemId={currentItem?.id}
                   onSelectItem={handleSelectPreview}
+                  onImportImages={importHistoryImages}
+                  onAdjustImage={currentItem && (() => setAdjustmentItemId(id => id === currentItem.id ? null : currentItem.id))}
+                  adjustmentActive={Boolean(adjustmentItemId)}
                   onDeleteItem={handleDeletePreview}
                   previewSettings={previewSettings}
                   quickImagePresets={quickImagePresets}
@@ -3167,7 +3229,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
                     <Tooltip title={t('painting.workspace.actions.viewBatchDetails')} placement="top">
                       <IconButton
                         aria-label={t('painting.workspace.actions.viewBatchDetails')}
-                        onClick={() => setBatchDialogOpen(true)}
+                        disabled={tutorialPromptActive} onClick={() => setBatchDialogOpen(true)}
                         size="small"
                         color="error"
                         sx={{ ml: 0.5, flexShrink: 0 }}
@@ -3324,7 +3386,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
                   {/* 移动端参数菜单按钮 */}
                   {isMobile && leftPanelMode !== 'comic' && (
                     <IconButton
-                      aria-label={t('painting.workspace.actions.openParameters')}
+                      data-release-target="panel" aria-label={t('painting.workspace.actions.openParameters')}
                       color="primary"
                       onClick={toggleMobileDrawer}
                       sx={{
@@ -3352,7 +3414,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
           <SwipeableDrawer
             anchor="bottom"
             open={active && mobileDrawerOpen && !adjustmentActive}
-            onClose={() => setMobileDrawerOpen(false)}
+            onClose={closeParameterDrawer}
             onOpen={() => setMobileDrawerOpen(true)}
             disableSwipeToOpen={false}
             ModalProps={{
@@ -3395,7 +3457,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
               <IconButton
                 aria-label={t('painting.workspace.actions.closeParameters')}
                 sx={{ mr: 0.5 }}
-                onClick={() => setMobileDrawerOpen(false)}
+                onClick={closeParameterDrawer}
                 edge="end"
               >
                 <CloseIcon />
@@ -3479,77 +3541,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
             }}
           >
             <Box data-testid="mobile-generation-toolbar" sx={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'center', gap: compactAndroid ? 0 : 1, minWidth: 0 }}>
-            {compactAndroid ? <>
               {renderAnlasStatus(true, true)}
-              <IconButton aria-label={locale === 'zh-CN' ? '生成工具' : 'Generation tools'} aria-haspopup="menu"
-                aria-expanded={Boolean(mobileGenerationMenuAnchor)} onClick={(event) => setMobileGenerationMenuAnchor(event.currentTarget)}
-                color={workspaceErrors.length ? 'error' : 'default'} sx={{ width: 40, height: 44, flexShrink: 0 }}>
-                <Badge badgeContent={workspaceErrors.length} color="error" max={99}><MoreHorizIcon /></Badge>
-              </IconButton>
-              <Menu anchorEl={mobileGenerationMenuAnchor} open={active && Boolean(mobileGenerationMenuAnchor)} onClose={() => setMobileGenerationMenuAnchor(null)}>
-                <MenuItem onClick={() => { setMobileGenerationMenuAnchor(null); imageImportInputRef.current.click(); }}>
-                  <ImportImageIcon sx={{ mr: 1.5, fontSize: 20 }} />{t('painting.tools.metadata.selectImage')}
-                </MenuItem>
-                {batchStatus.active && <MenuItem onClick={() => { setMobileGenerationMenuAnchor(null); setBatchDialogOpen(true); }}>
-                  <BarChartIcon sx={{ mr: 1.5, fontSize: 20 }} />{t('painting.workspace.actions.viewBatchDetails')}
-                  <Typography variant="caption" sx={{ ml: 2 }}>{batchStatus.current}/{batchStatus.total}</Typography>
-                </MenuItem>}
-                <MenuItem onClick={() => { setMobileGenerationMenuAnchor(null); setErrorSummaryOpen(true); }}>
-                  <ErrorOutlineIcon sx={{ mr: 1.5, fontSize: 20 }} />{t('painting.workspace.actions.viewErrorDetails')}
-                  <Typography variant="caption" sx={{ ml: 2 }}>{workspaceErrors.length}</Typography>
-                </MenuItem>
-              </Menu>
-            </> : (
-            <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-              {renderAnlasStatus(true)}
-
-              {/* 批量生成状态指示器 - 移动端 */}
-              {batchStatus.active && (
-                <IconButton
-                  aria-label={t('painting.workspace.actions.viewBatchDetails')}
-                  size="small"
-                  onClick={() => setBatchDialogOpen(true)}
-                  color="error"
-                  sx={{ ml: 1 }}
-                >
-                  <Badge
-                    badgeContent={`${batchStatus.current}/${batchStatus.total}`}
-                    color="error"
-                    max={999}
-                    sx={{
-                      '& .MuiBadge-badge': {
-                        fontSize: '0.55rem',
-                        height: 'auto',
-                        padding: '0 4px'
-                      }
-                    }}
-                  >
-                    <BarChartIcon fontSize="small" />
-                  </Badge>
-                </IconButton>
-              )}
-
-              {/* 错误指示器 - 移动端 */}
-              <IconButton
-                aria-label={t('painting.workspace.actions.viewErrorDetails')}
-                size="small"
-                onClick={() => setErrorSummaryOpen(true)}
-                color={workspaceErrors.length > 0
-                  ? 'error'
-                  : 'default'}
-                sx={{ ml: 1 }}
-              >
-                <Badge
-                  badgeContent={workspaceErrors.length}
-                  color="error"
-                  max={99}
-                >
-                  <ErrorOutlineIcon fontSize="small" />
-                </Badge>
-              </IconButton>
-            </Box>
-            )}
-
+              <MobileGenerationTools inputId="painting-image-import" disabled={tutorialPromptActive}
+                errorCount={workspaceErrors.length} batchStatus={batchStatus}
+                onImportFile={openImageImport} onBatch={() => setBatchDialogOpen(true)} onErrors={() => setErrorSummaryOpen(true)} />
             {/* 生成按钮 - 使用动态状态 */}
             {(() => {
               const buttonState = getGenerateButtonState();
@@ -3648,7 +3643,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
 
                   {/* 移动端打开参数菜单的按钮 */}
                   <IconButton
-                    aria-label={t('painting.workspace.actions.openParameters')}
+                    data-release-target="panel" aria-label={t('painting.workspace.actions.openParameters')}
                     color="primary"
                     onClick={toggleMobileDrawer}
                     sx={{
@@ -3798,21 +3793,21 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, active = true, 
         onUseImage={handleUseDroppedImage}
         onApply={handleApplyPageMetadata}
       />
-      {androidLayout && <input ref={imageImportInputRef} type="file" accept="image/*" aria-label={t('painting.tools.metadata.selectImage')} hidden
-        onChange={(event) => {
-          const file = event.currentTarget.files[0];
-          event.currentTarget.value = '';
-          if (file) void openImageImport(file);
-        }} />}
     </>
   );
 };
 
 // 包装了Context Provider的根组件
-const AIPaintingPage = ({ userId, accountSnapshot = null, active = true, workContext, onWorkContextChange, renderModeTools, desktopEditor, androidLayout, sharedImage, onSharedImageHandled }) => {
+const AIPaintingPage = ({ userId, accountSnapshot = null, releaseGuideActive = false, suggestionPractice = false, promptExerciseTopic, promptExerciseActive = false, onExitSuggestionPractice, onBack, backLabel, tutorialTopic, offlinePractice = false, active = true, workContext, onWorkContextChange, renderModeTools, desktopEditor, androidLayout, sharedImage, onSharedImageHandled }) => {
+  const [directory, setDirectory] = useState(() => localStorage.getItem('outputDirectory') || '');
+  useEffect(() => {
+    const changed = event => setDirectory(event.detail?.outputDirectory || '');
+    window.addEventListener('imageSettingsUpdate', changed);
+    return () => window.removeEventListener('imageSettingsUpdate', changed);
+  }, []);
   return (
-    <GenerationProvider>
-      <AIPaintingPageContent userId={userId} accountSnapshot={accountSnapshot} active={active} workContext={workContext} onWorkContextChange={onWorkContextChange} renderModeTools={renderModeTools} desktopEditor={desktopEditor} androidLayout={androidLayout} sharedImage={sharedImage} onSharedImageHandled={onSharedImageHandled} />
+    <GenerationProvider key={JSON.stringify([userId, directory])} owner={userId} directory={directory}>
+      <AIPaintingPageContent releaseGuideActive={releaseGuideActive} suggestionPractice={suggestionPractice} promptExerciseTopic={promptExerciseTopic} promptExerciseActive={promptExerciseActive} onExitSuggestionPractice={onExitSuggestionPractice} onBack={onBack} backLabel={backLabel} tutorialTopic={tutorialTopic} offlinePractice={offlinePractice} userId={userId} accountSnapshot={accountSnapshot} active={active} workContext={workContext} onWorkContextChange={onWorkContextChange} renderModeTools={renderModeTools} desktopEditor={desktopEditor} androidLayout={androidLayout} sharedImage={sharedImage} onSharedImageHandled={onSharedImageHandled} />
     </GenerationProvider>
   );
 };

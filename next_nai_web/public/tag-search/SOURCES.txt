@@ -1,0 +1,9 @@
+词库来自词屿项目的 SQLite 导出，使用 effective_tags 生效译文和 taxonomy_topics / tag_topics 分类。
+词屿（分类、校对） https://github.com/YILING0013/ciyu
+基础 Danbooru 中英文词表 https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table
+两份许可见同目录 CIYU-LICENSE.txt、DATA-LICENSE.txt。
+
+重新生成时，从本仓库运行 npm run build:prompt-catalog -- <ciyu.sqlite>。
+构建需要 npm ci、wasm-pack 和 Rust 的 wasm32-unknown-unknown target。
+运行网站只需发布已提交的 public/tag-search 静态资源和对应前端构建。
+src/components/ai-painting/PromptEditor/promptSearchAssets.json 记录数据版本和当前资源文件名。

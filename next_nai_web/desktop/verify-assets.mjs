@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 const root=fileURLToPath(new URL('../',import.meta.url));
 const allowed=new Set(JSON.parse(await readFile(new URL('./public-assets.json',import.meta.url),'utf8')));
-const pages=new Set(['index','login','main','404'].flatMap(page=>[page+'.html',page+'.txt']).concat(['favicon.ico']));
+const pages=new Set(['index','login','main','404','tutorial-demo'].flatMap(page=>[page+'.html',page+'.txt']).concat(['favicon.ico']));
 async function walk(folder,callback,prefix=''){
  for(const entry of await readdir(join(folder,prefix),{withFileTypes:true})){
   const name=prefix+entry.name;
@@ -14,5 +14,5 @@ async function walk(folder,callback,prefix=''){
 await walk(join(root,'public'),name=>allowed.has(name));
 if (!process.argv.includes('--public-only')) {
  await walk(join(root,'out'),name=>allowed.has(name)||pages.has(name)||name.startsWith('_next/static/'));
- await walk(join(root,'dist'),name=>allowed.has(name)||name==='index.html'||name.startsWith('assets/'));
+ await walk(join(root,'dist'),name=>allowed.has(name)||name==='index.html'||name==='tutorial-demo.html'||name.startsWith('assets/'));
 }

@@ -1,6 +1,6 @@
 {
   "name": "next_nai_web",
-  "version": "2.0.4",
+  "version": "2.0.6",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
@@ -12,7 +12,8 @@
     "build:android": "node ../android/build.mjs",
     "build:bundle": "npm run build && npm run build:desktop && node desktop/verify-assets.mjs",
     "prepare:runtime": "node prepare-inference-runtime.mjs",
-    "desktop:build": "cd .. && tauri build --bundles nsis"
+    "desktop:build": "cd .. && tauri build --bundles nsis",
+    "build:prompt-catalog": "node scripts/build-prompt-catalog.mjs"
   },
   "dependencies": {
     "@capacitor/android": "8.6.0",
@@ -55,7 +56,9 @@
     "eslint-config-next": "15.5.28",
     "postcss": "^8.5.26",
     "tailwindcss": "^3.4.1",
-    "vite": "8.3.5"
+    "vite": "8.3.5",
+    "sql.js": "1.17.0",
+    "pinyin-pro": "3.29.5"
   },
   "overrides": {
     "js-yaml@4.0.0 - 4.3.0": "4.3.2",

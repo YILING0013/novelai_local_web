@@ -1,6 +1,7 @@
-/* eslint-disable @next/next/no-img-element */
+
 // ./NoteBook/NoteBook.js
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useContext, useState, useEffect, useMemo } from 'react';
+import EditorExerciseContext from '@/components/tutorials/EditorExerciseContext';
 import {
   Dialog,
   DialogTitle,
@@ -28,10 +29,11 @@ import {
   Checkbox,
   Chip,
   FormControlLabel,
+  Switch,
 } from '@mui/material';
 import {
-  UploadFile as UploadIcon,
-  Download as DownloadIcon,
+  CloudUpload as CloudUploadIcon,
+  CloudDownload as CloudDownloadIcon,
   Delete as DeleteIcon,
   Save as SaveIcon,
   Search as SearchIcon, // 新增
@@ -56,6 +58,7 @@ import NoteGroupSidebar from './NoteGroupSidebar';
 import { getGroupOptions } from './noteGroups.mjs';
 import notebookMessages from './notebookMessages';
 import { normalizeNoteCharacters } from './noteCharacters.mjs';
+import { MODEL_OPTIONS } from '../utils/generationOptions';
 
 // 列表项组件 (桌面端侧边预览，移动端点击展开)
 const NoteListItem = ({ note, onUse, onEdit, onView, onOpenMenu, isMobile, selecting, selected, onSelect, groupLabel }) => {
@@ -148,10 +151,10 @@ const NoteListItem = ({ note, onUse, onEdit, onView, onOpenMenu, isMobile, selec
             </Collapse>
           )}
           <CardActions sx={{ pt: 1, px: 0, justifyContent: 'flex-start' }}>
-            <Button size="small" variant="contained" onClick={() => onUse(note)} sx={{ mr: 1 }}>{t('painting.tools.notebook.use')}</Button>
-            <Tooltip title={t('painting.tools.notebook.viewDetails')}><IconButton aria-label={t('painting.tools.notebook.viewDetails')} size="small" onClick={() => onView(note)}><VisibilityIcon fontSize="small" /></IconButton></Tooltip>
+            <Button size="small" variant="contained" data-tour="noteUse" onClick={() => onUse(note)} sx={{ mr: 1 }}>{t('painting.tools.notebook.use')}</Button>
+            <Tooltip title={t('painting.tools.notebook.viewDetails')}><IconButton data-release-target={Array.isArray(note.character_tabs) && note.character_tabs.length ? 'note' : undefined} aria-label={t('painting.tools.notebook.viewDetails')} size="small" onClick={() => onView(note)}><VisibilityIcon fontSize="small" /></IconButton></Tooltip>
             <Tooltip title={t('painting.tools.common.edit')}><IconButton aria-label={t('painting.tools.common.edit')} size="small" onClick={() => onEdit(note)}><EditIcon fontSize="small" /></IconButton></Tooltip>
-            <Tooltip title={t('painting.tools.notebook.more')}><IconButton aria-label={t('painting.tools.notebook.more')} size="small" onClick={(e) => onOpenMenu(e, note)}><MoreVertIcon fontSize="small" /></IconButton></Tooltip>
+            <Tooltip title={t('painting.tools.notebook.more')}><IconButton aria-label={t('painting.tools.notebook.more')} size="small" data-tour="noteMenu" onClick={(e) => onOpenMenu(e, note)}><MoreVertIcon fontSize="small" /></IconButton></Tooltip>
           </CardActions>
         </Grid>
       </Grid>
@@ -165,8 +168,8 @@ const NoteListItem = ({ note, onUse, onEdit, onView, onOpenMenu, isMobile, selec
  * 批量回调接收标题数组，移动回调的第二个参数为分组 ID 或 null（未分组）。
  */
 const NoteBook = ({
-  open, onClose, notes = [], groups = [], isLoading, positivePrompt, negativePrompt,
-  currentCharacterTabs = [], onUseNote, onSaveNote, onDeleteNote, onUpdateNote,
+  open, onClose, releaseGuideActive = false, notes = [], groups = [], isLoading, positivePrompt, negativePrompt,
+  currentCharacterTabs = [], modelOptions = MODEL_OPTIONS, onUseNote, onSaveNote, onDeleteNote, onUpdateNote,
   onExportNotes, onImportNotes, onCreateGroup, onUpdateGroup,
   onDeleteGroup, onBatchMoveNotes, onBatchDeleteNotes,
 }) => {
@@ -174,6 +177,7 @@ const NoteBook = ({
   const { locale, t } = useI18n();
   const copy = notebookMessages[locale];
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const exercise = useContext(EditorExerciseContext);
   const [noteMenuAnchor, setNoteMenuAnchor] = useState(null);
   const [activeNoteForMenu, setActiveNoteForMenu] = useState(null);
   const [noteEditDialogOpen, setNoteEditDialogOpen] = useState(false);
@@ -189,6 +193,12 @@ const NoteBook = ({
   const [selectedTitles, setSelectedTitles] = useState(new Set());
   const [batchDialog, setBatchDialog] = useState(null);
   const [moveGroupId, setMoveGroupId] = useState('');
+  const [applyModel, setApplyModel] = useState(false);
+  const exerciseApplyModel = exercise?.applyModel;
+  useEffect(() => {
+    if (open) setApplyModel(exerciseApplyModel ?? (localStorage.getItem('notebookApplyModel') === 'true'));
+  }, [open, exerciseApplyModel]);
+  const handleUseSelectedNote = (note) => onUseNote(note, applyModel);
   const [batchBusy, setBatchBusy] = useState(false);
   const [batchError, setBatchError] = useState('');
   const groupOptions = useMemo(() => getGroupOptions(groups), [groups]);
@@ -198,7 +208,7 @@ const NoteBook = ({
   const canSaveCurrent = Boolean(positivePrompt || negativePrompt || currentCharacterTabs.length);
   const parsedNotes = useMemo(() => notes.map((note) => {
     try {
-      return { ...note, character_tabs: normalizeNoteCharacters(note.character_tabs) };
+      return { ...note, character_tabs: normalizeNoteCharacters(note.character_tabs ?? note.characterTabs, note.model) };
     } catch {
       // 损坏的历史 JSON 仍交给编辑器展示原文，列表不因一条笔记而无法打开。
       return note;
@@ -236,6 +246,20 @@ const NoteBook = ({
       : (a.title || '').localeCompare(b.title || '', locale));
   }, [groupOptions, locale, parsedNotes, searchTerm, selectedGroup, sortMode]);
 
+  // 没有可查看的角色笔记时，仅在引导期间补一张只读卡，不参与保存、选择或导出。
+  const showGuideExample = releaseGuideActive && !isLoading && !filteredNotes.some((note) => Array.isArray(note.character_tabs) && note.character_tabs.length);
+  const guideExample = showGuideExample ? {
+    guideExample: true, title: t('changelog.guide.exampleNote'), model: 'nai-diffusion-5-full', character_position_mode: 'custom',
+    text_content1: 'moonlit garden', character_tabs: [{ name: t('changelog.guide.character'), prompt: 'silver hair, holding a lantern',
+      uc: 'hat, glasses', center: { x: 0.317, y: 0.486 }, position: 'B3' }],
+  } : null;
+  useEffect(() => {
+    if (!releaseGuideActive && activeViewNote?.guideExample) {
+      setNoteViewDialogOpen(false);
+      setActiveViewNote(null);
+    }
+  }, [releaseGuideActive, activeViewNote]);
+
   const selectedCount = selectedTitles.size;
   const allResultsSelected = filteredNotes.length > 0 && filteredNotes.every((note) => selectedTitles.has(note.title));
 
@@ -264,6 +288,7 @@ const NoteBook = ({
     setSelectedGroup(groupId);
     setSelectedTitles(new Set());
     if (isMobile) setMobileGroupsOpen(false);
+    if (groupId && groups.some((group) => group.id === groupId)) exercise?.notify('filterNotes');
   };
   const openBatchDialog = (type, titles) => {
     setBatchDialog({ type, titles });
@@ -301,13 +326,14 @@ const NoteBook = ({
             <Typography variant="caption" color="text.secondary">{copy.capacity} {notes.length}</Typography>
           </Box>
           <Box sx={{ display: 'flex' }}>
-            <Tooltip title={t('painting.tools.notebook.import')}><IconButton aria-label={t('painting.tools.notebook.import')} onClick={onImportNotes}><DownloadIcon fontSize="small" /></IconButton></Tooltip>
-            <Tooltip title={t('painting.tools.notebook.export')}><IconButton aria-label={t('painting.tools.notebook.export')} onClick={onExportNotes}><UploadIcon fontSize="small" /></IconButton></Tooltip>
+            <Tooltip title={t('painting.tools.notebook.import')}><IconButton aria-label={t('painting.tools.notebook.import')} data-tour="importNotes" onClick={onImportNotes}><CloudDownloadIcon fontSize="small" /></IconButton></Tooltip>
+            <Tooltip title={t('painting.tools.notebook.export')}><IconButton aria-label={t('painting.tools.notebook.export')} data-tour="exportNotes" onClick={onExportNotes}><CloudUploadIcon fontSize="small" /></IconButton></Tooltip>
           </Box>
         </DialogTitle>
+        {exercise?.instructions && <Box sx={{ px: 2 }}>{exercise.instructions}</Box>}
         <DialogContent dividers sx={{ p: 0, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, overflow: 'hidden' }}>
           <Box sx={{ width: { xs: '100%', sm: 250 }, flexShrink: 0, borderRight: { sm: 1 }, borderBottom: { xs: 1, sm: 0 }, borderColor: 'divider', bgcolor: 'background.default', overflowY: 'auto' }}>
-            {isMobile && <Button fullWidth startIcon={<FolderIcon />} endIcon={<ExpandMoreIcon sx={{ transform: mobileGroupsOpen ? 'rotate(180deg)' : 'none' }} />} onClick={() => setMobileGroupsOpen((value) => !value)} aria-expanded={mobileGroupsOpen} aria-label={mobileGroupsOpen ? copy.hideGroups : copy.showGroups} sx={{ justifyContent: 'flex-start', px: 2, py: 1.25 }}><Box component="span" sx={{ flexGrow: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{groupTitle}</Box></Button>}
+            {isMobile && <Button fullWidth startIcon={<FolderIcon />} endIcon={<ExpandMoreIcon sx={{ transform: mobileGroupsOpen ? 'rotate(180deg)' : 'none' }} />} data-tour="mobileGroups" onClick={() => setMobileGroupsOpen((value) => !value)} aria-expanded={mobileGroupsOpen} aria-label={mobileGroupsOpen ? copy.hideGroups : copy.showGroups} sx={{ justifyContent: 'flex-start', px: 2, py: 1.25 }}><Box component="span" sx={{ flexGrow: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{groupTitle}</Box></Button>}
             <Collapse in={!isMobile || mobileGroupsOpen} timeout="auto" sx={{ maxHeight: isMobile ? 280 : 'none', overflowY: isMobile ? 'auto' : 'visible' }}>
               <NoteGroupSidebar notes={notes} options={groupOptions} selectedGroup={selectedGroup} onSelectGroup={handleSelectGroup} onCreateGroup={onCreateGroup} onUpdateGroup={onUpdateGroup} onDeleteGroup={onDeleteGroup} />
             </Collapse>
@@ -341,15 +367,18 @@ const NoteBook = ({
               </Box>
             </Box>}
             <Box sx={{ overflowY: 'auto', flexGrow: 1, minHeight: 0, p: { xs: 1.5, sm: 2.5 }, bgcolor: 'background.default' }}>
+              {guideExample && <Box sx={{ maxWidth: 360, mb: filteredNotes.length ? 2 : 0 }}>
+                <NoteCard note={guideExample} onView={handleViewNote} groupLabel={t('changelog.guide.title')} />
+              </Box>}
               {isLoading ? <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}><CircularProgress /></Box>
                 : filteredNotes.length ? viewMode === 'card' ? (
                   <Grid container spacing={2}>
                     {filteredNotes.map((note) => <Grid item xs={12} md={6} lg={4} key={note.title}>
-                      <NoteCard note={note} onUse={onUseNote} onEdit={handleEditNote} onView={handleViewNote} onOpenMenu={(event) => { setNoteMenuAnchor(event.currentTarget); setActiveNoteForMenu(note); }} selecting={selecting} selected={selectedTitles.has(note.title)} onSelect={handleSelectNote} groupLabel={groupNames.get(note.group_id) || copy.ungrouped} />
+                      <NoteCard note={note} onUse={handleUseSelectedNote} onEdit={handleEditNote} onView={handleViewNote} onOpenMenu={(event) => { setNoteMenuAnchor(event.currentTarget); setActiveNoteForMenu(note); }} selecting={selecting} selected={selectedTitles.has(note.title)} onSelect={handleSelectNote} groupLabel={groupNames.get(note.group_id) || copy.ungrouped} />
                     </Grid>)}
                   </Grid>
-                ) : filteredNotes.map((note) => <NoteListItem key={note.title} note={note} onUse={onUseNote} onEdit={handleEditNote} onView={handleViewNote} onOpenMenu={(event) => { setNoteMenuAnchor(event.currentTarget); setActiveNoteForMenu(note); }} isMobile={isMobile} selecting={selecting} selected={selectedTitles.has(note.title)} onSelect={handleSelectNote} groupLabel={groupNames.get(note.group_id) || copy.ungrouped} />)
-                  : <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 240, height: '100%', flexDirection: 'column', textAlign: 'center', px: 2, gap: 1 }}>
+                ) : filteredNotes.map((note) => <NoteListItem key={note.title} note={note} onUse={handleUseSelectedNote} onEdit={handleEditNote} onView={handleViewNote} onOpenMenu={(event) => { setNoteMenuAnchor(event.currentTarget); setActiveNoteForMenu(note); }} isMobile={isMobile} selecting={selecting} selected={selectedTitles.has(note.title)} onSelect={handleSelectNote} groupLabel={groupNames.get(note.group_id) || copy.ungrouped} />)
+                  : !guideExample && <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 240, height: '100%', flexDirection: 'column', textAlign: 'center', px: 2, gap: 1 }}>
                     <NotesIcon sx={{ fontSize: 42, color: 'text.disabled', mb: 1 }} />
                     <Typography variant="subtitle1">{searchTerm ? t('painting.tools.notebook.noMatches') : selectedGroup === null ? t('painting.tools.notebook.noNotes') : copy.noGroupNotes}</Typography>
                     {selectedGroup !== null && !searchTerm && <><Typography variant="body2" color="text.secondary">{copy.noGroupNotesHelp}</Typography><Button onClick={() => handleSelectGroup(null)}>{copy.viewAll}</Button></>}
@@ -358,13 +387,19 @@ const NoteBook = ({
             </Box>
           </Box>
         </DialogContent>
-        <DialogActions sx={{ px: { xs: 2, sm: 3 }, py: 1.5 }}>
-          <Button onClick={onClose}>{t('painting.tools.common.close')}</Button>
+        <DialogActions sx={{ px: { xs: 2, sm: 3 }, py: 1.5, flexWrap: 'wrap', rowGap: 1 }}>
+          <FormControlLabel sx={{ flex: { xs: '1 0 100%', sm: 1 }, ml: 0 }} label={<Typography variant="body2">{copy.applyModel}</Typography>}
+            control={<Switch size="small" data-tour={applyModel ? 'modelOn' : 'modelOff'} checked={applyModel} onChange={(event) => {
+              setApplyModel(event.target.checked);
+              if (exercise) exercise.update({ applyModel: event.target.checked });
+              else localStorage.setItem('notebookApplyModel', String(event.target.checked));
+            }} />} />
+          <Button data-release-target="closeNotebook" onClick={onClose}>{t('painting.tools.common.close')}</Button>
           <Button variant="contained" startIcon={<SaveIcon />} onClick={onSaveNote} disabled={!canSaveCurrent}>{t('painting.tools.notebook.saveCurrentPrompt')}</Button>
         </DialogActions>
       </Dialog>
       <Menu anchorEl={noteMenuAnchor} open={Boolean(noteMenuAnchor)} onClose={handleCloseNoteMenu}>
-        <MenuItem onClick={() => openBatchDialog('move', [activeNoteForMenu.title])}><MoveIcon fontSize="small" sx={{ mr: 1 }} />{copy.moveTo}</MenuItem>
+        <MenuItem data-tour="moveEntry" onClick={() => openBatchDialog('move', [activeNoteForMenu.title])}><MoveIcon fontSize="small" sx={{ mr: 1 }} />{copy.moveTo}</MenuItem>
         <MenuItem onClick={async () => { if (activeNoteForMenu) { await onDeleteNote(activeNoteForMenu); handleCloseNoteMenu(); } }} sx={{ color: 'error.main' }}><DeleteIcon fontSize="small" sx={{ mr: 1 }} />{t('painting.tools.common.delete')}</MenuItem>
       </Menu>
       <Dialog open={Boolean(batchDialog)} onClose={() => !batchBusy && setBatchDialog(null)} fullWidth maxWidth="xs">
@@ -372,18 +407,18 @@ const NoteBook = ({
         <DialogContent>
           {batchError && <Alert severity="error" sx={{ mb: 2 }}>{batchError}</Alert>}
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{batchDialog?.type === 'move' ? copy.moveHelp : copy.deleteNotesHelp}</Typography>
-          {batchDialog?.type === 'move' && <TextField select fullWidth label={copy.groups} value={moveGroupId} onChange={(event) => setMoveGroupId(event.target.value)} disabled={batchBusy} SelectProps={{ displayEmpty: true }} InputLabelProps={{ shrink: true }}>
+          {batchDialog?.type === 'move' && <TextField select fullWidth data-tour={!moveGroupId ? 'moveGroup' : undefined} label={copy.groups} value={moveGroupId} onChange={(event) => setMoveGroupId(event.target.value)} disabled={batchBusy} SelectProps={{ displayEmpty: true }} InputLabelProps={{ shrink: true }}>
             <MenuItem value="">{copy.ungrouped}</MenuItem>
             {groupOptions.map((group) => <MenuItem key={group.id} value={group.id}>{group.label}</MenuItem>)}
           </TextField>}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button disabled={batchBusy} onClick={() => setBatchDialog(null)}>{copy.cancel}</Button>
-          <Button disabled={batchBusy} variant="contained" color={batchDialog?.type === 'delete' ? 'error' : 'primary'} onClick={handleBatchSubmit}>{batchDialog?.type === 'move' ? copy.move : copy.delete}</Button>
+          <Button disabled={batchBusy} variant="contained" color={batchDialog?.type === 'delete' ? 'error' : 'primary'} data-tour="moveSave" onClick={handleBatchSubmit}>{batchDialog?.type === 'move' ? copy.move : copy.delete}</Button>
         </DialogActions>
       </Dialog>
-      <NoteEditDialog open={noteEditDialogOpen} onClose={() => setNoteEditDialogOpen(false)} note={activeEditNote} onSave={onUpdateNote} groups={groups} />
-      <NoteViewDialog open={noteViewDialogOpen} onClose={() => setNoteViewDialogOpen(false)} note={activeViewNote} onEdit={handleEditNote} onUse={onUseNote} />
+      <NoteEditDialog open={noteEditDialogOpen} onClose={() => setNoteEditDialogOpen(false)} note={activeEditNote} onSave={onUpdateNote} groups={groups} modelOptions={modelOptions} />
+      <NoteViewDialog open={noteViewDialogOpen} onClose={() => setNoteViewDialogOpen(false)} note={activeViewNote} onEdit={activeViewNote?.guideExample ? undefined : handleEditNote} onUse={activeViewNote?.guideExample ? undefined : handleUseSelectedNote} />
     </>
   );
 };

@@ -20,7 +20,7 @@ const BATCH_CATEGORY_KEYS = Object.freeze({
   unknown: 'painting.tools.batch.errors.categories.unknown',
 });
 
-const ErrorSummaryDialog = ({ open, onClose, onClear, errors = [] }) => {
+const ErrorSummaryDialog = ({ open, onClose, onClear, errors = [], demonstration = false, onExerciseAction, onReadJob }) => {
   const { t, formatDate } = useI18n();
   const [copyFailed, setCopyFailed] = React.useState(false);
 
@@ -46,7 +46,8 @@ const ErrorSummaryDialog = ({ open, onClose, onClear, errors = [] }) => {
 
   const copyText = async (value) => {
     try {
-      await copyTextToClipboard(value);
+      if (!demonstration) await copyTextToClipboard(value);
+      onExerciseAction?.('copyError');
       setCopyFailed(false);
     } catch {
       setCopyFailed(true);
@@ -74,8 +75,9 @@ const ErrorSummaryDialog = ({ open, onClose, onClear, errors = [] }) => {
               <Box key={`${error.occurredAt || error.timestamp}-${index}`} sx={{ p: 2, borderBottom: index < errors.length - 1 ? '1px solid' : 0, borderColor: 'divider' }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1 }}>
                   <Typography color="error.main" sx={{ fontWeight: 500 }}>{getErrorMessage(error)}</Typography>
+                  {onReadJob && <Button size="small" data-tour="recoverSample" onClick={() => onReadJob(error)}>{t('painting.workspace.actions.readJob')}</Button>}
                   <Tooltip title={t('painting.workspace.errorRecords.copyOne')}>
-                    <IconButton size="small" onClick={() => copyText(getErrorText(error))}><CopyIcon fontSize="small" /></IconButton>
+                    <IconButton size="small" data-tour="copyError" onClick={() => copyText(getErrorText(error))}><CopyIcon fontSize="small" /></IconButton>
                   </Tooltip>
                 </Box>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', overflowWrap: 'anywhere' }}>

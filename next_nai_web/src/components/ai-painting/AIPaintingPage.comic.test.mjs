@@ -44,6 +44,7 @@ function generationScenario({ count = 1, fail = false, saveError = null, cancel 
   let saved = 0;
   let busy = false;
   const context = {
+    tutorialPromptActive: false,
     imageToolBusyRef: { current: false }, comicTargetRef, comicFlightRef, comicAIFlightRef: { current: aiBusy },
     isGenerating: false, isMobile: false, mobileDrawerOpen: false,
     leftPanelMode: 'comic', generationParams: params,

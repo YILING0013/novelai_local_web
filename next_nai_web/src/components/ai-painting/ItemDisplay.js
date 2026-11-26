@@ -1,5 +1,7 @@
 // ItemDisplay.js
 "use client";
+import { getWorkspaceShortcut } from "./tools/ImageTools/workspaceShortcuts.mjs";
+import { transparencyBackgroundSx } from "./tools/ImageTools/previewImageExport";
 
 import React, { useState, useRef, useEffect, useCallback, useMemo, useContext } from 'react';
 import {
@@ -436,6 +438,8 @@ const ItemDisplay = ({
   showReferenceAction = false,
   disableReferenceAction = false,
   privacyMode = false,
+  previewSettings,
+  onExerciseAction,
   imageDrag = null,
   onImageTool = null,
   imageToolsDisabled = false,
@@ -459,7 +463,7 @@ const ItemDisplay = ({
   const imageWidth = item?.width || 512;
   const imageHeight = item?.height || 512;
   const imageRatio = measuredImage && measuredImage.src === item?.src ? measuredImage.ratio : imageWidth / imageHeight;
-  const directImageDrag = privacyMode ? null : imageDrag;
+  const directImageDrag = privacyMode || previewSettings?.displayImageDrag === false ? null : imageDrag;
 
   const [referenceImages, setReferenceImages] = useState([]);
   const [loadingReferenceImages, setLoadingReferenceImages] = useState(false);
@@ -588,6 +592,7 @@ const ItemDisplay = ({
 
   useEffect(() => {
     let active = true;
+    if (onExerciseAction) return;
     apiClient.getLocalSettings().then((settings) => {
       if (active) setInspirationSource(settings.inspirationSource || 'default');
     }).catch(() => {
@@ -736,15 +741,22 @@ const ItemDisplay = ({
     const activeElement = document.activeElement;
     // 检查焦点是否在输入框内，如果是，则不响应导航键
     const isInputFocused = activeElement && (activeElement.tagName.toLowerCase() === 'input' || activeElement.tagName.toLowerCase() === 'textarea' || activeElement.isContentEditable);
-    if (isInputFocused && ['ArrowLeft', 'ArrowRight', 'Delete'].includes(event.key)) return;
+    if (isInputFocused) return;
+    const key = getWorkspaceShortcut(event);
+    if (!key) return;
+    const action = {
+      [previewSettings.previousImageShortcut]: onPreviousItem,
+      [previewSettings.nextImageShortcut]: onNextItem,
+      [previewSettings.deleteImageShortcut]: event.repeat ? null : onDeleteItem,
+      [previewSettings.resetViewShortcut]: () => zoomRef.current?.resetTransform(),
+      [previewSettings.adjustImageShortcut]: onAdjustImage,
+    }[key];
+    if (action) { event.preventDefault(); action(); }
+  }, [item, adjustmentPreview, onPreviousItem, onNextItem, onDeleteItem, onAdjustImage, previewSettings]);
 
-    switch (event.key) {
-      case 'ArrowLeft': event.preventDefault(); onPreviousItem(); break;
-      case 'ArrowRight': event.preventDefault(); onNextItem(); break;
-      case 'Delete': event.preventDefault(); onDeleteItem(); break;
-      default: break;
-    }
-  }, [item, adjustmentPreview, onPreviousItem, onNextItem, onDeleteItem]);
+  useEffect(() => {
+    if (previewSettings?.centerNewGeneration) zoomRef.current?.resetTransform(0);
+  }, [item?.id, previewSettings?.centerNewGeneration]);
 
   useEffect(() => {
     // 仅在有选中项目时才添加键盘事件监听
@@ -833,12 +845,12 @@ const ItemDisplay = ({
               loop
               style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: '4px', boxShadow: theme.shadows[8] }}
             />
-            {privacyMode && <ImagePrivacyCover key={item.id} />}
+            {privacyMode && <ImagePrivacyCover mode={previewSettings?.privacyReveal} onReveal={() => onExerciseAction?.('revealImage')} key={item.id} />}
           </Box>
         ) : (
           // 渲染图片查看器
           <>
-                <Fade in={hoverToolbar} timeout={200}>
+                <Fade in={Boolean(onExerciseAction) || hoverToolbar} timeout={200}>
                   <Paper
                     elevation={0}
                     sx={{
@@ -853,9 +865,9 @@ const ItemDisplay = ({
                     }}
                   >
                     {!canvasLocked && <>
-                      <IconButton sx={toolbarButtonSx} aria-label={t('painting.workspace.gallery.zoomIn')} onClick={() => zoomRef.current?.zoomIn()}><ZoomInIcon fontSize="small" /></IconButton>
+                      <IconButton sx={toolbarButtonSx} aria-label={t('painting.workspace.gallery.zoomIn')} data-tour="zoomImage" onClick={() => { zoomRef.current?.zoomIn(); onExerciseAction?.('zoomImage'); }}><ZoomInIcon fontSize="small" /></IconButton>
                       <IconButton sx={toolbarButtonSx} aria-label={t('painting.workspace.gallery.zoomOut')} onClick={() => zoomRef.current?.zoomOut()}><ZoomOutIcon fontSize="small" /></IconButton>
-                      <IconButton sx={toolbarButtonSx} aria-label={t('painting.workspace.gallery.resetView')} onClick={() => zoomRef.current?.resetTransform()}><ResetIcon fontSize="small" /></IconButton>
+                      <IconButton sx={toolbarButtonSx} aria-label={t('painting.workspace.gallery.resetView')} data-tour="resetImage" onClick={() => { zoomRef.current?.resetTransform(); onExerciseAction?.('resetImage'); }}><ResetIcon fontSize="small" /></IconButton>
                     </>}
                     {!adjustmentPreview && <Tooltip title={t(canvasLocked ? 'painting.workspace.gallery.unlockCanvas' : 'painting.workspace.gallery.lockCanvas')}>
                       <IconButton sx={toolbarButtonSx} aria-label={t(canvasLocked ? 'painting.workspace.gallery.unlockCanvas' : 'painting.workspace.gallery.lockCanvas')}
@@ -876,7 +888,7 @@ const ItemDisplay = ({
                   justifyContent: 'space-between', gap: { xs: 0.5, md: 1 }, pointerEvents: 'none',
                 }}>
                   {(onAdjustImage || onImageTool) && (
-                    <Fade in={hoverToolbar || Boolean(adjustmentPreview)} timeout={200}>
+                    <Fade in={Boolean(onExerciseAction) || hoverToolbar || Boolean(adjustmentPreview)} timeout={200}>
                       <Paper elevation={0} sx={toolbarPaperSx}>
                         {onImageTool && <>
                         <Tooltip title={!upscaleCost
@@ -901,7 +913,7 @@ const ItemDisplay = ({
                         </Tooltip>
                         </>}
                         {onAdjustImage && <Tooltip title={t('painting.workspace.adjustment.title')} arrow placement="bottom">
-                          <IconButton aria-label={t('painting.workspace.adjustment.title')} aria-pressed={Boolean(adjustmentPreview)}
+                          <IconButton data-tour="openAdjustment" aria-label={t('painting.workspace.adjustment.title')} aria-pressed={Boolean(adjustmentPreview)}
                             size="small" sx={{ ...toolbarButtonSx, color: adjustmentPreview ? 'primary.main' : toolbarButtonSx.color }}
                             onClick={() => {
                               if (!adjustmentPreview) setCanvasLocked(false);
@@ -911,7 +923,7 @@ const ItemDisplay = ({
                       </Paper>
                     </Fade>
                   )}
-                  <Fade in={hoverToolbar} timeout={200}>
+                  <Fade in={Boolean(onExerciseAction) || hoverToolbar} timeout={200}>
                     <Paper elevation={0} sx={{ ...toolbarPaperSx, ml: 'auto' }}>
                     {toolbarButtons.map((button) => (
                       <Tooltip key={button.action} title={button.tooltip} arrow placement="bottom">
@@ -957,7 +969,7 @@ const ItemDisplay = ({
 
                 {generatedItemsCount > 1 && !adjustmentPreview && (
                   <>
-                    <Fade in={hoverImage} timeout={200}>
+                    <Fade in={Boolean(onExerciseAction) || hoverImage} timeout={200}>
                       <IconButton
                         onClick={onPreviousItem}
                         sx={{
@@ -975,9 +987,9 @@ const ItemDisplay = ({
                         <ChevronLeftIcon />
                       </IconButton>
                     </Fade>
-                    <Fade in={hoverImage} timeout={200}>
+                    <Fade in={Boolean(onExerciseAction) || hoverImage} timeout={200}>
                       <IconButton
-                        onClick={onNextItem}
+                        data-tour="nextImage" onClick={onNextItem}
                         sx={{
                           position: 'absolute',
                           right: 16,
@@ -998,12 +1010,12 @@ const ItemDisplay = ({
 
                 {/* 锁定时中断旧缩放动画，解锁时沿用已适应的画布。 */}
                 <TransformWrapper key={canvasViewVersion} ref={zoomRef} initialScale={1} minScale={0.5} maxScale={4}
-                  disabled={canvasLocked} centerOnInit centerZoomedOut={false} limitToBounds={false}
+                  onPanning={() => onExerciseAction?.('panImage')} onPinching={() => onExerciseAction?.('zoomImage')} disabled={canvasLocked} centerOnInit centerZoomedOut={false} limitToBounds={false}
                   panning={{ excluded: ['image-privacy-cover', 'image-adjustment-canvas'] }} pinch={{ excluded: ['image-privacy-cover', 'image-adjustment-canvas'] }}
                   doubleClick={{ disabled: true }} velocityAnimation={{ disabled: true }} alignmentAnimation={{ disabled: true }}>
                 <TransformComponent wrapperStyle={{ width: '100%', height: '100%' }} contentStyle={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', height: '100%' }}>
                   <Box
-                    sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', height: '100%', containerType: 'size' }}
+                    sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', height: '100%', containerType: 'size', ...transparencyBackgroundSx(previewSettings, theme) }}
                     onClick={(event) => {
                       if (event.detail && event.target.closest('[data-preview-image-drag]') && imageDrag?.wasHeld()) return;
                       // 触屏只由图片点击切换，避免浏览器补发的鼠标进入事件提前反转状态。
@@ -1054,7 +1066,7 @@ const ItemDisplay = ({
                           if (ratio !== imageWidth / imageHeight) setMeasuredImage({ src: item.src, ratio });
                         }} />
                       {adjustmentPreview}
-                      {privacyMode && <ImagePrivacyCover key={item.id} imageDrag={imageDrag} />}
+                      {privacyMode && <ImagePrivacyCover mode={previewSettings?.privacyReveal} onReveal={() => onExerciseAction?.('revealImage')} key={item.id} imageDrag={imageDrag} />}
                     </Box>
                   </Box>
                 </TransformComponent>
