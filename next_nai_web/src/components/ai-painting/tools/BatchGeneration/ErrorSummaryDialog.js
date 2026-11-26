@@ -77,7 +77,7 @@ const ErrorSummaryDialog = ({ open, onClose, onClear, errors = [], demonstration
                   <Typography color="error.main" sx={{ fontWeight: 500 }}>{getErrorMessage(error)}</Typography>
                   {onReadJob && <Button size="small" data-tour="recoverSample" onClick={() => onReadJob(error)}>{t('painting.workspace.actions.readJob')}</Button>}
                   <Tooltip title={t('painting.workspace.errorRecords.copyOne')}>
-                    <IconButton size="small" data-tour="copyError" onClick={() => copyText(getErrorText(error))}><CopyIcon fontSize="small" /></IconButton>
+                    <IconButton size="small" data-tour="copyError" aria-label={t('painting.workspace.errorRecords.copyErrorId')} onClick={() => copyText(getErrorText(error))}><CopyIcon fontSize="small" /></IconButton>
                   </Tooltip>
                 </Box>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', overflowWrap: 'anywhere' }}>

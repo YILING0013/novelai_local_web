@@ -191,7 +191,7 @@ const CharacterPositionEditorDialog = ({
         </Stack>
 
         <Box
-          data-tour="positionCanvas" ref={setCanvasHost}
+          ref={setCanvasHost}
           sx={{
             flex: 1,
             minHeight: { xs: 240, sm: 320 },
@@ -212,7 +212,7 @@ const CharacterPositionEditorDialog = ({
               component={gridMode ? 'div' : 'button'}
               type={gridMode ? undefined : 'button'}
               role={gridMode ? 'group' : undefined}
-              onClick={gridMode ? undefined : handleCanvasClick}
+              data-tour="positionCanvas" onClick={gridMode ? undefined : handleCanvasClick}
               aria-label={t('painting.workspace.parameters.positionCanvasLabel')}
               sx={{
                 position: 'relative',
