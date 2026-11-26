@@ -90,7 +90,7 @@ export default function WorkVersionBar({ context, onChange, getParameters, onCon
         <Stack spacing={2} sx={{ pt: 1 }}>
           {error && <Alert severity="error">{error}</Alert>}
           <Typography variant="body2" color="text.secondary">{t(draft?.context ? 'gallery.versionWorkspace.saveHint' : 'gallery.versionWorkspace.createHint')}</Typography>
-          {!draft?.context && <TextField autoFocus data-tour="workTitle" fullWidth label={t('gallery.versionWorkspace.title')} value={title}
+          {!draft?.context && <TextField autoFocus data-tour={!title.trim() ? 'workTitle' : undefined} fullWidth label={t('gallery.versionWorkspace.title')} value={title}
             onChange={(event) => setTitle(event.target.value)} inputProps={{ maxLength: 160 }} />}
           {draft?.context && <TextField fullWidth multiline minRows={2} label={t('gallery.versionWorkspace.message')} value={message}
             onChange={(event) => setMessage(event.target.value)} inputProps={{ maxLength: 2000 }} />}

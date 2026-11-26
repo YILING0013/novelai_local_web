@@ -227,6 +227,7 @@ const BasicParameters = ({
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
             {sizePresets.map((preset, index) => (
               <Chip
+                data-tour={preset.width > preset.height ? 'landscape' : undefined}
                 key={index}
                 label={t(preset.labelKey, { width: preset.width, height: preset.height })}
                 size="small"

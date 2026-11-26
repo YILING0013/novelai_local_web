@@ -65,6 +65,7 @@ export default function GenerationParameterBar({ params, maxSteps, isV5Medium, h
         {items.map(item => (
           <Tooltip key={item.key} title={`${item.title}: ${item.value}`} arrow>
             <ButtonBase
+              data-tour={item.key}
               onClick={event => setEditor({ key: item.key, anchor: event.currentTarget, open: true })}
               aria-label={`${item.title}: ${item.value}`}
               aria-haspopup="dialog"

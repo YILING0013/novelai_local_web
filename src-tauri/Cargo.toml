@@ -1,6 +1,6 @@
 [package]
 name = "novelai-local"
-version = "2.0.6"
+version = "2.0.7"
 description = "NovelAI local desktop application"
 edition = "2021"
 license-file = "../LICENSE"
