@@ -9,8 +9,8 @@ android {
         applicationId 'cc.idlecloud.nai.local'
         minSdk rootProject.ext.minSdkVersion
         targetSdk rootProject.ext.targetSdkVersion
-        versionCode 8
-        versionName '0.1.7'
+        versionCode 9
+        versionName '0.1.8'
         ndk { abiFilters 'arm64-v8a', 'x86_64' }
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
