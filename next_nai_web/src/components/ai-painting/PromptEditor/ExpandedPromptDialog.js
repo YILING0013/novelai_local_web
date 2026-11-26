@@ -1,5 +1,5 @@
 // ExpandedPromptDialog.js
-import React, { useContext, useState, useEffect, useRef, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { alpha } from '@mui/material/styles';
 import {
   Dialog,
@@ -31,7 +31,6 @@ import {
 import {
   commentText,
   uncommentText,
-  handlePromptCommentKey,
   extractActiveContent
 } from './promptUtils';
 
@@ -43,14 +42,10 @@ import PromptSuggestions from './PromptSuggestions';
 import PromptEditorSettings from './PromptEditorSettings';
 import usePromptEditorSettings from './usePromptEditorSettings';
 import usePromptWeightShortcuts from './usePromptWeightShortcuts';
-import usePromptFormatting from './usePromptFormatting';
-import { formatPromptForEditing } from './promptFormatting.mjs';
 import usePromptTranslationPreview, { PromptTranslationFeedback } from './usePromptTranslationPreview';
 // 引入随机提示词控件
 import RandomPromptConfig from '../RandomPromptConfig/RandomPromptConfig';
 import apiClient from '@/utils/ApiClient';
-import PublicDemoContext from '../PublicDemoContext';
-import EditorExerciseContext from '@/components/tutorials/EditorExerciseContext';
 import { forwardPaintingPanelError } from '../Generation/errorRecords.mjs';
 // 引入 NovelAI 图像模型对应的 Tokenizer
 import {
@@ -70,23 +65,16 @@ const ExpandedPromptDialog = ({
   model,
   relatedPromptTexts = [],
   includeCurrentInTokenTotal = true,
-  formatEnabled = true,
-  restrictedAccount = false,
   onError = null,
 }) => {
   const { t } = useI18n();
-  const publicDemo = useContext(PublicDemoContext);
-  const exercise = useContext(EditorExerciseContext);
-  const exercising = Boolean(exercise);
   const [text, setText] = useState(initialText || '');
   const [selection, setSelection] = useState({ start: 0, end: 0 });
   const textFieldRef = useRef(null);
   const previewRef = useRef(null);
   const syncScrollRef = useRef(null);
-  const editorSettings = usePromptEditorSettings();
-  const { expandedPreview, overlayPreview, suggestionsEnabled, setSetting } = editorSettings;
-  const suggestions = usePromptSuggestions({ value: text, onChange: (next) => setText(next), inputRef: textFieldRef,
-    enabled: open && suggestionsEnabled, settings: editorSettings });
+  const { expandedPreview, overlayPreview, suggestionsEnabled, defaultWeightMode, setSetting } = usePromptEditorSettings();
+  const suggestions = usePromptSuggestions({ value: text, onChange: setText, inputRef: textFieldRef, enabled: open && suggestionsEnabled });
   const theme = useTheme();
   const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
 
@@ -95,10 +83,7 @@ const ExpandedPromptDialog = ({
   const [isComposing, setIsComposing] = useState(false);
   const previewIsOverlay = showPreview && overlayPreview;
   const translationPreview = usePromptTranslationPreview({ text, previewRef, overlay: previewIsOverlay && !isComposing, enabled: open && !isComposing });
-  const autoFormat = formatEnabled && editorSettings.autoFormat && !isComposing;
-  const formatting = usePromptFormatting({ ...editorSettings, autoFormat }, text, setText, suggestions.updateFromInput);
-  const weightShortcuts = usePromptWeightShortcuts({ ...editorSettings, inputRef: textFieldRef, value: text, onChange: setText,
-    onAdjust: (action) => { translationPreview.close(); exercise?.notify(action); }, enabled: !isComposing });
+  const weightShortcuts = usePromptWeightShortcuts({ inputRef: textFieldRef, value: text, onChange: setText, defaultWeightMode, onAdjust: translationPreview.close, enabled: !isComposing });
 
   // 添加随机提示词配置状态
   const [randomPromptConfig, setRandomPromptConfig] = useState(null);
@@ -119,12 +104,6 @@ const ExpandedPromptDialog = ({
 
   // 对话框打开时只请求一次随机提示词配置，避免 Tokenizer 状态变化重复记录同一失败。
   useEffect(() => {
-    if (restrictedAccount) {
-      setRandomPromptConfig(null);
-      return;
-    }
-    if (publicDemo || exercising) return;
-
     const fetchRandomPromptConfig = async () => {
       try {
         const config = await apiClient.getRandomPromptConfig();
@@ -141,7 +120,7 @@ const ExpandedPromptDialog = ({
     if (open) {
       fetchRandomPromptConfig();
     }
-  }, [onError, open, restrictedAccount, publicDemo, exercising]);
+  }, [onError, open]);
 
   useEffect(() => {
     let cancelled = false;
@@ -254,7 +233,7 @@ const ExpandedPromptDialog = ({
 
   const handleApplyChanges = () => {
     if (typeof onTextChange === 'function') {
-      onTextChange(autoFormat && text !== (initialText || '') ? formatPromptForEditing(text, editorSettings) : text);
+      onTextChange(text);
     }
     onClose();
   };
@@ -270,7 +249,6 @@ const ExpandedPromptDialog = ({
 
     // 应用操作
     const result = operation(text, selectionStart, selectionEnd);
-    if (result.text !== text) exercise?.notify(operation === commentText ? 'commentButton' : 'uncommentButton');
 
     // 更新文本
     setText(result.text);
@@ -326,7 +304,6 @@ const ExpandedPromptDialog = ({
       PaperProps={{
         sx: {
           height: isDesktop ? '85vh' : '100dvh',
-          paddingBottom: 'var(--tutorial-editor-footer, 0px)',
           maxHeight: isDesktop ? '90vh' : '100vh',
           // 移动端时取消圆角和边距
           borderRadius: isDesktop ? undefined : 0,
@@ -372,11 +349,6 @@ const ExpandedPromptDialog = ({
           </Box>
         </Box>
       </DialogTitle>
-      {exercise && <Box sx={{ px: 2, flexShrink: 0 }}>
-        {exercise.coach && exercise.topic === 'comments' && <Typography variant="body2" color="text.secondary" sx={{ pb: 1, overflowWrap: 'anywhere' }}>
-          {t('tutorials.editorPractice.activePrompt', { prompt: extractActiveContent(text) })}
-        </Typography>}
-      </Box>}
 
       <Divider />
 
@@ -390,7 +362,6 @@ const ExpandedPromptDialog = ({
         {/* 工具栏 */}
         <Paper
           elevation={0}
-          data-release-target="editorToolbar"
           sx={{
             display: 'flex',
             flexWrap: 'wrap',
@@ -401,14 +372,12 @@ const ExpandedPromptDialog = ({
             backgroundColor: 'rgba(0, 0, 0, 0.03)'
           }}
         >
-          {/* 权重和注释按钮各自成组，引导可以分别指向它们；间距与工具栏一致。 */}
-          <Box data-release-target="weightButtons" sx={{ display: 'flex', gap: isDesktop ? 1 : 0.5 }}>
           <Tooltip title={t('painting.tools.promptEditor.weightUpTooltip')} arrow>
             <IconButton
               aria-label={t('painting.tools.promptEditor.weightUpTooltip')}
               size={isDesktop ? "small" : "medium"}
               onMouseDown={(event) => event.preventDefault()}
-              data-tour="weightButton" onClick={() => weightShortcuts.adjustWeight(1)}
+              onClick={() => weightShortcuts.adjustWeight(1)}
               color="primary"
               sx={{
                 // 移动端缩小图标
@@ -436,14 +405,12 @@ const ExpandedPromptDialog = ({
               <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', fontWeight: 700, fontSize: '1rem' }}>W<RemoveIcon sx={{ fontSize: '1rem' }} /></Box>
             </IconButton>
           </Tooltip>
-          </Box>
           <Divider orientation="vertical" flexItem />
-          <Box data-release-target="commentButtons" sx={{ display: 'flex', gap: isDesktop ? 1 : 0.5 }}>
           <Tooltip title={t('painting.tools.promptEditor.commentTooltip')} arrow>
             <IconButton
               aria-label={t('painting.tools.promptEditor.commentTooltip')}
               size={isDesktop ? "small" : "medium"}
-              data-tour="commentButton" onClick={() => handleFormatOperation(commentText)}
+              onClick={() => handleFormatOperation(commentText)}
               color="secondary"
               sx={{
                 '& .MuiSvgIcon-root': {
@@ -458,7 +425,7 @@ const ExpandedPromptDialog = ({
             <IconButton
               aria-label={t('painting.tools.promptEditor.uncommentTooltip')}
               size={isDesktop ? "small" : "medium"}
-              data-tour="uncommentButton" onClick={() => handleFormatOperation(uncommentText)}
+              onClick={() => handleFormatOperation(uncommentText)}
               color="secondary"
               sx={{
                 '& .MuiSvgIcon-root': {
@@ -469,12 +436,10 @@ const ExpandedPromptDialog = ({
               <FormatClearIcon />
             </IconButton>
           </Tooltip>
-          </Box>
           <Divider orientation="vertical" flexItem />
 
           {/* 随机提示词按钮 */}
-            {!exercise && !restrictedAccount && (
-            <Tooltip title={t('painting.tools.promptEditor.insertRandomPrompt')} arrow>
+          <Tooltip title={t('painting.tools.promptEditor.insertRandomPrompt')} arrow>
               <IconButton
                 aria-label={t('painting.tools.promptEditor.insertRandomPrompt')}
                 size={isDesktop ? "small" : "medium"}
@@ -488,8 +453,7 @@ const ExpandedPromptDialog = ({
               >
                 <CasinoIcon />
               </IconButton>
-            </Tooltip>
-          )}
+          </Tooltip>
 
         </Paper>
 
@@ -524,7 +488,7 @@ const ExpandedPromptDialog = ({
               <Box sx={{ position: 'relative', flex: 1, minHeight: 0 }}>
                 {previewIsOverlay && (
                   <Box sx={{ position: 'absolute', inset: 0, visibility: isComposing ? 'hidden' : 'visible' }}>
-                    <EnhancedPreview text={text} randomPromptConfig={exercise?.randomConfig ?? randomPromptConfig} scrollRef={previewRef} overlay
+                    <EnhancedPreview text={text} randomPromptConfig={randomPromptConfig} scrollRef={previewRef} overlay
                       tags={translationPreview.tags} translations={translationPreview.translations} underline={translationPreview.underline} activeTag={translationPreview.active} />
                   </Box>
                 )}
@@ -537,7 +501,6 @@ const ExpandedPromptDialog = ({
                   value={text}
                   aria-label={t('painting.tools.promptEditor.editing')}
                   spellCheck={false}
-                  aria-keyshortcuts={formatEnabled ? 'Control+/' : undefined}
                   onChange={handleTextChange}
                   onSelect={handleSelectText}
                   onScroll={(event) => {
@@ -547,25 +510,11 @@ const ExpandedPromptDialog = ({
                   }}
                   onPointerDown={(event) => { suggestions.inputProps.onPointerDown(event); translationPreview.inputProps.onPointerDown(event); }}
                   onKeyDown={(event) => {
-                    if (formatEnabled && !isComposing && handlePromptCommentKey(event, (result) => {
-                      const input = event.currentTarget;
-                      suggestions.close();
-                      translationPreview.close();
-                      setText(result.text);
-                      exercise?.notify(result.text.length > input.value.length ? 'commentKey' : 'uncommentKey');
-                      requestAnimationFrame(() => {
-                        if (textFieldRef.current === input && input.value === result.text && document.activeElement === input) {
-                          input.setSelectionRange(result.start, result.end);
-                        }
-                      });
-                    })) return;
                     if (weightShortcuts.onKeyDown(event)) return;
                     suggestions.inputProps.onKeyDown(event);
                     translationPreview.inputProps.onKeyDown(event);
                   }}
-                  onFocus={(event) => { suggestions.inputProps.onFocus(event); formatting.onFocus(event); }}
-                  onPaste={formatting.onPaste}
-                  onBlur={(event) => { suggestions.inputProps.onBlur(event); translationPreview.close(); formatting.onBlur(event); }}
+                  onBlur={(event) => { suggestions.inputProps.onBlur(event); translationPreview.close(); }}
                   onCompositionStart={(event) => {
                     setIsComposing(true);
                     translationPreview.inputProps.onCompositionStart(event);
@@ -595,7 +544,7 @@ const ExpandedPromptDialog = ({
             </Box>
           </Box>
           {showPreview && !previewIsOverlay && (
-            <Box data-release-target="editorPreview" sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minHeight: 28, mb: 0.5, flexShrink: 0 }}>
                 <Typography variant="caption" color="text.secondary">{t('painting.tools.promptEditor.preview.title')}</Typography>
                 <Tooltip title={t('painting.tools.promptEditor.translationHelp')} arrow>
@@ -604,7 +553,7 @@ const ExpandedPromptDialog = ({
               </Box>
               <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, border: '1px solid', borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
                 <Box sx={{ flex: 1, minHeight: 0, '& ::selection': { backgroundColor: selectionBackgroundColor, color: theme.palette.primary.contrastText } }}>
-                  <EnhancedPreview text={text} randomPromptConfig={exercise?.randomConfig ?? randomPromptConfig} scrollRef={previewRef}
+                  <EnhancedPreview text={text} randomPromptConfig={randomPromptConfig} scrollRef={previewRef}
                     onScroll={(event) => { syncScroll(event.currentTarget, textFieldRef.current); translationPreview.close(); }}
                     tags={translationPreview.tags} translations={translationPreview.translations}
                     underline={translationPreview.underline} previewProps={translationPreview.previewProps} activeTag={translationPreview.active} />
@@ -617,7 +566,7 @@ const ExpandedPromptDialog = ({
 
       <Divider />
 
-      <DialogActions data-release-target="editorApply" sx={{
+      <DialogActions sx={{
         // 移动端减少内边距
         p: isDesktop ? undefined : 1
       }}>
@@ -629,7 +578,7 @@ const ExpandedPromptDialog = ({
           {t('painting.tools.common.cancel')}
         </Button>
         <Button
-          data-tour="applyEditor" onClick={handleApplyChanges}
+          onClick={handleApplyChanges}
           color="primary"
           variant="contained"
           startIcon={<CheckIcon />}
@@ -641,14 +590,12 @@ const ExpandedPromptDialog = ({
       <PromptTranslationFeedback preview={translationPreview} />
 
       {/* 随机提示词对话框 */}
-      {!restrictedAccount && (
-        <RandomPromptConfig
-          open={randomPromptDialogOpen}
-          onClose={() => setRandomPromptDialogOpen(false)}
-          onInsert={handleInsertRandomPrompt}
-          onError={onError}
-        />
-      )}
+      <RandomPromptConfig
+        open={randomPromptDialogOpen}
+        onClose={() => setRandomPromptDialogOpen(false)}
+        onInsert={handleInsertRandomPrompt}
+        onError={onError}
+      />
 
       {/* 提示消息 */}
       <Snackbar

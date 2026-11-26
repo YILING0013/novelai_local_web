@@ -1,35 +1,17 @@
 'use client';
 
-import { useContext, useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 
-import EditorExerciseContext from '@/components/tutorials/EditorExerciseContext';
-import PublicDemoContext from '../PublicDemoContext';
-import { DEFAULT_PROMPT_SYNTAX } from './searchPromptTags.mjs';
-
-export const defaultPromptEditorSettings = Object.freeze({
-  inlinePreview: true,
-  expandedPreview: null,
-  overlayPreview: false,
-  suggestionsEnabled: true,
-  suggestionLayout: 'flow',
-  suggestionTextLayout: 'horizontal',
-  suggestionSyntax: DEFAULT_PROMPT_SYNTAX,
+const defaults = {
   defaultWeightMode: 'numeric',
   translationEnabled: true,
   translationTarget: 'auto',
   translationUnderline: true,
-  suggestionLimit: 40,
-  weightShortcutsEnabled: true,
-  keepWeightSelection: true,
-  weightStep: 0.1,
-  autoFormat: false,
-  normalizeCommas: true,
-  replaceUnderscores: false,
-  trailingComma: 'preserve',
-  // 生成页提示词区整块收起，只留标签栏，下次打开保持上次的状态。
-  promptCollapsed: false,
-});
-const defaults = defaultPromptEditorSettings;
+  inlinePreview: true,
+  expandedPreview: null,
+  overlayPreview: false,
+  suggestionsEnabled: true,
+};
 const storageKey = 'prompt-editor-settings';
 const listeners = new Set();
 let settings = defaults;
@@ -43,9 +25,8 @@ const getSnapshot = () => settings;
 const getServerSnapshot = () => defaults;
 
 /** 更新一个编辑选项并通知所有已打开的编辑器；浏览器禁止存储时仍在当前页面生效。 */
-const setSetting = (name, value) => updateSettings({ [name]: value });
-const updateSettings = (patch) => {
-  settings = { ...settings, ...patch };
+const setSetting = (name, enabled) => {
+  settings = { ...settings, [name]: enabled };
   try {
     window.localStorage.setItem(storageKey, JSON.stringify(settings));
   } catch {
@@ -59,9 +40,6 @@ const updateSettings = (patch) => {
  * @returns {object} 预览方式、联想开关及设置更新函数。
  */
 export default function usePromptEditorSettings() {
-  const exercise = useContext(EditorExerciseContext);
-  const publicDemo = useContext(PublicDemoContext);
-  const [demo, setDemo] = useState({});
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   useEffect(() => {
     if (hydrated) return;
@@ -75,9 +53,5 @@ export default function usePromptEditorSettings() {
     }
     listeners.forEach((listener) => listener());
   }, []);
-  if (exercise) return { ...defaults, expandedPreview: exercise.topic === 'preview', ...exercise.settings,
-    setSetting: (key, value) => exercise.updateSettings({ [key]: value }), updateSettings: exercise.updateSettings };
-  if (publicDemo) return { ...defaults, ...demo, translationEnabled: false,
-    setSetting: (key, value) => setDemo(old => ({ ...old, [key]: value })), updateSettings: patch => setDemo(old => ({ ...old, ...patch })) };
-  return { ...snapshot, setSetting, updateSettings };
+  return { ...snapshot, setSetting };
 }

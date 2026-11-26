@@ -341,7 +341,7 @@ const VibePanel = ({
         <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0, flexWrap: 'wrap', columnGap: 1, rowGap: 0.25 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
             <StyleIcon sx={{ mr: 1, fontSize: 18, color: 'text.secondary' }} />
-            <Typography sx={{ fontSize: '0.875rem', fontWeight: 600 }}>{t('painting.workspace.parameters.vibeTransfer')}</Typography>
+            <Typography sx={{ fontSize: 15, fontWeight: 500 }}>{t('painting.workspace.parameters.vibeTransfer')}</Typography>
           </Box>
           {vibeImages.length > 0 && <Tooltip title={blocked ? t(blockedMessageKey) : ''} describeChild arrow>
             <Typography component="span" variant="caption" sx={{ color: blocked ? 'warning.main' : enabledVibeCount > 0 ? 'primary.main' : 'text.secondary' }}>

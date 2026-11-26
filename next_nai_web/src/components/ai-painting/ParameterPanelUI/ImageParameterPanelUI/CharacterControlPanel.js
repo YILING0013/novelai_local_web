@@ -29,9 +29,6 @@ import {
   Info as InfoIcon,
   OpenInFull as OpenInFullIcon,
 } from '@mui/icons-material';
-import usePromptEditorSettings from '../../PromptEditor/usePromptEditorSettings';
-import usePromptSuggestions from '../../PromptEditor/usePromptSuggestions';
-import PromptSuggestions from '../../PromptEditor/PromptSuggestions';
 import TemporaryDisableButton from './TemporaryDisableButton';
 import CharacterPositionEditorDialog from './CharacterPositionEditorDialog';
 import {
@@ -65,11 +62,6 @@ const CharacterControlTab = ({
   const [activeTab, setActiveTab] = useState(0);
   const visibleTab = isV5Medium ? 0 : activeTab;
   const activeField = visibleTab === 0 ? 'prompt' : 'uc';
-  const inputRef = useRef(null);
-  const editorSettings = usePromptEditorSettings();
-  const changeText = (text) => onDataChange(index, { ...data, [activeField]: text });
-  const suggestions = usePromptSuggestions({ value: data[activeField] || '', onChange: changeText, inputRef,
-    settings: editorSettings, enabled: expanded && editorSettings.suggestionsEnabled });
   const activeFieldLabel = t(visibleTab === 0
     ? 'painting.workspace.parameters.characterDescription'
     : 'painting.workspace.parameters.avoidContent');
@@ -305,9 +297,6 @@ const CharacterControlTab = ({
           <TextField
             fullWidth
             multiline
-            inputRef={inputRef}
-            id={suggestions.inputProps.id}
-            slotProps={{ htmlInput: suggestions.inputProps }}
             minRows={2}
             maxRows={5}
             label={activeFieldLabel}
@@ -315,10 +304,7 @@ const CharacterControlTab = ({
               ? 'painting.workspace.parameters.characterDescriptionPlaceholder'
               : 'painting.workspace.parameters.avoidContentPlaceholder')}
             value={data[activeField] || ''}
-            onChange={(event) => {
-              changeText(event.target.value);
-              suggestions.updateFromInput(event.target, event.nativeEvent);
-            }}
+            onChange={(event) => onDataChange(index, { ...data, [activeField]: event.target.value })}
             size="small"
             sx={{
               mt: 0.75,
@@ -327,7 +313,6 @@ const CharacterControlTab = ({
               '& .MuiOutlinedInput-root': { px: 0.75 },
             }}
           />
-          <PromptSuggestions suggestions={suggestions} />
         </Box>
       )}
     </Paper>
@@ -370,7 +355,7 @@ const CharacterControlPanel = ({
         id={`${controlId}-toggle`}
         aria-expanded={Boolean(expandedPanels.character)}
         aria-controls={`${controlId}-content`}
-        data-tour="characterPanel" onClick={() => onExpandedPanelsChange('character', !expandedPanels.character)}
+        onClick={() => onExpandedPanelsChange('character', !expandedPanels.character)}
         color="inherit"
         size="small"
         sx={{ minWidth: 0, minHeight: 34, px: 0.5, gap: 0.5, textTransform: 'none', whiteSpace: 'nowrap' }}
@@ -401,7 +386,7 @@ const CharacterControlPanel = ({
             variant="outlined"
             size="small"
             startIcon={<AddIcon />}
-            data-tour="characterAdd" onClick={handleAddCharacterTab}
+            onClick={handleAddCharacterTab}
             disabled={!isV5Model && enabledCharacterCount >= 6}
             sx={{ flexShrink: 0, px: 0.75, textTransform: 'none', whiteSpace: 'nowrap', minHeight: 34, fontSize: 13 }}
           >
@@ -424,7 +409,7 @@ const CharacterControlPanel = ({
               <Typography component="span" noWrap sx={{ minWidth: 0, fontSize: 'inherit', fontWeight: 'inherit' }}>{t('painting.workspace.parameters.aiDecidesPosition')}</Typography>
             </ToggleButton>
             <ToggleButton
-              data-tour="customPosition" value="custom"
+              value="custom"
               onClick={() => setPositionEditorOpen(true)}
               sx={{ flex: 1, gap: 0.75, textTransform: 'none', whiteSpace: 'nowrap' }}
             >

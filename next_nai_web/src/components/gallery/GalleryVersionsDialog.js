@@ -17,8 +17,7 @@ const emptyBlueprint = { positions: {}, edge_notes: {}, hidden_node_ids: [], gro
  * @param {object} props 入口图片、初始作品，以及关闭和复用节点的回调。
  * @returns {React.ReactElement} 包含蓝图、节点详情和版本提交的全屏工作区。
  */
-export default function GalleryVersionsDialog({ open, onClose, imageIds = [], initialWorkId = null, onContinue, onApply, onStartWork, activeContext = null, onContextChange, imageEntry = null, practice }) {
-  const store = practice?.store ?? apiClient;
+export default function GalleryVersionsDialog({ open, onClose, imageIds = [], initialWorkId = null, onContinue, onApply, onStartWork, activeContext = null, onContextChange, imageEntry = null }) {
   const { t, locale } = useI18n();
   const zh = locale !== 'en-US';
   const [works, setWorks] = useState([]);
@@ -60,8 +59,8 @@ export default function GalleryVersionsDialog({ open, onClose, imageIds = [], in
     let active = true;
     setLoading(true); setError(''); setNotice(''); setCreating(false); setBlueprintFailed(false);
     setAttachImages(Boolean(candidateId)); setSelectedWorks([]); setWorkSearch('');
-    Promise.all([store.getWorks(), candidateId ? store.getImageVersions(candidateId) : Promise.resolve({ works: [] }),
-      candidateId ? store.getGalleryEntry(candidateId) : Promise.resolve(null),
+    Promise.all([apiClient.getWorks(), candidateId ? apiClient.getImageVersions(candidateId) : Promise.resolve({ works: [] }),
+      candidateId ? apiClient.getGalleryEntry(candidateId) : Promise.resolve(null),
     ]).then(([all, linked, entry]) => {
       if (!active) return;
       setWorks(all.works); setCandidate(entry);
@@ -73,13 +72,13 @@ export default function GalleryVersionsDialog({ open, onClose, imageIds = [], in
     }).catch((requestError) => { if (active) setError(requestError.data?.error || requestError.message); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [open, initialWorkId, candidateId, store]);
+  }, [open, initialWorkId, candidateId]);
 
   useEffect(() => {
     if (!open || !workId) return undefined;
     let active = true;
     setLoading(true); setError(''); setWork(null); setVersions([]);
-    store.getWork(workId).then((result) => {
+    apiClient.getWork(workId).then((result) => {
       if (!active) return;
       const ordered = [...result.versions].sort((a, b) => a.number - b.number);
       const latest = ordered.at(-1);
@@ -91,7 +90,7 @@ export default function GalleryVersionsDialog({ open, onClose, imageIds = [], in
     }).catch((requestError) => { if (active) setError(requestError.data?.error || requestError.message); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [open, workId, revision, store]);
+  }, [open, workId, revision]);
 
   const selected = versions.find((version) => version.id === selectedId);
   const compared = selected?.images.length ? versions.find((version) => version.id === compareId) : undefined;
@@ -107,7 +106,7 @@ export default function GalleryVersionsDialog({ open, onClose, imageIds = [], in
   };
   const saveBlueprint = async (next) => {
     setBlueprint(next); setBlueprintSaving(true); setBlueprintFailed(false); setError('');
-    try { await store.updateWorkBlueprint(workId, next); setSavedBlueprint(next); }
+    try { await apiClient.updateWorkBlueprint(workId, next); setSavedBlueprint(next); }
     catch (requestError) { setBlueprintFailed(true); setError(requestError.data?.error || requestError.message); }
     finally { setBlueprintSaving(false); }
   };
@@ -117,11 +116,11 @@ export default function GalleryVersionsDialog({ open, onClose, imageIds = [], in
     try {
       let result;
       if (restore) {
-        result = await store.createWorkVersion(workId, { parent_id: versions.at(-1).id, restore_version_id: selected.id, operation: 'restore', message: message.trim() || t('gallery.version.restoreMessage', { number: selected.number }) });
+        result = await apiClient.createWorkVersion(workId, { parent_id: versions.at(-1).id, restore_version_id: selected.id, operation: 'restore', message: message.trim() || t('gallery.version.restoreMessage', { number: selected.number }) });
       } else {
         const images = attachImages ? imageIds : [];
-        result = creating ? await store.createWork({ title: title.trim(), image_ids: images, ...(images.length ? { parameters: draft } : {}) })
-          : await store.createWorkVersion(workId, { parent_id: selectedId, parameters: draft, image_ids: images, message: message.trim(), operation: 'manual' });
+        result = creating ? await apiClient.createWork({ title: title.trim(), image_ids: images, ...(images.length ? { parameters: draft } : {}) })
+          : await apiClient.createWorkVersion(workId, { parent_id: selectedId, parameters: draft, image_ids: images, message: message.trim(), operation: 'manual' });
       }
       setCreating(false); setWorkId(result.work.id); setRevision((value) => value + 1); setAttachImages(false);
       setWorks((current) => [result.work, ...current.filter((item) => item.id !== result.work.id)]);
@@ -154,7 +153,7 @@ export default function GalleryVersionsDialog({ open, onClose, imageIds = [], in
       {renaming && <Stack direction="row" gap={1}><TextField size="small" label={t('gallery.version.workTitle')} value={title} inputProps={{ maxLength: 200 }} onChange={(event) => setTitle(event.target.value)} /><Button disabled={locked || !title.trim()} onClick={async () => {
         setBusy(true); setError('');
         try {
-          const result = await store.updateWork(workId, { title: title.trim() });
+          const result = await apiClient.updateWork(workId, { title: title.trim() });
           setWork(result.work); setWorks(works.map((item) => item.id === workId ? result.work : item)); setRenaming(false);
           if (activeContext?.work_id === workId) onContextChange({ ...activeContext, work_title: result.work.title });
         } catch (requestError) { setError(requestError.data?.error || requestError.message); } finally { setBusy(false); }
@@ -172,7 +171,7 @@ export default function GalleryVersionsDialog({ open, onClose, imageIds = [], in
             {!visibleWorks.length && <Typography color="text.secondary">{t('gallery.version.emptyWorks')}</Typography>}
             {visibleWorks.map((item) => <Box key={item.id} sx={{ display: 'flex', alignItems: 'center', border: 1, borderColor: selectedWorks.includes(item.id) ? 'primary.main' : 'divider', borderRadius: 2, bgcolor: selectedWorks.includes(item.id) ? 'action.selected' : 'background.paper' }}>
               <Checkbox checked={selectedWorks.includes(item.id)} inputProps={{ 'aria-label': (zh ? '选择作品 ' : 'Select work ') + item.title }} onChange={(_, checked) => setSelectedWorks(checked ? [...selectedWorks, item.id] : selectedWorks.filter((id) => id !== item.id))} />
-              <Button data-tour={item.version_count >= 2 ? 'sampleWork' : undefined} onClick={() => { setWorkId(item.id); if (item.version_count >= 2) practice?.notify('openSampleWork'); }} sx={{ flex: 1, minWidth: 0, minHeight: 110, gap: 1.5, textAlign: 'left', justifyContent: 'flex-start', textTransform: 'none' }}>{item.thumbnail_url && <Box component="img" src={item.thumbnail_url} alt="" sx={{ width: 75, height: 80, objectFit: 'contain', borderRadius: 1 }} />}<Box sx={{ minWidth: 0 }}><Typography sx={{ overflowWrap: 'anywhere' }}>{item.title}</Typography><Typography variant="caption" color="text.secondary">{item.version_count} {zh ? '个节点' : 'nodes'}</Typography>{activeContext?.work_id === item.id && <Chip size="small" color="success" label={zh ? '创作中' : 'Active'} sx={{ ml: 1 }} />}</Box></Button>
+              <Button onClick={() => setWorkId(item.id)} sx={{ flex: 1, minWidth: 0, minHeight: 110, gap: 1.5, textAlign: 'left', justifyContent: 'flex-start', textTransform: 'none' }}>{item.thumbnail_url && <Box component="img" src={item.thumbnail_url} alt="" sx={{ width: 75, height: 80, objectFit: 'contain', borderRadius: 1 }} />}<Box sx={{ minWidth: 0 }}><Typography sx={{ overflowWrap: 'anywhere' }}>{item.title}</Typography><Typography variant="caption" color="text.secondary">{item.version_count} {zh ? '个节点' : 'nodes'}</Typography>{activeContext?.work_id === item.id && <Chip size="small" color="success" label={zh ? '创作中' : 'Active'} sx={{ ml: 1 }} />}</Box></Button>
             </Box>)}
           </Box>
         </>}
@@ -183,18 +182,18 @@ export default function GalleryVersionsDialog({ open, onClose, imageIds = [], in
             <VersionBlueprintCanvas key={work.id} versions={versions} blueprint={blueprint} onBlueprintChange={saveBlueprint} selectedId={selectedId}
               activeVersionId={activeContext?.work_id === work.id ? activeContext.parent_version_id : null} onSelect={selectNodes}
               onContinue={(version) => onContinue(version, work)} onApply={(version) => onApply(version, work)} onEditMessage={(version) => setMessageDraft({ id: version.id, text: version.message })} disabled={locked || blueprintFailed} />
-            {selected && <Button size="small" sx={{ alignSelf: 'flex-end' }} data-tour="versionDetails" onClick={() => setDetailOpen(!detailOpen)}>{detailOpen ? (zh ? '收起详情' : 'Hide details') : (zh ? '节点详情' : 'Node details')}</Button>}
+            {selected && <Button size="small" sx={{ alignSelf: 'flex-end' }} onClick={() => setDetailOpen(!detailOpen)}>{detailOpen ? (zh ? '收起详情' : 'Hide details') : (zh ? '节点详情' : 'Node details')}</Button>}
           </Stack>
           {selected && detailOpen && <Stack spacing={1.5} sx={{ minWidth: 0, overflowY: { md: 'auto' }, pr: { md: 0.5 }, pb: 2 }}>
             <Box sx={{ p: 1.25, border: 1, borderColor: 'divider', borderRadius: 1.5 }}>
               <Stack direction="row" alignItems="center" gap={1}><Chip size="small" label={'v' + selected.number} /><Typography variant="body2" sx={{ flex: 1, overflowWrap: 'anywhere' }}>{selected.message || t('gallery.version.noMessage')}</Typography><IconButton size="small" aria-label={zh ? '编辑改动说明' : 'Edit change description'} disabled={locked} onClick={() => setMessageDraft({ id: selected.id, text: selected.message })}><EditOutlined fontSize="small" /></IconButton></Stack>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', my: 0.75 }}>{new Date(selected.created_at).toLocaleString(locale)}{selected.parent_id ? ' · ' + (zh ? '从 v' : 'From v') + versions.find((item) => item.id === selected.parent_id)?.number : ''}</Typography>
-              <Button fullWidth variant="contained" disabled={locked || blueprintFailed} data-tour="continueVersion" onClick={() => onContinue(selected, work)}>{zh ? '从此节点继续' : 'Continue from this node'}</Button>
+              <Button fullWidth variant="contained" disabled={locked || blueprintFailed} onClick={() => onContinue(selected, work)}>{zh ? '从此节点继续' : 'Continue from this node'}</Button>
               <Box sx={{ display: 'grid', gridTemplateColumns: compared ? 'repeat(2, minmax(0, 1fr))' : '1fr', gap: 0.75, mt: 1.25 }}>
                 {(compared ? [compared, selected] : [selected]).map((version) => <Box key={version.id} sx={{ minWidth: 0 }}><Typography variant="caption">v{version.number}</Typography>{version.images.length ? <Box sx={{ display: 'flex', overflowX: 'auto', gap: 0.5 }}>{version.images.map((image) => <Box key={image.id} component="a" href={image.url} target="_blank" rel="noopener noreferrer" aria-label={t('gallery.version.openOriginal', { number: version.number })} sx={{ display: 'block', flexShrink: 0, width: '100%' }}><Box component="img" src={image.thumbnail_url || image.url} alt={image.title || image.filename || t('gallery.untitled')} sx={{ height: 170, width: '100%', objectFit: 'contain', bgcolor: 'action.hover', borderRadius: 1 }} /></Box>)}</Box> : <Typography variant="caption" color="text.secondary">{t('gallery.version.promptOnly')}</Typography>}</Box>)}
               </Box>
             </Box>
-            {selected.images.length > 0 && <TextField select fullWidth size="small" label={t('gallery.version.compareWith')} data-tour="versionCompare" value={compareId} onChange={(event) => { setCompareId(event.target.value); if (event.target.value) practice?.notify('compareVersion'); }}><MenuItem value="">{t('gallery.version.noCompare')}</MenuItem>{versions.filter((item) => item.id !== selectedId).map((item) => <MenuItem key={item.id} value={item.id}>{'v' + item.number + (item.id === selected.parent_id ? (zh ? ' · 父节点' : ' · Parent') : '') + ' · ' + (item.message || t('gallery.version.noMessage'))}</MenuItem>)}</TextField>}
+            {selected.images.length > 0 && <TextField select fullWidth size="small" label={t('gallery.version.compareWith')} value={compareId} onChange={(event) => setCompareId(event.target.value)}><MenuItem value="">{t('gallery.version.noCompare')}</MenuItem>{versions.filter((item) => item.id !== selectedId).map((item) => <MenuItem key={item.id} value={item.id}>{'v' + item.number + (item.id === selected.parent_id ? (zh ? ' · 父节点' : ' · Parent') : '') + ' · ' + (item.message || t('gallery.version.noMessage'))}</MenuItem>)}</TextField>}
             <VersionSnapshotDetails key={selected.id + ':' + compareId} selected={selected} compared={compared} onApply={() => onApply(selected, work)} disabled={locked || blueprintFailed} />
             <Accordion disableGutters elevation={0} sx={{ border: 1, borderColor: 'divider', '&:before': { display: 'none' } }}>
               <AccordionSummary expandIcon={<ExpandMore />}>{t('gallery.version.commitFrom', { number: selected.number })}</AccordionSummary>
@@ -209,7 +208,7 @@ export default function GalleryVersionsDialog({ open, onClose, imageIds = [], in
       {error && <Alert severity="error">{error}</Alert>}<TextField autoFocus fullWidth multiline minRows={3} label={t('gallery.version.message')} value={messageDraft?.text || ''} inputProps={{ maxLength: 2000 }} onChange={(event) => setMessageDraft({ ...messageDraft, text: event.target.value })} />
     </DialogContent><DialogActions><Button disabled={locked} onClick={() => setMessageDraft(null)}>{t('gallery.cancel')}</Button><Button disabled={locked} onClick={async () => {
       setBusy(true); setError('');
-      try { const result = await store.updateWorkVersion(workId, messageDraft.id, { message: messageDraft.text }); setVersions(versions.map((item) => item.id === result.version.id ? result.version : item)); setMessageDraft(null); }
+      try { const result = await apiClient.updateWorkVersion(workId, messageDraft.id, { message: messageDraft.text }); setVersions(versions.map((item) => item.id === result.version.id ? result.version : item)); setMessageDraft(null); }
       catch (requestError) { setError(requestError.data?.error || requestError.message); } finally { setBusy(false); }
     }}>{t('gallery.saveDetails')}</Button></DialogActions></Dialog>
     <Dialog open={deleteOpen} onClose={() => !locked && setDeleteOpen(false)} maxWidth="sm" fullWidth><DialogTitle>{zh ? `删除 ${selectedWorks.length} 个作品？` : `Delete ${selectedWorks.length} works?`}</DialogTitle><DialogContent>
@@ -219,7 +218,7 @@ export default function GalleryVersionsDialog({ open, onClose, imageIds = [], in
     </DialogContent><DialogActions><Button disabled={locked} onClick={() => setDeleteOpen(false)}>{t('gallery.cancel')}</Button><Button color="error" variant="contained" disabled={locked} onClick={async () => {
       setBusy(true); setError('');
       try {
-        const result = await store.deleteWorks(selectedWorks);
+        const result = await apiClient.deleteWorks(selectedWorks);
         setWorks(works.filter((item) => !result.deleted_ids.includes(item.id))); setSelectedWorks([]); setDeleteOpen(false);
         if (result.deleted_ids.includes(activeContext?.work_id)) onContextChange(null);
         if (result.cleanup_failed) setError(zh ? '作品已删除，但部分历史快照文件未能清理。' : 'Works deleted, but some snapshot files could not be removed.');

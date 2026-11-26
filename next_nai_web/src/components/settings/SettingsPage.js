@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Autocomplete, Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, ButtonBase,
+  Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, ButtonBase,
   Chip, FormControlLabel, IconButton, InputAdornment, Paper, Radio, RadioGroup, Slider,
   Snackbar, Stack, Switch, Tab, Tabs, TextField, ToggleButton, ToggleButtonGroup,
   Typography, useMediaQuery, useTheme, alpha,
@@ -11,25 +11,17 @@ import {
   ArrowBack, Check, DarkModeOutlined, ExpandMore, FolderOpenOutlined, InfoOutlined, LightModeOutlined,
   PaletteOutlined, Refresh, SaveOutlined, SpeedOutlined, TuneOutlined,
 } from '@mui/icons-material';
-import { generateFileName, DEFAULT_FILE_NAME_TEMPLATE, FILE_NAME_TEMPLATE_TOKENS, DOWNLOAD_NAMING_METHODS } from '@/components/ai-painting/tools/ImageTools/ImageSaveUtils';
+import { generateFileName, DOWNLOAD_NAMING_METHODS } from '@/components/ai-painting/tools/ImageTools/ImageSaveUtils';
 import GallerySourceSelect from '@/components/gallery/GallerySourceSelect';
 import apiClient from '@/utils/ApiClient';
 import { useI18n } from '@/i18n/I18nProvider';
 import { PAGE_COLOR_DEFAULTS, getPageColorStorageKey } from '@/i18n/pageConfig.mjs';
 import { DEFAULT_THEME_SETTINGS, THEME_PRESETS } from '@/providers/themePresets.mjs';
 import { useAppTheme } from '@/providers/AppThemeProvider';
-import TagSuggestionSettings from './TagSuggestionSettings';
-import usePromptEditorSettings from '@/components/ai-painting/PromptEditor/usePromptEditorSettings';
-import { invalidPromptSyntaxSymbols } from '@/components/ai-painting/PromptEditor/promptTagCompletion.mjs';
-import { readImagePreviewSettings, writeImagePreviewSettings, transparencyBackgrounds } from '@/components/ai-painting/tools/ImageTools/previewImageExport';
-import { defaultWorkspaceShortcuts, formatWorkspaceShortcut, getWorkspaceShortcut } from '@/components/ai-painting/tools/ImageTools/workspaceShortcuts.mjs';
 import MobileSettingsList from './MobileSettingsList';
 
 const sections = [
-  { id: 'interface', icon: <TuneOutlined /> },
-  { id: 'shortcuts', icon: <TuneOutlined /> },
   { id: 'appearance', icon: <PaletteOutlined /> },
-  { id: 'prompt', icon: <TuneOutlined /> },
   { id: 'gallery', icon: <FolderOpenOutlined /> },
 ];
 
@@ -75,14 +67,6 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
   const mobile = useMediaQuery(theme.breakpoints.down('sm'));
   const { savedSettings, previewTheme, reloadFromStorage } = useAppTheme();
   const [section, setSection] = useState(mobileLayout ? null : desktopPreferences ? 'desktop' : 'appearance');
-  const promptSettings = usePromptEditorSettings();
-  const [interfaceDraft, setInterfaceDraft] = useState({});
-  const [shortcutError, setShortcutError] = useState('');
-  const interfaceSettings = { ...readImagePreviewSettings(), ...interfaceDraft };
-  const interfaceSwitches = ['displayImageDrag','historyImageDrag','historyFollowSelection','centerNewGeneration','showAdjustmentEntry','showGalleryEntry'];
-  const [promptDraft, setPromptDraft] = useState(null);
-  const editedPrompt = { ...promptSettings, ...promptDraft };
-  const invalidSymbols = invalidPromptSyntaxSymbols(editedPrompt.suggestionSyntax);
   const [themeDraft, setThemeDraft] = useState(null);
   const themeSettings = themeDraft || savedSettings;
   const { mode, primaryColors, backgroundColors, animationEnabled, animationSpeed } = themeSettings;
@@ -95,8 +79,6 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
     outputDirectory: '',
     inspirationSource: 'default',
     fileNamePrefix: localStorage.getItem('fileNamePrefix') || 'AI_Image',
-    keepImageHistory: localStorage.getItem('keepImageHistory') === 'true',
-    fileNameTemplate: localStorage.getItem('fileNameTemplate') || DEFAULT_FILE_NAME_TEMPLATE,
     namingMethod: localStorage.getItem('namingMethod') || 'seed',
   }));
   const [savedImages, setSavedImages] = useState(imageSettings);
@@ -117,7 +99,7 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
       // 后端保存值是跨浏览器的持久配置；旧浏览器缓存只补没有保存过的字段。
       for (const [key, value] of Object.entries(settings)) {
         if (desktopPreferences && key === 'themeMode' && localStorage.getItem(key)) continue;
-        if (key.startsWith('theme') || ['animationEnabled', 'animationSpeed', 'fileNamePrefix', 'namingMethod', 'fileNameTemplate', 'keepImageHistory'].includes(key)) {
+        if (key.startsWith('theme') || ['animationEnabled', 'animationSpeed', 'fileNamePrefix', 'namingMethod'].includes(key)) {
           localStorage.setItem(key, String(value));
         }
       }
@@ -151,7 +133,7 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
     ...Object.values(backgroundColors).flatMap(Object.values),
     ...Object.values(pageColors),
   ].every(isValidColor);
-  const dirty = Object.keys(interfaceDraft).length > 0 || Boolean(promptDraft) || JSON.stringify(themeSettings) !== JSON.stringify(savedSettings)
+  const dirty = JSON.stringify(themeSettings) !== JSON.stringify(savedSettings)
     || JSON.stringify(imageSettings) !== JSON.stringify(savedImages)
     || JSON.stringify(pageColors) !== JSON.stringify(savedPageColors);
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
@@ -220,10 +202,6 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
       window.dispatchEvent(new CustomEvent('themeUpdate', { detail: { ...themeSettings, pageColors } }));
       window.dispatchEvent(new CustomEvent('imageSettingsUpdate', { detail: downloadSettings }));
       window.dispatchEvent(new CustomEvent('novelai:gallery-source', { detail: imageSettings.inspirationSource }));
-      if (Object.keys(interfaceDraft).length) writeImagePreviewSettings(interfaceDraft);
-      setInterfaceDraft({});
-      if (promptDraft) promptSettings.updateSettings(promptDraft);
-      setPromptDraft(null);
       setThemeDraft(null);
       setSavedImages(imageSettings);
       setSavedPageColors(pageColors);
@@ -238,31 +216,15 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
   const resetSettings = () => {
     setThemeDraft(DEFAULT_THEME_SETTINGS);
     setPageColors(Object.fromEntries(pages.map((page) => [page.id, PAGE_COLOR_DEFAULTS[page.id] || page.color])));
-    setImageSettings({ ...imageSettings, fileNamePrefix: 'AI_Image', namingMethod: 'seed', fileNameTemplate: DEFAULT_FILE_NAME_TEMPLATE });
+    setImageSettings({ ...imageSettings, fileNamePrefix: 'AI_Image', namingMethod: 'seed' });
     setSnackbar({ severity: 'info', message: t('settings.resetMessage') });
   };
-
-  const searchOptions = [
-    ...interfaceSwitches.map(key => ({ section: 'interface', label: t('settings.interface.' + key) })),
-    ...Object.keys(defaultWorkspaceShortcuts).map(key => ({ section: 'shortcuts', label: t('settings.shortcuts.' + key) })),
-    ...['settings.colorSchemes', 'settings.primaryColor', 'settings.customizeScheme', 'settings.interfaceAnimation'].map(key => ({ section: 'appearance', label: t(key) })),
-    ...['suggestionsEnabled','suggestionLimit','suggestionLayout','suggestionSyntax','weightStep','autoFormat','trailingComma'].map(key => ({ section: 'prompt', label: t('settings.prompt.' + key) })),
-    ...['librarySettings.outputDirectory', 'settings.downloadPreset', 'settings.customPrefix', 'settings.naming.custom'].map(key => ({ section: 'gallery', label: t(key) })),
-  ];
-  const search = <Autocomplete size="small" options={searchOptions} value={null} getOptionLabel={option => option.label}
-    onChange={(_, option) => { if (option) { setSection(option.section); onSectionChange?.(option.section); } }}
-    renderInput={params => <TextField {...params} label={locale === 'zh-CN' ? '搜索设置' : 'Search settings'} />} />;
 
   const fileNamePreview = generateFileName({
     seed: '1234567890', prompt: 'Golden Hour Portrait of a girl in a city garden', id: 'preview',
   }, imageSettings);
 
-  return <Paper elevation={0} onKeyDown={event => {
-    if ((event.ctrlKey || event.metaKey) && event.code === "KeyS") {
-      event.preventDefault();
-      if (dirty && loaded && !saving && colorsValid && !invalidSymbols.length) void saveSettings();
-    }
-  }} sx={{
+  return <Paper elevation={0} sx={{
     height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column',
     borderRadius: 0, overflow: 'hidden', bgcolor: 'background.default',
   }}>
@@ -276,7 +238,6 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
       {mobileLayout && !section && <Box sx={{ flex: 1, overflowY: 'auto', p: { xs: 2, sm: 4 } }}>
         <Box sx={{ maxWidth: 680, mx: 'auto' }}>
           <Typography color="text.secondary" sx={{ mb: 3 }}>{t('settings.localSettings')}</Typography>
-          <Box sx={{ mb: 2 }}>{search}</Box>
           <MobileSettingsList label={t('settings.navigation')} items={[
             ...sections.map((item) => ({ ...item, label: t(`settings.sections.${item.id}.title`), description: t(`settings.sections.${item.id}.description`) })),
             { id: 'about', icon: <InfoOutlined />, label: aboutTitle, description: ['NovelAI Local', appVersion].filter(Boolean).join(' · ') },
@@ -293,7 +254,6 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
           <Typography variant="h6">{t('settings.title')}</Typography>
           <Typography variant="caption" color="text.secondary">{t('settings.localSettings')}</Typography>
         </Box>
-        <Box sx={{ px: 1.5, mb: 1 }}>{search}</Box>
         <Tabs value={section} onChange={(_, value) => setSection(value)}
           orientation={mobile ? 'horizontal' : 'vertical'} variant="scrollable" scrollButtons="auto"
           aria-label={t('settings.navigation')}
@@ -337,44 +297,6 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
             <Typography variant="body2" color="text.secondary">{t(`settings.sections.${section}.description`)}</Typography>
           </Box>
 
-          {section === 'interface' && <Stack spacing={1.5}>
-            {interfaceSwitches.map(key => <FormControlLabel key={key} label={t('settings.interface.' + key)}
-              control={<Switch checked={interfaceSettings[key]} onChange={(_, value) => setInterfaceDraft(old => ({ ...old, [key]: value }))} />} />)}
-            {Object.entries({ historyImageFit: ['contain', 'cover'], transparencyBackground: transparencyBackgrounds }).map(([key, values]) =>
-              <TextField key={key} select label={t('settings.interface.' + key)} value={interfaceSettings[key]} slotProps={{ select: { native: true } }}
-                onChange={event => setInterfaceDraft(old => ({ ...old, [key]: event.target.value }))}>
-                {values.map(value => <option key={value} value={value}>{t('settings.interface.' + (key === 'historyImageFit' ? 'fitOptions.' : 'backgrounds.') + value)}</option>)}
-              </TextField>)}
-            {interfaceSettings.transparencyBackground === 'custom' && <ColorField label={t('settings.interface.customColor')}
-              value={interfaceSettings.transparencyCustomColor} onChange={value => setInterfaceDraft(old => ({ ...old, transparencyCustomColor: value }))} />}
-          </Stack>}
-          {section === 'shortcuts' && <Stack spacing={1.5}>
-            {Object.keys(defaultWorkspaceShortcuts).map(key => <TextField key={key} size="small" label={t('settings.shortcuts.' + key)}
-              value={formatWorkspaceShortcut(interfaceSettings[key])} slotProps={{ htmlInput: { readOnly: true } }}
-              onKeyDown={event => {
-                if (['Escape','Tab'].includes(event.code) || ((event.ctrlKey || event.metaKey) && event.code === 'KeyS')) return;
-                event.preventDefault();
-                const shortcut = getWorkspaceShortcut(event);
-                if (!shortcut) return;
-                const duplicate = Object.keys(defaultWorkspaceShortcuts).find(other => other !== key && interfaceSettings[other] === shortcut);
-                if (duplicate) { setShortcutError(t('settings.shortcuts.' + duplicate)); return; }
-                setShortcutError('');
-                setInterfaceDraft(old => ({ ...old, [key]: shortcut }));
-              }} />)}
-            {shortcutError && <Alert severity="warning">{(locale === 'zh-CN' ? '此快捷键已用于 ' : 'Shortcut already used for ') + shortcutError}</Alert>}
-            <Button onClick={() => { setInterfaceDraft(old => ({ ...old, ...defaultWorkspaceShortcuts })); setShortcutError(''); }}>{t('settings.shortcuts.restore')}</Button>
-          </Stack>}
-          {section === 'prompt' && <><TagSuggestionSettings settings={editedPrompt} saved={promptSettings} invalidSymbols={invalidSymbols}
-            onChange={(key, value) => setPromptDraft(current => ({ ...current, [key]: value }))} />
-            {['weightShortcutsEnabled', 'keepWeightSelection', 'autoFormat','normalizeCommas','replaceUnderscores'].map(key =>
-              <FormControlLabel key={key} label={t('settings.prompt.' + key)} control={<Switch checked={editedPrompt[key]}
-                onChange={(_, value) => setPromptDraft(previous => ({ ...previous, [key]: value }))} />} />)}
-            {Object.entries({ weightStep: [0.05, 0.1, 0.2, 0.25, 0.5], defaultWeightMode: ['numeric', 'brackets'], trailingComma: ['preserve','append','remove'] }).map(([key, values]) =>
-              <TextField key={key} select fullWidth size="small" sx={{ my: 1 }} label={t('settings.prompt.' + key)}
-                value={editedPrompt[key]} slotProps={{ select: { native: true } }}
-                onChange={event => setPromptDraft(previous => ({ ...previous, [key]: key === 'weightStep' ? Number(event.target.value) : event.target.value }))}>
-                {values.map(value => <option key={value} value={value}>{typeof value === 'number' ? value : t((key === 'defaultWeightMode' ? 'painting.tools.promptEditor.weightModes.' : 'settings.prompt.trailingOptions.') + value)}</option>)}
-              </TextField>)}</>}
           {section === 'appearance' && <Stack spacing={2.5}>
             <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1} flexWrap="wrap">
               <Box>
@@ -475,7 +397,6 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
 
           {section === 'gallery' && <Stack spacing={2.5}>
             <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
-              <FormControlLabel label={locale === 'zh-CN' ? '下次启动保留生成历史' : 'Keep generated images between sessions'} control={<Switch checked={imageSettings.keepImageHistory} onChange={(_, checked) => setImageSettings({ ...imageSettings, keepImageHistory: checked })} />} />
               {!fixedOutputDirectory && <TextField fullWidth size="small" label={t('librarySettings.outputDirectory')}
                 value={imageSettings.outputDirectory}
                 onChange={(event) => setImageSettings({ ...imageSettings, outputDirectory: event.target.value })}
@@ -506,10 +427,6 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
                 {DOWNLOAD_NAMING_METHODS.map((method) => <FormControlLabel key={method.value} value={method.value}
                   control={<Radio size="small" />} label={t(`settings.naming.${method.value}`)} />)}
               </RadioGroup>
-              {imageSettings.namingMethod === 'custom' && <TextField fullWidth size="small" sx={{ my: 1 }}
-                label={locale === 'zh-CN' ? '文件名模板' : 'Filename template'} value={imageSettings.fileNameTemplate}
-                helperText={FILE_NAME_TEMPLATE_TOKENS.map(token => '{' + token + '}').join('  ')}
-                onChange={event => setImageSettings({ ...imageSettings, fileNameTemplate: event.target.value })} />}
               <Box sx={{ p: 1.5, borderRadius: 1, bgcolor: 'background.default', border: 1, borderColor: 'divider' }}>
                 <Typography variant="caption" color="text.secondary">{t('settings.filenamePreview')}</Typography>
                 <Typography variant="body2" sx={{ mt: 0.5, fontFamily: 'monospace', overflowWrap: 'anywhere' }}>{fileNamePreview}</Typography>
@@ -531,10 +448,10 @@ export default function SettingsPage({ pages = [], active = true, sectionRequest
         sx={{ display: { xs: 'none', sm: 'inline-flex' }, borderColor: 'divider', color: dirty ? 'primary.main' : 'text.secondary' }} />
       <Stack direction="row" gap={1} sx={{ ml: 'auto' }}>
         {dirty && <Button disabled={saving} onClick={() => {
-          setPromptDraft(null); setThemeDraft(null); setPageColors(savedPageColors); setImageSettings(savedImages);
+          setThemeDraft(null); setPageColors(savedPageColors); setImageSettings(savedImages);
         }}>{t('settings.discard')}</Button>}
         <Button startIcon={<Refresh />} disabled={!loaded || saving} onClick={resetSettings} color="inherit">{t('settings.reset')}</Button>
-        <Button variant="contained" startIcon={<SaveOutlined />} disabled={!loaded || saving || !dirty || !colorsValid || Boolean(invalidSymbols.length)} onClick={saveSettings}>{t('settings.save')}</Button>
+        <Button variant="contained" startIcon={<SaveOutlined />} disabled={!loaded || saving || !dirty || !colorsValid} onClick={saveSettings}>{t('settings.save')}</Button>
       </Stack>
     </Box>}
     <Snackbar open={Boolean(snackbar)} autoHideDuration={4000} onClose={() => setSnackbar(null)}

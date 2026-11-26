@@ -1,9 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { applyAutomaticWatermark } from '../ImageProcessing/quickImageAdjustments';
 import useImageGeneration from './useImageGeneration';
-import { Alert, Snackbar } from '@mui/material';
-import { useI18n } from '@/i18n/I18nProvider';
-import { restoreImageHistory, writeImageHistory } from './localImageHistory';
 import { revokeObjectUrl } from '@/utils/mediaAssets';
 
 const GenerationContext = createContext();
@@ -18,7 +15,7 @@ const revokeGeneratedItemUrls = (item) => {
   ].filter(Boolean)).forEach(revokeObjectUrl);
 };
 
-export const GenerationProvider = ({ children, demoImages = null, owner, directory = '' }) => {
+export const GenerationProvider = ({ children }) => {
   const {
     isGenerating,
     generationStatus,
@@ -28,30 +25,9 @@ export const GenerationProvider = ({ children, demoImages = null, owner, directo
     startBatchGeneration,
     cancelBatchGeneration,
   } = useImageGeneration(applyAutomaticWatermark);
-  const [generatedItems, setGeneratedItems] = useState(demoImages ?? []);
-  const [currentItem, setCurrentItem] = useState(demoImages?.[0] ?? null);
+  const [generatedItems, setGeneratedItems] = useState([]);
+  const [currentItem, setCurrentItem] = useState(null);
   const generatedItemsRef = useRef([]);
-  const writes = useRef(Promise.resolve());
-  const removed = useRef(new Set());
-  const [historyError, setHistoryError] = useState(false);
-  const { locale } = useI18n();
-  useEffect(() => {
-    if (!owner) return;
-    let active = true;
-    restoreImageHistory(owner, directory).then(items => {
-      if (!active) { items.forEach(revokeGeneratedItemUrls); return; }
-      const restored = items.filter(item => !removed.current.has(item.id));
-      setGeneratedItems(previous => [...restored.filter(row => !previous.some(item => item.id === row.id)), ...previous]);
-      const selection = sessionStorage.getItem('nai-local-selected-image');
-      setCurrentItem(previous => previous || restored.find(item => item.id === selection) || restored.at(-1) || null);
-    }).catch(() => { if (active) setHistoryError(true); });
-    return () => { active = false; };
-  }, [owner, directory]);
-  const persist = useCallback((item, remove = false) => {
-    if (!owner || item.type !== 'image') return;
-    writes.current = writes.current.then(() => writeImageHistory(owner, directory, item, remove))
-      .catch(() => setHistoryError(true));
-  }, [owner, directory]);
 
   useEffect(() => {
     generatedItemsRef.current = generatedItems;
@@ -70,9 +46,8 @@ export const GenerationProvider = ({ children, demoImages = null, owner, directo
     };
     setGeneratedItems((previous) => [...previous, normalizedItem]);
     setCurrentItem(normalizedItem);
-    persist(normalizedItem);
     return normalizedItem;
-  }, [persist]);
+  }, []);
 
   const updateGeneratedItem = useCallback((itemId, updates) => {
     if (!itemId || !updates) return;
@@ -110,25 +85,18 @@ export const GenerationProvider = ({ children, demoImages = null, owner, directo
 
   const selectItem = useCallback((itemId) => {
     const selected = generatedItems.find((item) => item.id === itemId);
-    if (selected) {
-      setCurrentItem(selected);
-      if (owner) sessionStorage.setItem("nai-local-selected-image", itemId);
-    }
-  }, [generatedItems, owner]);
+    if (selected) setCurrentItem(selected);
+  }, [generatedItems]);
 
   const deleteItem = useCallback((itemId) => {
-    const itemToDelete = generatedItemsRef.current.find(item => item.id === itemId);
-    if (itemToDelete) {
-      removed.current.add(itemId);
-      persist(itemToDelete, true);
-    }
     setGeneratedItems((previous) => {
+      const itemToDelete = previous.find((item) => item.id === itemId);
       const remaining = previous.filter((item) => item.id !== itemId);
       revokeGeneratedItemUrls(itemToDelete);
       if (currentItem?.id === itemId) setCurrentItem(remaining.at(-1) || null);
       return remaining;
     });
-  }, [currentItem, persist]);
+  }, [currentItem]);
 
   const contextValue = {
     isGenerating,
@@ -150,9 +118,6 @@ export const GenerationProvider = ({ children, demoImages = null, owner, directo
   return (
     <GenerationContext.Provider value={contextValue}>
       {children}
-      <Snackbar open={historyError} onClose={() => setHistoryError(false)}>
-        <Alert severity="warning" onClose={() => setHistoryError(false)}>{locale === 'zh-CN' ? '无法读写本机生成历史。' : 'Could not read or write local image history.'}</Alert>
-      </Snackbar>
     </GenerationContext.Provider>
   );
 };

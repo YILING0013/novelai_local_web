@@ -3,7 +3,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Tab, Tabs, Tooltip, Typography, alpha, useMediaQuery, useTheme } from '@mui/material';
-import { AccountCircle, Brightness4, Brightness7, Brush, ChevronLeft, CollectionsOutlined, AutoAwesome, Logout, PersonOutline, PhotoFilter, SchoolOutlined, Settings, ZoomInMap } from '@mui/icons-material';
+import { AccountCircle, Brightness4, Brightness7, Brush, ChevronLeft, CollectionsOutlined, AutoAwesome, Logout, PersonOutline, PhotoFilter, Settings, ZoomInMap } from '@mui/icons-material';
 import { PanelLeft } from 'lucide-react';
 import { open as pick } from '@tauri-apps/plugin-dialog';
 import DesktopTitleBar from '@/desktop/DesktopTitleBar';
@@ -19,14 +19,12 @@ const Painting=lazy(()=>import('@/components/ai-painting/AIPaintingPage'));
 const Gallery=lazy(()=>import('@/components/gallery/GalleryWorkspace'));
 const Editor=lazy(()=>import('@/components/ai-painting/ImageProcessing/ImageProcessingWorkspace'));
 const Inference=lazy(()=>import('@/components/local-inference/LocalInferencePage'));
-const Tutorials=lazy(()=>import('@/components/tutorials/TutorialsPage'));
 const Preferences=lazy(()=>import('@/components/settings/SettingsPage'));
 const Account=lazy(()=>import('@/components/account/AccountDialog'));
 const pages=[
   [ID.AI_PAINTING,'pages.aiPainting',Brush],[ID.GALLERY,'pages.gallery',CollectionsOutlined],
   [ID.IMAGE_PROCESSING,'painting.workspace.tabs.imageProcessing',PhotoFilter],
   [ID.IMAGE_TAGGING,'pages.imageTagging',AutoAwesome],[ID.LOCAL_UPSCALING,'pages.localUpscaling',ZoomInMap],
-  [ID.TUTORIALS,'pages.tutorials',SchoolOutlined],
   [ID.SETTINGS,'pages.settings',Settings]];
 export default function Workspace({ local, onLogin, android = false, appVersion, TitleBar = DesktopTitleBar,
   sharedImage, onSharedImageHandled, sharedImageRequest, onSharedImageRequestHandled }) {
@@ -121,7 +119,6 @@ export default function Workspace({ local, onLogin, android = false, appVersion,
     finally { setLoggingOut(false); }
   };
   function render(id){
-    if (id === ID.TUTORIALS) return <Tutorials active={active === id} />;
     const on=active===id;
     if(id===ID.AI_PAINTING)return <Painting active={on} androidLayout={android}
       userId={account?.information?.email||''} accountSnapshot={account} workContext={work} onWorkContextChange={setWork} renderModeTools={modes} desktopEditor={bridge}

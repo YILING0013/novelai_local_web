@@ -227,7 +227,7 @@ const ImageReferenceControl = ({ isV5, images, setImages, disabled = false, expa
       >
         <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
           <PhotoCameraIcon sx={{ mr: 1, fontSize: 18, color: 'text.secondary' }} />
-          <Typography sx={{ fontSize: '0.875rem', fontWeight: 600 }}>
+          <Typography sx={{ fontSize: 15, fontWeight: 500 }}>
             {t('painting.workspace.parameters.characterReferences', { count: images.length, max: 12 })}
           </Typography>
           <Tooltip title={disabled

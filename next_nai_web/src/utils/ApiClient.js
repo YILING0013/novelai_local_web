@@ -322,7 +322,7 @@ class ApiClient {
   /** 仅删除动态收藏规则，不删除图片。 */
   async deleteGalleryCollection(id) { return this.request(`/local/gallery/collections/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
 
-  async saveTexts(title, positivePrompt, negativePrompt, imageUrl, characterTabs, groupId = null, model, characterPositionMode) {
+  async saveTexts(title, positivePrompt, negativePrompt, imageUrl, characterTabs, groupId = null) {
     return this.request('/local/notes', {
       method: 'POST',
       body: {
@@ -333,14 +333,12 @@ class ApiClient {
           image_url: imageUrl || '',
           character_tabs: characterTabs || [],
           group_id: groupId,
-          model,
-          character_position_mode: characterPositionMode,
         },
       },
     });
   }
 
-  async updateText(originalTitle, title, positivePrompt, negativePrompt, imageUrl, characterTabs, groupId = null, model, characterPositionMode) {
+  async updateText(originalTitle, title, positivePrompt, negativePrompt, imageUrl, characterTabs, groupId = null) {
     return this.request('/local/notes', {
       method: 'PUT',
       body: {
@@ -352,8 +350,6 @@ class ApiClient {
           image_url: imageUrl || '',
           character_tabs: characterTabs || [],
           group_id: groupId,
-          model,
-          character_position_mode: characterPositionMode,
         },
       },
     });

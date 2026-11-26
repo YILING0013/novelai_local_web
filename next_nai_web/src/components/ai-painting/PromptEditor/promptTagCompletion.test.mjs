@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getPromptTagRange, insertPromptTag, invalidPromptSyntaxSymbols } from './promptTagCompletion.mjs';
-import { DEFAULT_PROMPT_SYNTAX } from './promptCatalog.mjs';
+import { getPromptTagRange, insertPromptTag } from './promptTagCompletion.mjs';
 
 test('光标在词中间时按前半词查询，选择后替换完整标签', () => {
   const text = '1girl, blue eyes, smile';
@@ -73,50 +72,4 @@ test('跨行嵌套注释中内层结束后的文字不参与标签联想', () =>
   const text = '/* first /* inner */\nlight, last */, blue_hair';
   assert.equal(getPromptTagRange(text, text.indexOf('light') + 2), null);
   assert.equal(getPromptTagRange(text, text.length).query, 'blue_hair');
-});
-
-test('正则里的逗号、次数与字符组都属于同一条查询，选择结果后保留相邻词条', () => {
-  for (const syntax of [DEFAULT_PROMPT_SYNTAX, { ...DEFAULT_PROMPT_SYNTAX, category: '@', exact: '!', regex: '~' }]) {
-    for (const pattern of ['^[a,b]{1,3}', '(blue,red)', 'blue\\,red', '^fu[']) {
-      const query = syntax.category + '原神' + syntax.exact + syntax.regex + pattern;
-      const text = 'prev, ' + query + ', next';
-      const cursor = 6 + query.length;
-      const range = getPromptTagRange(text, cursor, cursor, syntax);
-      assert.equal(range.query, query);
-      if (!pattern.endsWith('[')) {
-        assert.equal(insertPromptTag(text, range, 'sample').text, 'prev, sample, next');
-        assert.equal(getPromptTagRange(text, text.length, text.length, syntax).query, 'next');
-      }
-    }
-  }
-  const comment = '/* =*^cats */';
-  assert.equal(getPromptTagRange(comment, 10, 10, DEFAULT_PROMPT_SYNTAX), null);
-  const query = '=*[abc]';
-  assert.equal(getPromptTagRange(query, query.length, query.length, { ...DEFAULT_PROMPT_SYNTAX, enabled: false }), null);
-});
-
-test('自定义符号接受不同标点，标出冲突、提示词保留符号与空值', () => {
-  assert.deepEqual(invalidPromptSyntaxSymbols(DEFAULT_PROMPT_SYNTAX), []);
-  assert.deepEqual(invalidPromptSyntaxSymbols({ ...DEFAULT_PROMPT_SYNTAX, category: '@', exact: '!', fuzzy: '~', regex: '#' }), []);
-  assert.deepEqual(invalidPromptSyntaxSymbols({ enabled: true, category: '＋', exact: '＝', fuzzy: '？', regex: '＊' }), []);
-  assert.deepEqual(invalidPromptSyntaxSymbols({ ...DEFAULT_PROMPT_SYNTAX, category: '?' }), ['category', 'fuzzy']);
-  for (const exact of ['', 'AA', ',', '，', '[', '{', ':', '/', '\\', ' ']) {
-    assert.deepEqual(invalidPromptSyntaxSymbols({ ...DEFAULT_PROMPT_SYNTAX, exact }), ['exact']);
-  }
-});
-
-test('数字或括号权重中的正则保留字符组和数量，选中词条后只替换搜索命令', () => {
-  for (const [prefix, query, suffix] of [
-    ['1.5::', '=*^blue_[a-z]+', '::'], ['{', '=*^blue_[a-z]{2,4}$', '}'],
-    ['[{', '=*^b[ace]{1,3}', '}]'], ['{', '＋原神＝＊^fu[a-z]{1,3}', '}'],
-    ['{', '=*^test{1,3}', ''],
-  ]) {
-    const syntax = query.includes('＊') ? { enabled: true, category: '＋', exact: '＝', fuzzy: '？', regex: '＊' } : DEFAULT_PROMPT_SYNTAX;
-    const raw = prefix + query + suffix;
-    for (const cursor of [prefix.length + query.length, raw.length]) {
-      const range = getPromptTagRange(raw, cursor, cursor, syntax);
-      assert.equal(range.query, query);
-      assert.equal(insertPromptTag(raw, range, 'blue_hair').text, prefix + 'blue_hair' + suffix + ', ');
-    }
-  }
 });

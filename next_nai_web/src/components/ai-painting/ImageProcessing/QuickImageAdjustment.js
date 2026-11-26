@@ -52,10 +52,10 @@ function Section({ title, children }) {
   </section>;
 }
 
-function NumberControl({ label, value, min, max, step = 1, onCommit, guideTarget }) {
+function NumberControl({ label, value, min, max, step = 1, onCommit }) {
   const [input, setInput] = useState(null);
   return <label className={ui.numberRow}><span>{label}</span>
-    <input data-tour={guideTarget} className={ui.readout} type="number" aria-label={label} min={min} max={max} step={step} value={input ?? Number(value.toFixed(2))}
+    <input className={ui.readout} type="number" aria-label={label} min={min} max={max} step={step} value={input ?? Number(value.toFixed(2))}
       onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => {
         if (event.key === 'Enter') event.currentTarget.blur();
       }} onBlur={() => {
@@ -103,7 +103,7 @@ function ColorControl({ label, value, onChange }) {
  * @param {object} props 当前图像、参数区挂载点、快捷预设和保存回调。
  * @returns {React.ReactElement} 支持马赛克画笔和水印摆放的预览及调整面板。
  */
-export default function QuickImageAdjustment({ item, panel, privacyMode, presets, onPresetsChange, onClose, onApply, onExerciseAction }) {
+export default function QuickImageAdjustment({ item, panel, privacyMode, presets, onPresetsChange, onClose, onApply }) {
   const { t } = useI18n();
   const text = (key) => t(`painting.workspace.adjustment.${key}`);
   const canvasRef = useRef(null);
@@ -159,10 +159,7 @@ export default function QuickImageAdjustment({ item, panel, privacyMode, presets
     const current = draftRef.current;
     change({ ...current, settings: { ...current.settings, ...patch } }, save);
   };
-  const setAdjustment = (patch, save = true) => {
-    setSetting({ adjustments: { ...draftRef.current.settings.adjustments, ...patch } }, save);
-    onExerciseAction?.('changeAdjustment');
-  };
+  const setAdjustment = (patch, save = true) => setSetting({ adjustments: { ...draftRef.current.settings.adjustments, ...patch } }, save);
   const updateWatermark = (id, patch, save = true) => {
     setSetting({ watermarks: draftRef.current.settings.watermarks.map((layer) => layer.id === id ? { ...layer, ...patch } : layer) }, save);
   };
@@ -280,7 +277,7 @@ export default function QuickImageAdjustment({ item, panel, privacyMode, presets
   };
   const changeAdjustment = (key, ramp) => {
     const Control = ramp ? ControlSlider : NumberControl;
-    return <Control key={key} guideTarget={key === 'brightness' ? 'adjustReadout' : undefined} ramp={ramp} label={text(key)} value={settings.adjustments[key]} min={ADJUSTMENT_RANGES[key][0]}
+    return <Control key={key} ramp={ramp} label={text(key)} value={settings.adjustments[key]} min={ADJUSTMENT_RANGES[key][0]}
       max={ADJUSTMENT_RANGES[key][1]} step={key === 'exposure' ? 0.05 : 1}
       onPreview={(value) => setAdjustment({ [key]: value }, false)} onCommit={(value) => setAdjustment({ [key]: value })} />;
   };
@@ -334,10 +331,10 @@ export default function QuickImageAdjustment({ item, panel, privacyMode, presets
     <header className={ui.header}>
       <Tune fontSize="small" color="primary" />
       <Typography className={ui.heading} variant="subtitle2">{text('title')}</Typography>
-      <Tooltip title={text('compare')}><span><IconButton size="small" data-tour="compareAdjustment" aria-label={text('compare')} disabled={!source}
-        onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); setCompare(true); onExerciseAction?.('compareAdjustment'); }}
+      <Tooltip title={text('compare')}><span><IconButton size="small" aria-label={text('compare')} disabled={!source}
+        onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); setCompare(true); }}
         onPointerUp={() => setCompare(false)} onLostPointerCapture={() => setCompare(false)} onPointerCancel={() => setCompare(false)}
-        onKeyDown={(event) => { if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); setCompare(true); onExerciseAction?.('compareAdjustment'); } }}
+        onKeyDown={(event) => { if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); setCompare(true); } }}
         onKeyUp={() => setCompare(false)} onBlur={() => setCompare(false)}><Compare fontSize="small" /></IconButton></span></Tooltip>
       <Tooltip title={text('undo')}><span><IconButton size="small" aria-label={text('undo')} disabled={!history.past.length || busy}
         onClick={() => navigateHistory(true)}><Undo fontSize="small" /></IconButton></span></Tooltip>
@@ -646,7 +643,7 @@ export default function QuickImageAdjustment({ item, panel, privacyMode, presets
     </div>
     <footer className={ui.footer}>
       <Button size="small" variant="outlined" disabled={settings === defaultImageAdjustments || busy} onClick={() => setPresetName('')}>{text('savePreset')}</Button>
-      <Button size="small" variant="contained" data-tour="applyAdjustment" disabled={!source || !changed || busy} onClick={async () => {
+      <Button size="small" variant="contained" disabled={!source || !changed || busy} onClick={async () => {
         const snapshot = draftRef.current;
         setBusy(true);
         setNotice('');

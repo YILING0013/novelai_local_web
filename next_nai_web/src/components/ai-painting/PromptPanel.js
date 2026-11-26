@@ -6,7 +6,6 @@ import {
   Box,
   Tabs,
   Tab,
-  TextField,
   Typography,
   IconButton,
   Tooltip,
@@ -14,21 +13,18 @@ import {
   Button,
   Snackbar,
   Alert,
-  Collapse,
 } from '@mui/material';
 import {
-  ExpandMore as ExpandMoreIcon,
   ContentCopy as CopyIcon,
   Delete as ClearIcon,
   Book as BookIcon,
   Save as SaveIcon,
-  Translate as TranslateIcon,
-  ArrowForward as ArrowForwardIcon,
   OpenInFull as OpenInFullIcon,
   Casino as CasinoIcon,
   InfoOutlined as InfoIcon,
 } from '@mui/icons-material';
 import apiClient from '../../utils/ApiClient';
+import { copyTextToClipboard } from '@/utils/browserCapabilities.mjs';
 import { useI18n } from '@/i18n/I18nProvider';
 
 // 导入提示词编辑器组件
@@ -49,20 +45,16 @@ import RandomPromptConfig from './RandomPromptConfig/RandomPromptConfig';
 import { forwardPaintingPanelError } from './Generation/errorRecords.mjs';
 import { getEnabledNovelAICharacterPromptTexts } from './PromptEditor/novelAIImageTokenizer.mjs';
 import { getPublicToolErrorMessageKey } from '@/utils/publicToolErrors.mjs';
-import { copyTextToClipboard } from '@/utils/browserCapabilities.mjs';
-import { downloadNotesExport } from './noteExport.mjs';
+import usePromptSuggestions from './PromptEditor/usePromptSuggestions';
+import PromptSuggestions from './PromptEditor/PromptSuggestions';
 import InlinePromptInput from './PromptEditor/InlinePromptInput';
 import PromptEditorSettings from './PromptEditor/PromptEditorSettings';
 import usePromptEditorSettings from './PromptEditor/usePromptEditorSettings';
-import useSuggestionPractice from '@/components/tutorials/useSuggestionPractice';
-import EditorExerciseContext from '@/components/tutorials/EditorExerciseContext';
-import useEditorExercise, { NOTEBOOK_EXAMPLE_CHARACTERS, NOTEBOOK_EXAMPLE_MODEL } from '@/components/tutorials/useEditorExercise';
 import { NOVELAI_V5_MEDIUM_MODEL_ID } from './utils/novelAIV5Params.mjs';
+import { downloadNotesExport } from './noteExport.mjs';
 
 const promptInputFrameSx = {
   position: 'relative',
-  // 让底色层只垫在本输入区下面，不会被外层面板背景盖住。
-  isolation: 'isolate',
   display: 'grid',
   gridTemplateColumns: 'minmax(0, 1fr) auto',
   '--prompt-outline': (theme) => theme.palette.divider,
@@ -90,11 +82,12 @@ const promptActionsSx = {
  * @param {object} props 输入框、角色入口、按钮，以及外部使用的容器引用。
  * @returns {React.ReactElement} 带阶梯轮廓的提示词编辑区。
  */
-function PromptEditorFrame({ children, containerRef, guideTarget }) {
+function PromptEditorFrame({ children, containerRef }) {
   const [outline, setOutline] = useState('');
   useLayoutEffect(() => {
     const frame = containerRef.current;
     const actions = frame.querySelector('.prompt-editor-actions');
+    let outlineFrame = 0;
     const updateOutline = () => {
       const frameRect = frame.getBoundingClientRect();
       const actionsRect = actions.getBoundingClientRect();
@@ -106,18 +99,15 @@ function PromptEditorFrame({ children, containerRef, guideTarget }) {
       setOutline(`M 6.5 0.5 H ${right - 6} Q ${right} 0.5 ${right} 6.5 V ${bottom - 6} Q ${right} ${bottom} ${right - 6} ${bottom} H ${stepX + 6} Q ${stepX} ${bottom} ${stepX} ${bottom - 6} V ${stepY + 6} Q ${stepX} ${stepY} ${stepX - 6} ${stepY} H 6.5 Q 0.5 ${stepY} 0.5 ${stepY - 6} V 6.5 Q 0.5 0.5 6.5 0.5 Z`);
     };
     updateOutline();
-    const observer = new ResizeObserver(updateOutline);
+    // 模式切换时输入区先显示再排版，将轮廓更新合并到下一帧，避免观察回调内再次刷新布局。
+    const observer = new ResizeObserver(() => { cancelAnimationFrame(outlineFrame); outlineFrame = requestAnimationFrame(updateOutline); });
     observer.observe(frame);
     observer.observe(actions);
-    return () => observer.disconnect();
+    return () => { observer.disconnect(); cancelAnimationFrame(outlineFrame); };
   }, [containerRef]);
 
   return (
-    <Box sx={promptInputFrameSx} ref={containerRef} data-release-target={guideTarget}>
-      {/* 底色与其他输入框一致，沿同一条阶梯轮廓填充，左下角的角色入口保持面板底色。 */}
-      <Box component="svg" aria-hidden="true" focusable="false" sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: -1, fill: (theme) => theme.palette.background.input, stroke: 'none' }}>
-        <path d={outline} />
-      </Box>
+    <Box sx={promptInputFrameSx} ref={containerRef}>
       <Box component="svg" className="prompt-editor-outline" aria-hidden="true" focusable="false" sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1, fill: 'none', stroke: 'var(--prompt-outline)', strokeWidth: 1 }}>
         <path d={outline} />
       </Box>
@@ -131,13 +121,7 @@ function PromptEditorFrame({ children, containerRef, guideTarget }) {
  * @param {object} props 总提示词、编辑回调及角色折叠入口和内容。
  * @returns {React.ReactElement} 提示词编辑区。
  */
-const PromptPanelContent = ({
-  loadAccountSettings = true,
-  demonstration = false,
-  releaseGuideActive = false,
-  suggestionPractice = false,
-  onExitSuggestionPractice,
-  exercise,
+const PromptPanel = ({
   positivePrompt,
   negativePrompt,
   onPositivePromptChange,
@@ -145,72 +129,54 @@ const PromptPanelContent = ({
   onSaveCurrentNote,    // 新增: 从 AIPaintingPage 传递过来的保存函数
   onApplyNoteContent,   // 新增: 从 AIPaintingPage 传递过来的应用笔记函数
   onError = null,
-  instructionOnly = false,
-  restrictedAccount = false,
   model,
-  modelOptions,
   characterTabs = [],
   characterControlSummary = null,
   characterControlContent = null,
 }) => {
   const { t } = useI18n();
-  const practice = useSuggestionPractice(suggestionPractice, onExitSuggestionPractice);
   const [tabValue, setTabValue] = useState(0);
   const isV5Medium = model === NOVELAI_V5_MEDIUM_MODEL_ID;
-  const effectiveTabValue = exercise ? exercise.tab : practice || instructionOnly || (restrictedAccount && tabValue === 2)
-    || (isV5Medium && tabValue === 1) ? 0 : tabValue;
+  const effectiveTabValue = isV5Medium && tabValue === 1 ? 0 : tabValue;
   const [cursorPosition, setCursorPosition] = useState(0);
 
-  const [originalTranslationText, setOriginalTranslationText] = useState('');
-  const [originalTranslationResult, setOriginalTranslationResult] = useState('');
-  const translationText = exercise ? exercise.translationText : originalTranslationText;
-  const translationResult = exercise ? exercise.translationResult : originalTranslationResult;
-  const setTranslationText = exercise ? (text) => exercise.update({ translationText: text }) : setOriginalTranslationText;
-  const setTranslationResult = exercise ? (result) => exercise.update({ translationResult: result }) : setOriginalTranslationResult;
-  const [isTranslating, setIsTranslating] = useState(false);
-
-  const [notesDialog, setNotesDialog] = useState(null);
-  const notebookExercise = exercise?.topic === 'notebook' ? exercise : null;
-  const notebookTopic = notebookExercise?.topic ?? null;
-  const notesDialogOpen = notesDialog?.topic === notebookTopic;
+  const [notesDialogOpen, setNotesDialogOpen] = useState(false);
   const [notes, setNotes] = useState([]);
   const [noteGroups, setNoteGroups] = useState([]);
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
-  const [saveDialog, setSaveDialog] = useState(null);
-  const saveDialogOpen = saveDialog?.topic === notebookTopic;
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
 
-  const [randomPromptDialog, setRandomPromptDialog] = useState(null);
-  const randomPromptDialogOpen = randomPromptDialog?.topic === (exercise?.topic ?? null);
+  const copyPrompt = async (text) => {
+    try {
+      await copyTextToClipboard(text || '');
+      setSnackbar({ open: true, message: t('common.copied'), severity: 'success' });
+    } catch {
+      setSnackbar({ open: true, message: t('common.copyFailed'), severity: 'error' });
+    }
+  };
+
+  const [randomPromptDialogOpen, setRandomPromptDialogOpen] = useState(false);
   const [randomPromptEnabled, setRandomPromptEnabled] = useState(false);
   const [randomPromptConfig, setRandomPromptConfig] = useState(null);
 
-  const [expandedPromptDialog, setExpandedPromptDialog] = useState(null);
-  const expandedPromptDialogOpen = expandedPromptDialog?.topic === (exercise?.topic ?? null);
-  const { inlinePreview: inlinePreviewEnabled, suggestionsEnabled, promptCollapsed, setSetting } = usePromptEditorSettings();
+  const [expandedPromptDialogOpen, setExpandedPromptDialogOpen] = useState(false);
+  const { inlinePreview: inlinePreviewEnabled, suggestionsEnabled, setSetting } = usePromptEditorSettings();
   const [activeTabForDialog, setActiveTabForDialog] = useState(0);
 
   const [lastCursorPosition, setLastCursorPosition] = useState(null);
 
   const textFieldRef = useRef(null);
-  const exercising = Boolean(exercise);
-  const exerciseTopic = exercise?.topic;
-  useEffect(() => {
-    if (notesDialog && notesDialog.topic !== notebookTopic) setNotesDialog(null);
-    if (saveDialog && saveDialog.topic !== notebookTopic) setSaveDialog(null);
-    if (randomPromptDialog && randomPromptDialog.topic !== (exerciseTopic ?? null)) setRandomPromptDialog(null);
-    if (expandedPromptDialog && expandedPromptDialog.topic !== (exerciseTopic ?? null)) setExpandedPromptDialog(null);
-  }, [notesDialog, saveDialog, randomPromptDialog, expandedPromptDialog, notebookTopic, exerciseTopic]);
+  const promptInputRef = useRef(null);
+  const suggestions = usePromptSuggestions({
+    value: effectiveTabValue === 0 ? positivePrompt : negativePrompt,
+    onChange: effectiveTabValue === 0 ? onPositivePromptChange : onNegativePromptChange,
+    inputRef: promptInputRef,
+    enabled: suggestionsEnabled && effectiveTabValue < 2 && !expandedPromptDialogOpen,
+  });
 
   // Define checkRandomPromptStatus using useCallback
   const checkRandomPromptStatus = useCallback(async () => {
-    if (!loadAccountSettings) return;
-    if (restrictedAccount) {
-      setRandomPromptEnabled(false);
-      setRandomPromptConfig(null);
-      return;
-    }
-
     try {
       const config = await apiClient.getRandomPromptConfig();
       setRandomPromptEnabled(config.enabled !== false);
@@ -226,7 +192,7 @@ const PromptPanelContent = ({
         messageKey,
       });
     }
-  }, [onError, restrictedAccount, loadAccountSettings]);
+  }, [onError]);
 
   // Load random prompt config on mount
   useEffect(() => {
@@ -234,41 +200,31 @@ const PromptPanelContent = ({
   }, [checkRandomPromptStatus]); // Call the memoized function
 
   useEffect(() => {
-    if (instructionOnly || (restrictedAccount && tabValue === 2) || (isV5Medium && tabValue === 1)) {
+    if (isV5Medium && tabValue === 1) {
       // 切换模型或账号时回到可用页签，避免继续编辑不会进入请求的字段。
       setTabValue(0);
       setActiveTabForDialog(0);
     }
-  }, [instructionOnly, isV5Medium, restrictedAccount, tabValue]);
+  }, [isV5Medium, tabValue]);
 
   const handleTabChange = (event, newValue) => {
-    if (exercise) {
-      exercise.update({ tab: newValue });
-      if (newValue === 2) exercise.notify('translationTab');
-    } else setTabValue(newValue);
-    // 收起时点标签说明要看这一栏，直接展开。
-    if (promptCollapsed) setSetting('promptCollapsed', false);
+    setTabValue(newValue);
+    suggestions.close();
   };
 
   // 处理打开随机提示词配置对话框
   const handleOpenRandomPromptDialog = () => {
-    setRandomPromptDialog({ topic: exercise?.topic ?? null });
-    exercise?.notify('openRandom');
+    setRandomPromptDialogOpen(true);
   };
 
   // 处理关闭随机提示词配置对话框
   const handleCloseRandomPromptDialog = () => {
-    setRandomPromptDialog(null);
-    if (!exercise) checkRandomPromptStatus(); // Re-fetch config when dialog closes
+    setRandomPromptDialogOpen(false);
+    checkRandomPromptStatus(); // Re-fetch config when dialog closes
   };
 
   // 处理插入随机提示词标记
   const handleInsertRandomPrompt = (syntax) => {
-    if (exercise) {
-      exercise.update({ text: [exercise.text.replace(/[,\s]+$/, ''), syntax].filter(Boolean).join(', ') });
-      exercise.notify('insertRandom');
-      return;
-    }
     const isPositive = effectiveTabValue === 0;
     const prompt = isPositive ? positivePrompt : negativePrompt;
     const updateFn = isPositive ? onPositivePromptChange : onNegativePromptChange;
@@ -300,11 +256,13 @@ const PromptPanelContent = ({
     updateFn(event.target.value);
     setCursorPosition(event.target.selectionStart);
     setLastCursorPosition(event.target.selectionStart);
+    suggestions.updateFromInput(event.currentTarget, event.nativeEvent);
   };
 
   const handleTextFieldSelect = (event) => {
     setCursorPosition(event.target.selectionStart);
     setLastCursorPosition(event.target.selectionStart);
+    suggestions.inputProps.onSelect(event);
   };
 
   const handleClearPrompt = () => {
@@ -317,89 +275,16 @@ const PromptPanelContent = ({
         onNegativePromptChange('');
       }
     } else if (effectiveTabValue === 2) {
-      setTranslationText('');
-      setTranslationResult('');
     }
-  };
-
-  const handleTranslate = async () => {
-    if (!translationText.trim()) {
-      setSnackbar({
-        open: true,
-        message: t('painting.workspace.prompt.translationTextRequired'),
-        severity: 'warning'
-      });
-      return;
-    }
-
-    setIsTranslating(true);
-    setTranslationResult('');
-
-    try {
-      const response = { translated_text: 'blue hair, red eyes' };
-
-      if (response && response.translated_text) {
-        setTranslationResult(response.translated_text);
-        exercise?.notify('translate');
-        setSnackbar({
-          open: true,
-          message: t('painting.workspace.prompt.translationSucceeded'),
-          severity: 'success'
-        });
-      } else {
-        throw new Error('EMPTY_TRANSLATION_RESULT');
-      }
-    } catch (error) {
-      console.error('翻译失败:', error);
-      const messageKey = getPublicToolErrorMessageKey(
-        error,
-        'painting.workspace.prompt.translationFailed',
-      );
-      const reported = forwardPaintingPanelError(onError, error, {
-        source: 'prompt-translation',
-        messageKey,
-      });
-      if (!reported) {
-        setSnackbar({
-          open: true,
-          message: t(messageKey),
-          severity: 'error'
-        });
-      }
-    } finally {
-      setIsTranslating(false);
-    }
-  };
-
-  const handleApplyTranslation = () => {
-    if (translationResult && typeof onPositivePromptChange === 'function') {
-      if (exercise) {
-        exercise.update({ text: translationResult, tab: 0 });
-        exercise.notify('applyTranslation');
-      } else {
-        onPositivePromptChange(translationResult);
-        setTabValue(0);
-      }
-      setSnackbar({
-        open: true,
-        message: t('painting.workspace.prompt.translationApplied'),
-        severity: 'success'
-      });
-    }
+    suggestions.close();
   };
 
   const handleOpenExpandedDialog = (tabIndex) => {
     setActiveTabForDialog(tabIndex);
-    setExpandedPromptDialog({ topic: exercise?.topic ?? null });
-    exercise?.notify('expandEditor');
+    setExpandedPromptDialogOpen(true);
   };
 
   const handleExpandedPromptChange = (newText) => {
-    if (exercise) {
-      exercise.update({ text: newText });
-      exercise.notify('applyEditor');
-      return;
-    }
     if (activeTabForDialog === 0) {
       if (typeof onPositivePromptChange === 'function') {
         onPositivePromptChange(newText);
@@ -432,13 +317,11 @@ const PromptPanelContent = ({
   };
 
   const handleOpenNotesDialog = async () => {
-    setNotesDialog({ topic: notebookTopic });
-    if (notebookExercise) notebookExercise.notify('openNotebook');
-    else if (loadAccountSettings) await fetchNotes();
+    setNotesDialogOpen(true);
+    await fetchNotes();
   };
 
-  const fetchNotes = async ({ reportError = true } = {}) => {
-    if (notebookExercise) return true;
+  const fetchNotes = async () => {
     setIsLoadingNotes(true);
     try {
       const response = await apiClient.getTexts();
@@ -447,45 +330,32 @@ const PromptPanelContent = ({
       return true;
     } catch (error) {
       console.error('Error fetching notes:', error);
-      if (reportError) {
-        const reported = forwardPaintingPanelError(onError, error, {
-          source: 'prompt-notes',
-          messageKey: 'painting.workspace.prompt.fetchNotesFailed',
+      const reported = forwardPaintingPanelError(onError, error, {
+        source: 'prompt-notes',
+        messageKey: 'painting.workspace.prompt.fetchNotesFailed',
+      });
+      if (!reported) {
+        setSnackbar({
+          open: true,
+          message: t('painting.workspace.prompt.fetchNotesFailed'),
+          severity: 'error'
         });
-        if (!reported) {
-          setSnackbar({
-            open: true,
-            message: t('painting.workspace.prompt.fetchNotesFailed'),
-            severity: 'error'
-          });
-        }
       }
-      return false;
     } finally {
       setIsLoadingNotes(false);
     }
   };
 
   const handleSaveNote = () => {
-    setSaveDialog({ topic: notebookTopic });
+    setSaveDialogOpen(true);
     fetchNotes();
   };
 
   const handleSaveNoteSubmit = async (title, imageUrl, savedCharacterTabs, groupId) => {
-    if (notebookExercise) {
-      const note = { title, image_url: imageUrl, group_id: groupId, text_content1: notebookExercise.text,
-        text_content2: notebookExercise.negativeText, character_tabs: savedCharacterTabs ?? NOTEBOOK_EXAMPLE_CHARACTERS,
-        character_position_mode: 'custom', model: NOTEBOOK_EXAMPLE_MODEL, created_at: String(Math.round(Date.now() / 1000)) };
-      if (notebookExercise.notes.some((item) => item.title === title)) return false;
-      notebookExercise.update({ notes: [...notebookExercise.notes, note] });
-      notebookExercise.notify('saveNote');
-      setSaveDialog(null);
-      return true;
-    }
     if (onSaveCurrentNote) {
       const success = await onSaveCurrentNote(title, imageUrl, savedCharacterTabs, groupId);
       if (success) {
-        setSaveDialog(null); // 如果保存成功，关闭对话框
+        setSaveDialogOpen(false); // 如果保存成功，关闭对话框
         if (notesDialogOpen) { // 如果笔记本是打开的，刷新它
           fetchNotes();
         }
@@ -496,17 +366,10 @@ const PromptPanelContent = ({
     return false;
   };
 
-  const handleUseNote = (note, applyModel) => {
-    if (notebookExercise) {
-      notebookExercise.update({ text: note.text_content1, negativeText: note.text_content2,
-        appliedModel: applyModel && note.model ? note.model : notebookExercise.appliedModel });
-      notebookExercise.notify(applyModel && note.model ? 'applySavedModel' : 'applySameModel');
-      setNotesDialog(null);
-      return;
-    }
+  const handleUseNote = (note) => {
     // 调用从 AIPaintingPage 传递过来的函数来应用笔记内容
     if (onApplyNoteContent) {
-      if (onApplyNoteContent(note, applyModel) === false) return false;
+      if (onApplyNoteContent(note) === false) return;
     } else {
       // 旧的直接修改方式，如果 onApplyNoteContent 未提供，作为后备
       if (typeof onPositivePromptChange === 'function') {
@@ -517,14 +380,10 @@ const PromptPanelContent = ({
       }
       setSnackbar({ open: true, message: t('painting.workspace.prompt.noteApplied'), severity: 'success' });
     }
-    setNotesDialog(null); // 关闭笔记本对话框
+    setNotesDialogOpen(false); // 关闭笔记本对话框
   };
 
   const handleDeleteNote = async (note) => {
-    if (notebookExercise) {
-      notebookExercise.update({ notes: notebookExercise.notes.filter((item) => item.title !== note.title) });
-      return true;
-    }
     try {
       await apiClient.deleteText(note.title);
       setSnackbar({
@@ -549,11 +408,6 @@ const PromptPanelContent = ({
   };
 
   const handleUpdateNote = async (editedNote, originalTitle) => {
-    if (notebookExercise) {
-      if (editedNote.title !== originalTitle && notebookExercise.notes.some((note) => note.title === editedNote.title)) return false;
-      notebookExercise.update({ notes: notebookExercise.notes.map((note) => note.title === originalTitle ? { ...note, ...editedNote } : note) });
-      return true;
-    }
     try {
       // 确保 apiClient.updateText 调用时传递了 character_tabs
       // editedNote 对象应该直接包含了所有需要更新的字段，包括 character_tabs
@@ -565,8 +419,6 @@ const PromptPanelContent = ({
         editedNote.image_url,
         editedNote.character_tabs,
         editedNote.group_id,
-        editedNote.model,
-        editedNote.character_position_mode,
       );
 
       setSnackbar({
@@ -591,36 +443,25 @@ const PromptPanelContent = ({
     }
   };
 
-  const sampleExport = useRef(null);
   const handleExportNotes = async () => {
     try {
-      const response = notebookExercise
-        ? { texts: notebookExercise.notes, groups: notebookExercise.groups }
-        : await apiClient.exportTexts();
-      if (demonstration) sampleExport.current = new File([JSON.stringify(response)], 'notes_export.json', { type: 'application/json' });
-      else await downloadNotesExport(response);
-      notebookExercise?.notify('exportNotes');
+      const response = await apiClient.exportTexts();
+      await downloadNotesExport(response);
       setSnackbar({
         open: true,
         message: t('painting.workspace.prompt.notesExported'),
         severity: 'success'
       });
     } catch (error) {
-      const messageKey = getPublicToolErrorMessageKey(
-        error,
-        'painting.workspace.prompt.exportNotesFailed',
-      );
-      const reported = forwardPaintingPanelError(onError, error, {
+      forwardPaintingPanelError(onError, error, {
         source: 'note-export',
-        messageKey,
+        messageKey: 'painting.workspace.prompt.exportNotesFailed',
       });
-      if (!reported) {
-        setSnackbar({
-          open: true,
-          message: t(messageKey),
-          severity: 'error'
-        });
-      }
+      setSnackbar({
+        open: true,
+        message: t('painting.workspace.prompt.exportNotesFailed'),
+        severity: 'error'
+      });
     }
   };
 
@@ -648,16 +489,7 @@ const PromptPanelContent = ({
           }
 
           try {
-            if (notebookExercise) {
-              const imported = Array.isArray(content) ? content : content.texts;
-              if (!Array.isArray(imported) || !imported.length || imported.some((note) => !note || typeof note.title !== 'string')) {
-                throw new Error('INVALID_NOTE_FILE');
-              }
-              const byTitle = new Map(notebookExercise.notes.map((note) => [note.title, note]));
-              for (const note of imported) if (!byTitle.has(note.title)) byTitle.set(note.title, note);
-              notebookExercise.update({ notes: [...byTitle.values()] });
-              notebookExercise.notify('importNotes');
-            } else await apiClient.importTexts(content);
+            await apiClient.importTexts(content);
             setSnackbar({
               open: true,
               message: t('painting.workspace.prompt.notesImported'),
@@ -665,32 +497,22 @@ const PromptPanelContent = ({
             });
             await fetchNotes();
           } catch (error) {
-            const messageKey = getPublicToolErrorMessageKey(
-              error,
-              'painting.workspace.prompt.importNotesFailed',
-            );
-            const reported = forwardPaintingPanelError(onError, error, {
+            forwardPaintingPanelError(onError, error, {
               source: 'note-import',
-              messageKey,
+              messageKey: 'painting.workspace.prompt.importNotesFailed',
             });
-            if (!reported) {
-              setSnackbar({
-                open: true,
-                message: t(messageKey, error?.params || {}),
-                severity: 'error'
-              });
-            }
+            setSnackbar({
+              open: true,
+              message: t('painting.workspace.prompt.importNotesFailed'),
+              severity: 'error'
+            });
           }
         };
         reader.readAsText(file);
       }
     };
-    if (demonstration) {
-      if (sampleExport.current) void input.onchange({ target: { files: [sampleExport.current] } });
-    } else input.click();
+    input.click();
   };
-
-
 
   const handleCloseSnackbar = () => {
     setSnackbar({ ...snackbar, open: false });
@@ -699,9 +521,7 @@ const PromptPanelContent = ({
   return (
     <Box
       component="section"
-      aria-label={t(instructionOnly
-        ? 'painting.workspace.prompt.editInstruction'
-        : 'painting.workspace.prompt.title')}
+      aria-label={t('painting.workspace.prompt.title')}
       sx={{ minWidth: 0 }}
     >
           <Box sx={{
@@ -714,14 +534,7 @@ const PromptPanelContent = ({
             '& .MuiIconButton-root': { width: 32, height: 36, p: 0.75, flexShrink: 0 },
             '& .MuiIconButton-root .MuiSvgIcon-root': { fontSize: 20 },
           }}>
-            {instructionOnly && !exercise ? (
-              <Tooltip title={t('painting.workspace.prompt.editInstructionHelp')}>
-                <Typography variant="body2" sx={{ flex: 1, px: 1, fontWeight: 500 }}>
-                  {t('painting.workspace.prompt.editInstruction')}
-                </Typography>
-              </Tooltip>
-            ) : (
-              <Tabs
+            <Tabs
                 value={effectiveTabValue}
                 onChange={handleTabChange}
                 variant="scrollable"
@@ -745,127 +558,73 @@ const PromptPanelContent = ({
                 }}
               >
                 <Tab label={t('painting.workspace.prompt.positiveTab')} />
-                <Tab
-                  label={t(isV5Medium
-                    ? 'painting.workspace.parameters.fixedNegativeTab'
-                    : 'painting.workspace.prompt.negativeTab')}
-                  disabled={isV5Medium || Boolean(practice) || exercising}
-                />
-                {exercise?.topic === 'translation' && (
-                  <Tab data-release-target="translationTab" disabled={Boolean(practice) || (exercising && exercise.topic !== 'translation')} label={t('painting.workspace.prompt.translationTab')} />
-                )}
-              </Tabs>
-            )}
-            {isV5Medium && (
-              <Tooltip title={t('painting.workspace.parameters.modelV5MediumNegativeHelp')} arrow>
-                <IconButton size="small" aria-label={t('painting.workspace.parameters.fixedNegativeTab')}>
-                  <InfoIcon />
-                </IconButton>
-              </Tooltip>
-            )}
-            {!practice && (!exercise || exercise.topic === 'random') && !instructionOnly && !restrictedAccount && (
+                <Tab label={t(isV5Medium ? 'painting.workspace.parameters.fixedNegativeTab' : 'painting.workspace.prompt.negativeTab')} disabled={isV5Medium} />
+            </Tabs>
+            {isV5Medium && <Tooltip title={t('painting.workspace.parameters.modelV5MediumNegativeHelp')}><InfoIcon fontSize="small" /></Tooltip>}
+            {(
               <Tooltip title={t('painting.workspace.prompt.randomPrompt')} arrow>
-                <span style={{ display: 'inline-flex' }}><IconButton
-                  data-release-target="random" aria-label={t('painting.workspace.prompt.randomPrompt')}
+                <IconButton
+                  aria-label={t('painting.workspace.prompt.randomPrompt')}
                   onClick={handleOpenRandomPromptDialog}
                   color={randomPromptEnabled ? "primary" : "default"}
                 >
                   <CasinoIcon />
-                </IconButton></span>
+                </IconButton>
               </Tooltip>
             )}
-            {!restrictedAccount && (
+            {(
               <>
                 <Tooltip title={t('painting.workspace.prompt.notebook')} arrow>
-                  <span style={{ display: 'inline-flex' }}><IconButton
-                    data-release-target="notebook" aria-label={t('painting.workspace.prompt.notebook')}
-                    disabled={Boolean(practice) || (exercising && !notebookExercise)} onClick={handleOpenNotesDialog}
+                  <IconButton
+                    aria-label={t('painting.workspace.prompt.notebook')}
+                    onClick={handleOpenNotesDialog}
                   >
                     <BookIcon />
-                  </IconButton></span>
+                  </IconButton>
                 </Tooltip>
                 <Tooltip title={t('painting.workspace.prompt.saveToNotebook')} arrow>
                   <IconButton
                     aria-label={t('painting.workspace.prompt.saveToNotebook')}
-                    data-tour="noteSaveEntry" onClick={handleSaveNote}
-                    disabled={Boolean(practice) || (exercising && !notebookExercise)  ||
-                      (!notebookExercise && (instructionOnly ? !positivePrompt : (!positivePrompt && !negativePrompt && characterTabs.length === 0)))}
+                    onClick={handleSaveNote}
+                    disabled={!positivePrompt && !negativePrompt && characterTabs.length === 0}
                   >
                     <SaveIcon />
                   </IconButton>
                 </Tooltip>
               </>
             )}
-            {(!instructionOnly || exercising) && (
-              <PromptEditorSettings guideEntry
+            <PromptEditorSettings
                 previewEnabled={inlinePreviewEnabled}
                 onPreviewChange={(enabled) => setSetting('inlinePreview', enabled)}
                 suggestionsEnabled={suggestionsEnabled}
                 onSuggestionsChange={(enabled) => setSetting('suggestionsEnabled', enabled)}
-              />
-            )}
-            {!practice && <Tooltip title={t(promptCollapsed ? 'painting.workspace.prompt.expandSection' : 'painting.workspace.prompt.collapseSection')} arrow>
-              <IconButton
-                data-release-target={promptCollapsed ? 'expandSection' : 'collapse'}
-                aria-label={t(promptCollapsed ? 'painting.workspace.prompt.expandSection' : 'painting.workspace.prompt.collapseSection')}
-                aria-expanded={!promptCollapsed}
-                onClick={() => setSetting('promptCollapsed', !promptCollapsed)}
-              >
-                <ExpandMoreIcon sx={{ transform: promptCollapsed ? 'none' : 'rotate(180deg)', transition: (theme) => theme.transitions.create('transform') }} />
-              </IconButton>
-            </Tooltip>}
+            />
           </Box>
 
-      {/* 收起后只保留标签栏；输入框保持挂载，插入笔记和光标位置等功能不受影响。 */}
-      {exercise?.coach}
-      {exercise?.action === 'resolveRandom' && !randomPromptDialogOpen && <Button data-tour="randomResolve" size="small" variant="outlined" sx={{ mb: 1 }}
-        onClick={() => {
-          const result = extractActiveContent(exercise.text, { processRandomPrompts: true,
-            randomPromptConfig: exercise.randomConfig, randomCursorStorage: exercise.randomCursorStorage });
-          exercise.update({ resolvedPrompt: result });
-          if (result !== exercise.text) exercise.notify('resolveRandom');
-        }}>{t('tutorials.editorPractice.sampleButton')}</Button>}
-      <Collapse in={!promptCollapsed || Boolean(practice)}>
           <Box sx={{ pt: 1.5 }}>
-            {practice?.instructions}
             {effectiveTabValue === 0 ? (
               <>
                 {
                   !expandedPromptDialogOpen && (
-                    <PromptEditorFrame containerRef={textFieldRef} guideTarget="promptInput">
+                    <PromptEditorFrame containerRef={textFieldRef}>
                       <InlinePromptInput
                         className="prompt-editor-input"
-                        placeholder={instructionOnly && !practice && !exercise
-                          ? t('painting.workspace.prompt.editInstructionPlaceholder')
-                          : t('painting.workspace.prompt.positivePlaceholder')}
-                        value={exercise ? exercise.text : practice ? practice.value : positivePrompt}
-                        suggestionsEnabled={Boolean(practice) || (!exercise && !instructionOnly && !promptCollapsed)}
-                        inputProps={practice ? {
-                          readOnly: practice.readOnly,
-                          'aria-describedby': practice.descriptionId,
-                          onKeyDown: (event) => {
-                            if (event.key === 'Escape' && !event.nativeEvent.isComposing) {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              onExitSuggestionPractice();
-                            }
-                          },
-                        } : { onSelect: handleTextFieldSelect }}
-                        onChange={exercise ? (e) => exercise.update({ text: e.target.value })
-                          : practice ? practice.onChange : (e) => handleTextFieldChange(e, onPositivePromptChange)}
-                        onPracticeChoose={practice?.onChoose}
-                        previewEnabled={inlinePreviewEnabled && (!instructionOnly || exercising) && !practice}
-                        formatEnabled={(!instructionOnly || exercising) && !practice}
-                        randomPromptConfig={exercise?.randomConfig ?? randomPromptConfig}
+                        placeholder={t('painting.workspace.prompt.positivePlaceholder')}
+                        value={positivePrompt}
+                        inputRef={promptInputRef}
+                        inputProps={{ ...suggestions.inputProps, onSelect: handleTextFieldSelect }}
+                        onChange={(e) => handleTextFieldChange(e, onPositivePromptChange)}
+                        previewEnabled={inlinePreviewEnabled}
+                        randomPromptConfig={randomPromptConfig}
                       />
                       <Box sx={{ minWidth: 0, pr: 1, display: 'flex', alignItems: 'center' }}>{characterControlSummary}</Box>
                       <Box
                         className="prompt-editor-actions"
-                        sx={practice ? { ...promptActionsSx, visibility: 'hidden' } : promptActionsSx}
+                        sx={promptActionsSx}
                       >
                         <Tooltip title={t('painting.workspace.prompt.expandEditor')} arrow>
                           <IconButton
-                            data-release-target="expandEditor" aria-label={t('painting.workspace.prompt.expandPositiveEditor')}
+                            aria-label={t('painting.workspace.prompt.expandPositiveEditor')}
                             size="small"
                             onClick={() => handleOpenExpandedDialog(0)}
                             sx={{ opacity: 1, '&:hover': { opacity: 1 } }} // Corrected from opacity: 0.6
@@ -873,7 +632,7 @@ const PromptPanelContent = ({
                             <OpenInFullIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
-                        {positivePrompt && !exercise && (
+                        {positivePrompt && (
                           <Tooltip title={t('painting.workspace.prompt.clear')} arrow>
                             <IconButton
                               aria-label={t('painting.workspace.prompt.clearPositive')}
@@ -892,7 +651,7 @@ const PromptPanelContent = ({
                           <IconButton
                             aria-label={t('painting.workspace.prompt.copyPositive')}
                             size="small"
-                            onClick={() => copyTextToClipboard((exercise ? exercise.text : positivePrompt) || '')}
+                            onClick={() => copyPrompt(positivePrompt)}
                             sx={{ opacity: 0.6, '&:hover': { opacity: 1 } }}
                           >
                             <CopyIcon fontSize="small" />
@@ -913,10 +672,10 @@ const PromptPanelContent = ({
                         className="prompt-editor-input"
                         placeholder={t('painting.workspace.prompt.negativePlaceholder')}
                         value={negativePrompt}
-                        suggestionsEnabled={!promptCollapsed}
-                        inputProps={{ onSelect: handleTextFieldSelect }}
+                        inputRef={promptInputRef}
+                        inputProps={{ ...suggestions.inputProps, onSelect: handleTextFieldSelect }}
                         onChange={(e) => handleTextFieldChange(e, onNegativePromptChange)}
-                        previewEnabled={inlinePreviewEnabled && !instructionOnly}
+                        previewEnabled={inlinePreviewEnabled}
                         randomPromptConfig={randomPromptConfig}
                       />
                       <Box sx={{ minWidth: 0, pr: 1, display: 'flex', alignItems: 'center' }}>{characterControlSummary}</Box>
@@ -953,7 +712,7 @@ const PromptPanelContent = ({
                           <IconButton
                             aria-label={t('painting.workspace.prompt.copyNegative')}
                             size="small"
-                            onClick={() => copyTextToClipboard(negativePrompt || '')}
+                            onClick={() => copyPrompt(negativePrompt)}
                             sx={{ opacity: 0.6, '&:hover': { opacity: 1 } }}
                           >
                             <CopyIcon fontSize="small" />
@@ -965,135 +724,6 @@ const PromptPanelContent = ({
                 }
 
               </>
-            ) : !restrictedAccount ? (
-              // 翻译工具选项卡内容
-              <Box>
-                <Box data-release-target="translateSource">
-                  <TextField
-                    multiline
-                    fullWidth
-                    minRows={3}
-                    maxRows={4}
-                    data-tour={!translationText.trim() ? 'translationSource' : undefined} label={t('painting.workspace.prompt.sourceText')}
-                    InputLabelProps={{ shrink: true }}
-                    placeholder={t('painting.workspace.prompt.sourceTextPlaceholder')}
-                    value={translationText}
-                    onChange={(e) => setTranslationText(e.target.value)}
-                    disabled={isTranslating}
-                    sx={{
-                      '& .MuiOutlinedInput-root': {
-                        borderRadius: 1,
-                        p: 1,
-                      },
-                      '& .MuiInputBase-input': {
-                        fontFamily: '"Roboto Mono", monospace',
-                        fontSize: '0.95rem',
-                      }
-                    }}
-                  />
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 0.5,
-                      my: 1,
-                      '& .MuiIconButton-root': { width: 32, height: 32, p: 0.75 },
-                    }}
-                  >
-                    <Button
-                      variant="contained"
-                      startIcon={isTranslating ? <CircularProgress size={18} color="inherit" /> : <TranslateIcon />}
-                      data-tour="translate" onClick={handleTranslate}
-                      disabled={!translationText || isTranslating}
-                      sx={{ mr: 'auto', minHeight: 34, px: 1.5, py: 0.5, borderRadius: 1.5 }}
-                    >
-                      {isTranslating
-                        ? t('painting.workspace.prompt.translating')
-                        : t('painting.workspace.prompt.translate')}
-                    </Button>
-                    {translationText && (
-                      <Tooltip title={t('painting.workspace.prompt.clear')} arrow>
-                        <IconButton
-                          aria-label={t('painting.workspace.prompt.clearSourceText')}
-                          size="small"
-                          onClick={() => setTranslationText('')}
-                          sx={{ opacity: 0.6, '&:hover': { opacity: 1 } }}
-                          disabled={isTranslating}
-                        >
-                          <ClearIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                    <Tooltip title={t('painting.workspace.prompt.copy')} arrow>
-                      <IconButton
-                        aria-label={t('painting.workspace.prompt.copySourceText')}
-                        size="small"
-                        onClick={() => copyTextToClipboard(translationText || '')}
-                        sx={{ opacity: 0.6, '&:hover': { opacity: 1 } }}
-                        disabled={!translationText || isTranslating}
-                      >
-                        <CopyIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  </Box>
-                </Box>
-
-                <Box sx={{ position: 'relative' }}>
-                  <TextField
-                    multiline
-                    fullWidth
-                    minRows={3}
-                    maxRows={4}
-                    label={t('painting.workspace.prompt.translationResult')}
-                    InputLabelProps={{ shrink: true }}
-                    placeholder={t('painting.workspace.prompt.translationResultPlaceholder')}
-                    value={translationResult}
-                    InputProps={{ readOnly: true }}
-                    sx={{
-                      '& .MuiOutlinedInput-root': {
-                        borderRadius: 1,
-                        p: 1,
-                        backgroundColor: translationResult ? 'action.hover' : 'inherit',
-                      },
-                      '& .MuiInputBase-input': {
-                        fontFamily: '"Roboto Mono", monospace',
-                        fontSize: '0.95rem',
-                      }
-                    }}
-                  />
-                  {translationResult && (
-                    <Box
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 0.5,
-                        mt: 1,
-                        '& .MuiIconButton-root': { width: 32, height: 32, p: 0.75 },
-                      }}
-                    >
-                      <Button
-                        variant="text"
-                        data-tour="applyTranslation" onClick={handleApplyTranslation}
-                        startIcon={<ArrowForwardIcon />}
-                        sx={{ mr: 'auto', minHeight: 34, px: 1, py: 0.5 }}
-                      >
-                        {t('painting.workspace.prompt.applyToPositive')}
-                      </Button>
-                      <Tooltip title={t('painting.workspace.prompt.copyResult')} arrow>
-                        <IconButton
-                          aria-label={t('painting.workspace.prompt.copyResult')}
-                          size="small"
-                          onClick={() => copyTextToClipboard(translationResult || '')}
-                          sx={{ opacity: 0.6, '&:hover': { opacity: 1 } }}
-                        >
-                          <CopyIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    </Box>
-                  )}
-                </Box>
-
-              </Box>
             ) : null}
           </Box>
 
@@ -1101,19 +731,16 @@ const PromptPanelContent = ({
         <Box sx={{ pt: 0.5 }}>{characterControlSummary}</Box>
       )}
       {characterControlContent}
-      </Collapse>
 
+      <PromptSuggestions suggestions={suggestions} />
 
       <ExpandedPromptDialog
         open={expandedPromptDialogOpen}
-        onClose={() => setExpandedPromptDialog(null)}
-        initialText={exercise ? exercise.text : activeTabForDialog === 0 ? positivePrompt : negativePrompt}
-        formatEnabled={!instructionOnly || exercising}
+        onClose={() => setExpandedPromptDialogOpen(false)}
+        initialText={activeTabForDialog === 0 ? positivePrompt : negativePrompt}
         onTextChange={handleExpandedPromptChange}
         title={activeTabForDialog === 0
-          ? (instructionOnly
-            ? t('painting.workspace.prompt.editInstruction')
-            : t('painting.workspace.prompt.editPositive'))
+          ? t('painting.workspace.prompt.editPositive')
           : t('painting.workspace.prompt.editNegative')}
         isPositive={activeTabForDialog === 0}
         model={model}
@@ -1121,57 +748,27 @@ const PromptPanelContent = ({
           characterTabs,
           activeTabForDialog === 0 ? 'prompt' : 'uc',
         )}
-        randomPromptConfig={exercise?.randomConfig ?? randomPromptConfig}
+        randomPromptConfig={randomPromptConfig}
         randomPromptEnabled={randomPromptEnabled}
-        restrictedAccount={restrictedAccount}
         onError={onError}
       />
 
-      {!restrictedAccount && (
+      {(
         <>
           <NoteBook
-            key={notebookTopic || 'account-notebook'}
-            releaseGuideActive={releaseGuideActive}
             open={notesDialogOpen}
-            onClose={() => setNotesDialog(null)}
-            notes={notebookExercise?.notes ?? notes}
-            groups={notebookExercise?.groups ?? noteGroups}
-            currentCharacterTabs={notebookExercise ? NOTEBOOK_EXAMPLE_CHARACTERS : characterTabs}
-            modelOptions={notebookExercise ? undefined : modelOptions}
-            onCreateGroup={async (data) => {
-              if (notebookExercise) {
-                notebookExercise.update({ groups: [...notebookExercise.groups, { ...data, id: crypto.randomUUID() }] });
-                notebookExercise.notify('createGroup');
-              } else { await apiClient.createNoteGroup(data); await fetchNotes(); }
-              return true;
-            }}
-            onUpdateGroup={async (id, data) => {
-              if (notebookExercise) notebookExercise.update({ groups: notebookExercise.groups.map((group) => group.id === id ? { ...group, ...data } : group) });
-              else { await apiClient.updateNoteGroup(id, data); await fetchNotes(); }
-              return true;
-            }}
-            onDeleteGroup={async (id) => {
-              if (notebookExercise) notebookExercise.update({ groups: notebookExercise.groups.filter((group) => group.id !== id)
-                .map((group) => group.parent_id === id ? { ...group, parent_id: null } : group),
-              notes: notebookExercise.notes.map((note) => note.group_id === id ? { ...note, group_id: null } : note) });
-              else { await apiClient.deleteNoteGroup(id); await fetchNotes(); }
-              return true;
-            }}
-            onBatchMoveNotes={async (titles, groupId) => {
-              if (notebookExercise) {
-                notebookExercise.update({ notes: notebookExercise.notes.map((note) => titles.includes(note.title) ? { ...note, group_id: groupId } : note) });
-                if (groupId) notebookExercise.notify('moveNote');
-              } else { await apiClient.batchNotes('move', titles, groupId); await fetchNotes(); }
-              return true;
-            }}
-            onBatchDeleteNotes={async (titles) => {
-              if (notebookExercise) notebookExercise.update({ notes: notebookExercise.notes.filter((note) => !titles.includes(note.title)) });
-              else { await apiClient.batchNotes('delete', titles); await fetchNotes(); }
-              return true;
-            }}
-            isLoading={!notebookExercise && isLoadingNotes}
-            positivePrompt={notebookExercise?.text ?? positivePrompt}
-            negativePrompt={notebookExercise?.negativeText ?? negativePrompt}
+            onClose={() => setNotesDialogOpen(false)}
+            notes={notes}
+            groups={noteGroups}
+            currentCharacterTabs={characterTabs}
+            onCreateGroup={async (data) => { await apiClient.createNoteGroup(data); await fetchNotes(); return true; }}
+            onUpdateGroup={async (id, data) => { await apiClient.updateNoteGroup(id, data); await fetchNotes(); return true; }}
+            onDeleteGroup={async (id) => { await apiClient.deleteNoteGroup(id); await fetchNotes(); return true; }}
+            onBatchMoveNotes={async (titles, groupId) => { await apiClient.batchNotes('move', titles, groupId); await fetchNotes(); return true; }}
+            onBatchDeleteNotes={async (titles) => { await apiClient.batchNotes('delete', titles); await fetchNotes(); return true; }}
+            isLoading={isLoadingNotes}
+            positivePrompt={positivePrompt}
+            negativePrompt={negativePrompt}
             onUseNote={handleUseNote}
             onSaveNote={handleSaveNote}
             onDeleteNote={handleDeleteNote}
@@ -1183,14 +780,13 @@ const PromptPanelContent = ({
 
           <SaveNoteDialog
             open={saveDialogOpen}
-            onClose={() => setSaveDialog(null)}
+            onClose={() => setSaveDialogOpen(false)}
             onSave={handleSaveNoteSubmit}
-            positivePrompt={notebookExercise?.text ?? positivePrompt}
-            negativePrompt={notebookExercise?.negativeText ?? negativePrompt}
+            positivePrompt={positivePrompt}
+            negativePrompt={negativePrompt}
             extractActiveContent={extractActiveContent}
-            model={notebookExercise ? NOTEBOOK_EXAMPLE_MODEL : model}
-            currentCharacterTabs={notebookExercise ? NOTEBOOK_EXAMPLE_CHARACTERS : characterTabs}
-            groups={notebookExercise?.groups ?? noteGroups}
+            currentCharacterTabs={characterTabs}
+            groups={noteGroups}
           />
 
           <RandomPromptConfig
@@ -1220,10 +816,4 @@ const PromptPanelContent = ({
   );
 };
 
-/** 为提示词编辑器提供可随教程退出销毁的偏好和样例。 */
-export default function PromptPanel({ promptExerciseTopic = null, promptExerciseActive = false, ...props }) {
-  const exercise = useEditorExercise(promptExerciseTopic, props.onExitSuggestionPractice, promptExerciseActive);
-  return <EditorExerciseContext.Provider value={exercise && props.demonstration ? { ...exercise, demonstration: true } : exercise}>
-    <PromptPanelContent {...props} exercise={exercise?.topic === 'suggestions' ? null : exercise} />
-  </EditorExerciseContext.Provider>;
-}
+export default PromptPanel;

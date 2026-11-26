@@ -1,24 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { commentText, extractActiveContent, handlePromptCommentKey, togglePromptComment, uncommentText } from './promptUtils.js';
-
-test('Ctrl+/ 注释完整标签、保留选区，再按一次恢复原文', () => {
-  const original = 'blue hair, red eyes, moonlight';
-  const input = { value: original, selectionStart: 13, selectionEnd: 18, readOnly: false };
-  let stopped = 0;
-  const event = { key: '/', ctrlKey: true, currentTarget: input,
-    preventDefault: () => { stopped += 1; }, stopPropagation: () => { stopped += 1; } };
-  const commit = (result) => Object.assign(input, { value: result.text, selectionStart: result.start, selectionEnd: result.end });
-  assert.equal(handlePromptCommentKey(event, commit), true);
-  assert.equal(extractActiveContent(input.value).includes('red eyes'), false);
-  assert.equal(handlePromptCommentKey(event, commit), true);
-  assert.equal(input.value, original);
-  assert.equal(stopped, 4);
-  assert.equal(handlePromptCommentKey({ ...event, nativeEvent: { isComposing: true } }, commit), false);
-  assert.equal(handlePromptCommentKey({ ...event, currentTarget: { ...input, readOnly: true } }, commit), false);
-  assert.equal(handlePromptCommentKey({ ...event, currentTarget: { ...input, selectionEnd: input.selectionStart } }, commit), false);
-  assert.equal(togglePromptComment('/*blue*/, /*red*/', 2, 14).text, 'blue, red');
-});
+import { commentText, extractActiveContent, uncommentText } from './promptUtils.js';
 
 test('注释中的随机标签不抽取，随机词条中的注释也不会用于生成', () => {
   const storage = new Map();

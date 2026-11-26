@@ -6,7 +6,6 @@ export const PAGE_IDS = Object.freeze({
   LOCAL_GALLERY: 'local-gallery',
   IMAGE_TAGGING: 'image-tagging',
   LOCAL_UPSCALING: 'local-upscaling',
-  TUTORIALS: 'tutorials',
   SETTINGS: 'settings',
 });
 
@@ -18,7 +17,6 @@ export const PAGE_COLOR_DEFAULTS = Object.freeze({
   [PAGE_IDS.LOCAL_GALLERY]: '#527D80',
   [PAGE_IDS.IMAGE_TAGGING]: '#81688E',
   [PAGE_IDS.LOCAL_UPSCALING]: '#637F67',
-  [PAGE_IDS.TUTORIALS]: '#607A90',
   [PAGE_IDS.SETTINGS]: '#66717D',
 });
 

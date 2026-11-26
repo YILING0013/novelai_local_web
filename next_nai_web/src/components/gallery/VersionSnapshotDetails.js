@@ -72,9 +72,9 @@ export default function VersionSnapshotDetails({ selected, compared, onApply, di
   return <Stack spacing={1.8}>
     <Stack direction="row" gap={0.75} alignItems="center" flexWrap="wrap">
       {selected.images.length > 0 && <Button size="small" variant={mode === 'diff' ? 'contained' : 'outlined'} onClick={() => setMode('diff')}>{zh ? '修改对比' : 'Changes'}</Button>}
-      <Button size="small" variant={mode === 'full' ? 'contained' : 'outlined'} data-tour="fullSnapshot" onClick={() => setMode('full')}>{zh ? '完整参数' : 'Full snapshot'}</Button>
+      <Button size="small" variant={mode === 'full' ? 'contained' : 'outlined'} onClick={() => setMode('full')}>{zh ? '完整参数' : 'Full snapshot'}</Button>
       {compare && <Button size="small" sx={{ ml: 'auto' }} onClick={() => setSplit(!split)}>{split ? (zh ? '行内对比' : 'Inline diff') : (zh ? '左右对比' : 'Split diff')}</Button>}
-      {mode === 'full' && <Button size="small" sx={{ ml: 'auto' }} disabled={disabled} data-tour="applyVersion" onClick={onApply}>{zh ? '应用所有参数' : 'Apply all parameters'}</Button>}
+      {mode === 'full' && <Button size="small" sx={{ ml: 'auto' }} disabled={disabled} onClick={onApply}>{zh ? '应用所有参数' : 'Apply all parameters'}</Button>}
     </Stack>
     {compare ? <Stack direction="row" gap={1.2} flexWrap="wrap" alignItems="center">
       <Typography variant="caption">v{compared.number} → v{selected.number}</Typography>

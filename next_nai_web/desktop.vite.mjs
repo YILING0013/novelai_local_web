@@ -7,7 +7,7 @@ export default defineConfig({
     'file-saver': path('./desktop/save-file.js'), 'next/image': path('./src/desktop/Image.jsx'), 'next/dynamic': path('./src/desktop/dynamic.jsx') } },
   css: { postcss: path('./') }, server: { host: '127.0.0.1', port: 1420, strictPort: true },
   build: { outDir: path('./dist'), emptyOutDir: true, target: 'es2022',
-    rolldownOptions: { input: { app: path('./desktop/index.html'), tutorial: path('./desktop/tutorial-demo.html') }, moduleTypes: { '.js': 'jsx' }, onwarn(w, warn) {
+    rolldownOptions: { moduleTypes: { '.js': 'jsx' }, onwarn(w, warn) {
       if (!(w.code === 'MODULE_LEVEL_DIRECTIVE' && w.message.includes('use client'))) warn(w);
     }} }
 });

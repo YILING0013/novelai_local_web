@@ -49,7 +49,7 @@ import { copyTextToClipboard } from '@/utils/browserCapabilities.mjs';
 import { useI18n } from '@/i18n/I18nProvider';
 
 // 类别表单组件
-const CategoryForm = ({ categories = [], onChange, onInsert, generateExample, cursorStorage = globalThis.localStorage }) => {
+const CategoryForm = ({ categories = [], onChange, onInsert, generateExample }) => {
   const theme = useTheme();
   const { t } = useI18n();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -101,7 +101,7 @@ const CategoryForm = ({ categories = [], onChange, onInsert, generateExample, cu
       let initialStartPosition = category.startPosition || 0;
       if (category.extractMode === 'sequential') {
         const storageKey = `category_item_position_${category.id || category.name}`; // 最好使用ID
-        const storedPosition = cursorStorage.getItem(storageKey);
+        const storedPosition = localStorage.getItem(storageKey);
         if (storedPosition !== null) {
           const parsedStoredPosition = parseInt(storedPosition, 10);
           // 只有当 localStorage 的值有效时才使用它作为 UI 的初始值
@@ -303,7 +303,7 @@ const CategoryForm = ({ categories = [], onChange, onInsert, generateExample, cu
           variant="contained"
           color="primary"
           startIcon={<AddIcon />}
-          data-tour="categoryAdd" onClick={() => handleOpenCategoryDialog()}
+          onClick={() => handleOpenCategoryDialog()}
           size={isMobile ? "small" : "medium"}
           fullWidth={isMobile}
         >
@@ -473,7 +473,7 @@ const CategoryForm = ({ categories = [], onChange, onInsert, generateExample, cu
           alignItems: 'center',
           py: 1.5 // 调整DialogTitle的上下padding
         }}>
-          <Typography variant="h6" component="span">
+          <Typography variant="h6">
             {editingCategory
               ? t('painting.tools.randomPrompt.category.editTitle')
               : t('painting.tools.randomPrompt.category.createTitle')}
@@ -490,7 +490,7 @@ const CategoryForm = ({ categories = [], onChange, onInsert, generateExample, cu
             <Grid item xs={12} md={6}>
               <Typography variant="subtitle1" gutterBottom>{t('painting.tools.randomPrompt.basicInfo')}</Typography>
               <TextField
-                data-tour={!categoryName.trim() ? 'categoryName' : undefined} label={t('painting.tools.randomPrompt.category.name')}
+                label={t('painting.tools.randomPrompt.category.name')}
                 fullWidth
                 value={categoryName}
                 onChange={(e) => setCategoryName(e.target.value)}
@@ -611,7 +611,7 @@ const CategoryForm = ({ categories = [], onChange, onInsert, generateExample, cu
               </FormControl>
               
               <TextField
-                data-tour={!itemsBulkText.trim() ? 'categoryItems' : undefined} label={t('painting.tools.randomPrompt.category.bulkItems')}
+                label={t('painting.tools.randomPrompt.category.bulkItems')}
                 multiline
                 rows={5}
                 fullWidth
@@ -637,7 +637,7 @@ const CategoryForm = ({ categories = [], onChange, onInsert, generateExample, cu
               <Button
                 variant="outlined"
                 startIcon={<CheckIcon />}
-                data-tour={!parsedItems.length ? 'categoryParse' : undefined} onClick={() => handleParseItems()} // 确保调用的是无参数版本以从文本框解析
+                onClick={() => handleParseItems()} // 确保调用的是无参数版本以从文本框解析
                 sx={{ mt: 1, mb: 1 }}
                 fullWidth
                 size="small"
@@ -657,7 +657,7 @@ const CategoryForm = ({ categories = [], onChange, onInsert, generateExample, cu
         <DialogActions sx={{ p: 2 }}>
           <Button onClick={handleCloseCategoryDialog}>{t('painting.tools.common.cancel')}</Button>
           <Button 
-            data-tour="categorySave" onClick={handleSaveCategory}
+            onClick={handleSaveCategory} 
             variant="contained" 
             color="primary"
             startIcon={<SaveIcon />}

@@ -17,8 +17,6 @@ const notebookMessages = {
     noGroupNotesHelp: '从全部笔记中选择笔记，再移动到这个分组。',
     capacity: '词条数量', showGroups: '展开分组', hideGroups: '收起分组',
     viewAll: '查看全部笔记',
-    model: '生成模型', noModel: '未指定模型', applyModel: '应用笔记时切换到保存的模型',
-    keepPositionMode: '沿用当前定位设置',
   },
   'en-US': {
     groups: 'Groups', allNotes: 'All notes', ungrouped: 'Ungrouped', newGroup: 'New group',
@@ -38,8 +36,6 @@ const notebookMessages = {
     noGroupNotesHelp: 'Select notes in All notes, then move them to this group.',
     capacity: 'Notes', showGroups: 'Show groups', hideGroups: 'Hide groups',
     viewAll: 'View all notes',
-    model: 'Generation model', noModel: 'No model assigned', applyModel: 'Switch to the saved model when applying a note',
-    keepPositionMode: 'Keep current position mode',
   },
 };
 

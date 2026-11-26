@@ -1,13 +1,7 @@
 import { panelBounds } from './comicDocument.mjs';
 
-// 切口端点离角点只差几像素时，会在角点旁留下极短的边，加上切口留白后无法切开，所以吸附范围内一律落到角点上。
-function snapToCorner(panel, hit, point, threshold) {
-  const corner = panel.points.find((vertex) => Math.hypot(vertex.x - point.x, vertex.y - point.y) <= threshold);
-  return corner ? { ...hit, point: { x: corner.x, y: corner.y } } : hit;
-}
-
 /**
- * 将切割点吸附到最近的画框边；指针靠近角点时直接落到角点。距离相同时优先使用传入顺序靠前的画框。
+ * 将切割点吸附到最近的画框边，距离相同时优先使用传入顺序靠前的画框。
  * @param {Array<object>} panels 已按顶层优先排列的可编辑画框。
  * @param {{x:number,y:number}} point 当前指针的页面坐标。
  * @param {number} threshold 最大吸附距离，由调用者从屏幕像素换算为页面坐标。
@@ -15,19 +9,15 @@ function snapToCorner(panel, hit, point, threshold) {
  */
 export function snapComicCutPoint(panels, point, threshold) {
   let nearest = null;
-  let nearestPanel = null;
   for (const panel of panels) for (let edgeIndex = 0; edgeIndex < panel.points.length; edgeIndex += 1) {
     const start = panel.points[edgeIndex], end = panel.points[(edgeIndex + 1) % panel.points.length];
     const deltaX = end.x - start.x, deltaY = end.y - start.y;
     const fraction = Math.max(0, Math.min(1, ((point.x - start.x) * deltaX + (point.y - start.y) * deltaY) / (deltaX * deltaX + deltaY * deltaY)));
     const snapped = { x: start.x + fraction * deltaX, y: start.y + fraction * deltaY };
     const distance = Math.hypot(snapped.x - point.x, snapped.y - point.y);
-    if (distance <= threshold && (!nearest || distance < nearest.distance)) {
-      nearest = { panelId: panel.id, edgeIndex, point: snapped, distance };
-      nearestPanel = panel;
-    }
+    if (distance <= threshold && (!nearest || distance < nearest.distance)) nearest = { panelId: panel.id, edgeIndex, point: snapped, distance };
   }
-  return nearest && snapToCorner(nearestPanel, nearest, point, threshold);
+  return nearest;
 }
 
 /**
@@ -35,10 +25,9 @@ export function snapComicCutPoint(panels, point, threshold) {
  * @param {object} panel 要检查的画框。
  * @param {{x:number,y:number}} start 上一次指针的页面坐标。
  * @param {{x:number,y:number}} end 当前指针的页面坐标。
- * @param {number} cornerThreshold 交点离角点不超过此页面距离时改用角点；0 表示不吸附。
  * @returns {Array<{panelId:string,edgeIndex:number,point:object,distance:number}>} 按轨迹方向排列的交点，同一顶点只出现一次；distance 为到 start 的页面距离。
  */
-export function comicCutIntersections(panel, start, end, cornerThreshold = 0) {
+export function comicCutIntersections(panel, start, end) {
   const deltaX = end.x - start.x, deltaY = end.y - start.y;
   if (!deltaX && !deltaY) return [];
   const epsilon = 0.0000001;
@@ -60,10 +49,9 @@ export function comicCutIntersections(panel, start, end, cornerThreshold = 0) {
       // 顶点两侧必须分处轨迹两边，擦边或沿边滑动不会把画框切开。
       if (!(previousSide > epsilon && nextSide < -epsilon) && !(previousSide < -epsilon && nextSide > epsilon)) continue;
     }
-    const crossing = { x: start.x + along * deltaX, y: start.y + along * deltaY };
-    const { point } = snapToCorner(panel, { point: crossing }, crossing, cornerThreshold);
+    const point = { x: start.x + along * deltaX, y: start.y + along * deltaY };
     if (intersections.some((match) => Math.hypot(match.point.x - point.x, match.point.y - point.y) <= epsilon)) continue;
-    intersections.push({ panelId: panel.id, edgeIndex, point, distance: Math.hypot(crossing.x - start.x, crossing.y - start.y) });
+    intersections.push({ panelId: panel.id, edgeIndex, point, distance: Math.hypot(point.x - start.x, point.y - start.y) });
   }
   return intersections.sort((first, second) => first.distance - second.distance);
 }

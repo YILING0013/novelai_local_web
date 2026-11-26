@@ -5,31 +5,6 @@ import { ensureComicLayers } from './comicLayers.mjs';
 import { buildNovelAIV5CharacterControl, NOVELAI_V5_DEFAULT_PARAMS, NOVELAI_V5_MEDIUM_DEFAULT_PARAMS, NOVELAI_V5_MEDIUM_MODEL_ID } from '../utils/novelAIV5Params.mjs';
 
 /**
- * 把页面上的点限制在画框轮廓内：框外的点移到最近的边上再稍向框内收拢，不会落在相邻画框的边线上。
- * AI 制作和手动编排的角色圆点共用，拖到哪个位置都只会停在自己的画框里。
- * @param {Array<{x:number,y:number}>} points 画框轮廓顶点。
- * @param {{x:number,y:number}} point 页面坐标。
- * @returns {{x:number,y:number}} 画框内的页面坐标；本来就在框内时原样返回。
- */
-export function clampPointToComicFrame(points, point) {
-  let inside = false;
-  let nearest = null;
-  let distance = Infinity;
-  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
-    const a = points[j], b = points[i];
-    if ((a.y > point.y) !== (b.y > point.y) && point.x < (b.x - a.x) * (point.y - a.y) / (b.y - a.y) + a.x) inside = !inside;
-    const dx = b.x - a.x, dy = b.y - a.y;
-    const t = Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / (dx * dx + dy * dy)));
-    const projected = { x: a.x + t * dx, y: a.y + t * dy };
-    const candidate = Math.hypot(projected.x - point.x, projected.y - point.y);
-    if (candidate < distance) { distance = candidate; nearest = projected; }
-  }
-  if (inside) return point;
-  const center = points.reduce((sum, p) => ({ x: sum.x + p.x / points.length, y: sum.y + p.y / points.length }), { x: 0, y: 0 });
-  return { x: nearest.x * 0.97 + center.x * 0.03, y: nearest.y * 0.97 + center.y * 0.03 };
-}
-
-/**
  * 将角色的整页归一化坐标约束在所属画框内，供画布预览、拖动和生图共同使用。
  * @param {object} page 当前漫画页。
  * @param {object} section 单区编排。
@@ -44,7 +19,26 @@ export function comicAIControlPosition(page, section, instance) {
     || (frames.length === 1 ? frames[0] : frames[(plannedPanel?.number || 1) - 1]);
   let point = { x: bounds.x + Math.min(1, Math.max(0, instance.center.x)) * bounds.width,
     y: bounds.y + Math.min(1, Math.max(0, instance.center.y)) * bounds.height };
-  if (frame) point = clampPointToComicFrame(frame.points, point);
+  if (frame) {
+    const points = frame.points;
+    let inside = false;
+    let nearest = null;
+    let distance = Infinity;
+    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+      const a = points[j], b = points[i];
+      if ((a.y > point.y) !== (b.y > point.y) && point.x < (b.x - a.x) * (point.y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const t = Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / (dx * dx + dy * dy)));
+      const projected = { x: a.x + t * dx, y: a.y + t * dy };
+      const candidate = Math.hypot(projected.x - point.x, projected.y - point.y);
+      if (candidate < distance) { distance = candidate; nearest = projected; }
+    }
+    if (!inside) {
+      // 分镜为凸多边形；稍向内部收拢，控制点不会落在相邻画框的边线上。
+      const center = points.reduce((sum, p) => ({ x: sum.x + p.x / points.length, y: sum.y + p.y / points.length }), { x: 0, y: 0 });
+      point = { x: nearest.x * 0.97 + center.x * 0.03, y: nearest.y * 0.97 + center.y * 0.03 };
+    }
+  }
   return { frame, point, center: { x: (point.x - bounds.x) / bounds.width, y: (point.y - bounds.y) / bounds.height } };
 }
 

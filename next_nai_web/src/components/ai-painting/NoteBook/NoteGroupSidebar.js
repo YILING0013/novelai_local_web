@@ -89,7 +89,7 @@ export default function NoteGroupSidebar({
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 1, mb: 1 }}>
           <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 700 }}>{copy.groups}</Typography>
           <Tooltip title={copy.newGroup}>
-            <IconButton aria-label={copy.newGroup} size="small" data-tour="groupAdd" onClick={() => openDialog('create')}><Add fontSize="small" /></IconButton>
+            <IconButton aria-label={copy.newGroup} size="small" onClick={() => openDialog('create')}><Add fontSize="small" /></IconButton>
           </Tooltip>
         </Box>
         <List component="div" disablePadding>
@@ -121,7 +121,7 @@ export default function NoteGroupSidebar({
                     return next;
                   })} sx={{ p: 0.25 }}>{expanded ? <ExpandMore fontSize="small" /> : <ChevronRight fontSize="small" />}</IconButton>
                 ) : <Box sx={{ width: 24, flexShrink: 0 }} />}
-                <ListItemButton selected={selectedGroup === group.id} data-tour="groupFilter" onClick={() => onSelectGroup(group.id)} title={group.label} sx={{ minWidth: 0, gap: 0.75, borderRadius: 1.5, px: 0.75, py: 1 }}>
+                <ListItemButton selected={selectedGroup === group.id} onClick={() => onSelectGroup(group.id)} title={group.label} sx={{ minWidth: 0, gap: 0.75, borderRadius: 1.5, px: 0.75, py: 1 }}>
                   {selectedGroup === group.id ? <FolderOpenOutlined fontSize="small" color="primary" /> : <FolderOutlined fontSize="small" color="action" />}
                   <Typography variant="body2" noWrap sx={{ flexGrow: 1, fontWeight: selectedGroup === group.id ? 600 : 400 }}>{group.name}</Typography>
                   <Typography variant="caption" color="text.secondary">{counts.get(group.id)}</Typography>
@@ -131,7 +131,7 @@ export default function NoteGroupSidebar({
             );
           })}
         </List>
-        <Button startIcon={<Add />} fullWidth data-tour="groupAdd" onClick={() => openDialog('create')} sx={{ mt: 1, justifyContent: 'flex-start', px: 1.25 }}>{copy.newGroup}</Button>
+        <Button startIcon={<Add />} fullWidth onClick={() => openDialog('create')} sx={{ mt: 1, justifyContent: 'flex-start', px: 1.25 }}>{copy.newGroup}</Button>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 1, mt: 1, lineHeight: 1.6 }}>{copy.groupHelp}</Typography>
       </Box>
       <Menu anchorEl={menu?.anchor} open={Boolean(menu)} onClose={() => setMenu(null)}>
@@ -147,7 +147,7 @@ export default function NoteGroupSidebar({
             <><Typography sx={{ mb: 1, overflowWrap: 'anywhere' }} fontWeight={600}>{dialog.group.label}</Typography><Typography variant="body2" color="text.secondary">{copy.deleteGroupHelp}</Typography></>
           ) : (
             <>
-              <TextField autoFocus fullWidth required data-tour={!name.trim() ? 'groupName' : undefined} label={copy.groupName} value={name} onChange={(event) => setName(event.target.value)} inputProps={{ maxLength: 50 }} helperText={copy.groupNameHelp} disabled={busy} sx={{ mt: 1 }} />
+              <TextField autoFocus fullWidth required label={copy.groupName} value={name} onChange={(event) => setName(event.target.value)} inputProps={{ maxLength: 50 }} helperText={copy.groupNameHelp} disabled={busy} sx={{ mt: 1 }} />
               {dialog?.type === 'create' && (
                 <TextField select fullWidth label={copy.parentGroup} value={parentId} onChange={(event) => setParentId(event.target.value)} disabled={busy} sx={{ mt: 2 }} SelectProps={{ displayEmpty: true }} InputLabelProps={{ shrink: true }}>
                   <MenuItem value="">{copy.rootGroup}</MenuItem>
@@ -159,7 +159,7 @@ export default function NoteGroupSidebar({
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setDialog(null)} disabled={busy}>{copy.cancel}</Button>
-          <Button data-tour="groupSave" type="submit" variant="contained" color={dialog?.type === 'delete' ? 'error' : 'primary'} disabled={busy || (dialog?.type !== 'delete' && !name.trim())}>{dialog?.type === 'create' ? copy.create : dialog?.type === 'rename' ? copy.save : copy.delete}</Button>
+          <Button type="submit" variant="contained" color={dialog?.type === 'delete' ? 'error' : 'primary'} disabled={busy || (dialog?.type !== 'delete' && !name.trim())}>{dialog?.type === 'create' ? copy.create : dialog?.type === 'rename' ? copy.save : copy.delete}</Button>
         </DialogActions>
       </Dialog>
     </>

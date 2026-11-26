@@ -13,7 +13,9 @@ import {
   Box,
   Paper,
   InputAdornment,
-  Chip,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
   CircularProgress,
   Alert,
   MenuItem,
@@ -22,6 +24,8 @@ import {
   Image as ImageIcon,
   BrokenImage as BrokenImageIcon,
   Save as SaveIcon,
+  ExpandMore as ExpandMoreIcon,
+  Face as FaceIcon, // 用于角色卡图标
 } from '@mui/icons-material';
 import { getNoteTitleError } from '../../../utils/noteTitle.mjs';
 import { getPublicToolErrorMessageKey } from '../../../utils/publicToolErrors.mjs';
@@ -31,8 +35,6 @@ import { normalizeNoteCharacters } from './noteCharacters.mjs';
 import { getNoteContentLength, NOTE_CONTENT_LIMIT, NOTE_CHARACTER_JSON_LIMIT, NOTE_TOKEN_LIMIT } from './noteLimits.mjs';
 import noteCharacterMessages from './noteCharacterMessages';
 import NoteCharacterCards from './NoteCharacterCards';
-import NotePromptPreview from './NotePromptPreview';
-import { MODEL_OPTIONS } from '../utils/generationOptions';
 import useNoteTokenCount from './useNoteTokenCount';
 
 const SaveNoteDialog = ({ 
@@ -43,7 +45,6 @@ const SaveNoteDialog = ({
   negativePrompt, 
   extractActiveContent,
   currentCharacterTabs, // 新增: 从 AIPaintingPage -> PromptPanel 传递过来的当前角色卡数据
-  model,
   groups = [],
   defaultGroupId = null,
 }) => {
@@ -101,7 +102,7 @@ const SaveNoteDialog = ({
   let characterTabsToDisplay = [];
   let characterError = '';
   try {
-    characterTabsToDisplay = normalizeNoteCharacters(currentCharacterTabs, model);
+    characterTabsToDisplay = normalizeNoteCharacters(currentCharacterTabs);
   } catch (error) {
     characterError = error.code === 'NOTE_CHARACTER_FIELDS_INVALID' ? words.fieldsInvalid
       : error.code === 'NOTE_CHARACTER_JSON_ARRAY_REQUIRED' ? words.arrayRequired : words.invalidJson;
@@ -124,11 +125,11 @@ const SaveNoteDialog = ({
         {tokenizerStatus === 'error' && <Alert severity="error" sx={{ mb: 2 }} action={<Button color="inherit" onClick={retryTokenizer}>{words.retry}</Button>}>{words.tokenError}</Alert>}
         <Grid container spacing={2}>
           {/* 左侧：输入和预览 */}
-          <Grid item xs={12} md={noteImageUrl ? 8 : 12}>
+          <Grid item xs={12} md={7}>
             <TextField
               autoFocus
               margin="dense"
-              data-tour={!noteTitle.trim() ? 'noteTitle' : undefined} label={t('painting.tools.notebook.noteTitle')}
+              label={t('painting.tools.notebook.noteTitle')}
               fullWidth
               value={noteTitle}
               onChange={(e) => setNoteTitle(e.target.value)}
@@ -144,11 +145,19 @@ const SaveNoteDialog = ({
               {getGroupOptions(groups).map((group) => <MenuItem key={group.id} value={group.id}>{group.label}</MenuItem>)}
             </TextField>
             
-            <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, mb: 1 }}>
-              {(activePositivePrompt || activeNegativePrompt) && <Typography variant="subtitle2">{t('painting.tools.notebook.saveDialog.previewHelp')}</Typography>}
-              {model && <Chip size="small" variant="outlined" label={MODEL_OPTIONS.find((option) => option.value === model)?.label || model} />}
-            </Box>
-            <NotePromptPreview positive={activePositivePrompt} negative={activeNegativePrompt} />
+            <Typography variant="subtitle2" gutterBottom sx={{ mt: 1, fontWeight: 'medium' }}>
+              {t('painting.tools.notebook.saveDialog.previewHelp')}:
+            </Typography>
+            <Paper variant="outlined" sx={{ p: 1.5, mb: 2, maxHeight: 180, overflow: 'auto', fontSize: '0.9rem' }}>
+              <Typography variant="caption" display="block" fontWeight="bold">{t('painting.tools.notebook.positive')}:</Typography>
+              <Typography variant="body2" sx={{ fontFamily: '"Roboto Mono", monospace', fontSize: '0.8rem', whiteSpace: 'pre-wrap', color: 'text.secondary', mb:1 }}>
+                {activePositivePrompt || t('painting.tools.notebook.emptyValue')}
+              </Typography>
+              <Typography variant="caption" display="block" fontWeight="bold">{t('painting.tools.notebook.negative')}:</Typography>
+              <Typography variant="body2" sx={{ fontFamily: '"Roboto Mono", monospace', fontSize: '0.8rem', whiteSpace: 'pre-wrap', color: 'text.secondary' }}>
+                {activeNegativePrompt || t('painting.tools.notebook.emptyValue')}
+              </Typography>
+            </Paper>
             <Box sx={{ mb: 2 }}>
               <Typography variant="body2" color={tokenOverLimit ? 'warning.main' : 'text.secondary'}>
                 {words.contentCount}: {tokenizerStatus === 'ready' ? `${tokenCount} tokens` : tokenizerStatus === 'error' ? '—' : words.tokenLoading} · {contentLength} {words.characters}
@@ -158,10 +167,15 @@ const SaveNoteDialog = ({
 
             {/* 当前角色卡预览 */}
             {characterTabsToDisplay.length > 0 && (
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="subtitle2" sx={{ mb: 1 }}>{t('painting.tools.notebook.currentCharacterCards')} · {t('painting.tools.notebook.count', { count: characterTabsToDisplay.length })}</Typography>
-                  <NoteCharacterCards characters={characterTabsToDisplay} model={model} />
-                </Box>
+                <Accordion defaultExpanded TransitionProps={{ unmountOnExit: true }} sx={{boxShadow: 'none', border: '1px solid', borderColor: 'divider', '&:before': {display: 'none'} , mb:2}}>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                        <FaceIcon sx={{ mr: 1, color: 'action.active' }} />
+                        <Typography variant="subtitle2" sx={{fontWeight: 'medium'}}>{t('painting.tools.notebook.currentCharacterCards')} ({t('painting.tools.notebook.count', { count: characterTabsToDisplay.length })})</Typography>
+                    </AccordionSummary>
+                    <AccordionDetails sx={{ maxHeight: 300, overflowY: 'auto', p:1, pt:0 }}>
+                        <NoteCharacterCards characters={characterTabsToDisplay} />
+                    </AccordionDetails>
+                </Accordion>
             )}
             
             <Typography variant="subtitle2" gutterBottom sx={{fontWeight: 'medium'}}>
@@ -188,16 +202,17 @@ const SaveNoteDialog = ({
           </Grid>
           
           {/* 右侧：图片预览 */}
-          {noteImageUrl && <Grid item xs={12} md={4}>
+          <Grid item xs={12} md={5}>
             <Paper 
               elevation={0}
               sx={{
-                display: 'flex', flexDirection: 'column',
+                height: '100%', display: 'flex', flexDirection: 'column',
                 justifyContent: 'center', alignItems: 'center',
                 p: 1.5, bgcolor: 'background.paper', borderRadius: 2, border: '1px solid rgba(0,0,0,0.08)',
                 minHeight: 200,
               }}
             >
+              {noteImageUrl ? (
                 <Box sx={{ width: '100%', height: '100%', position: 'relative', display: 'flex', alignItems:'center', justifyContent:'center' }}>
                   <img 
                     src={noteImageUrl} alt={t('painting.tools.notebook.previewImageAlt')}
@@ -211,14 +226,23 @@ const SaveNoteDialog = ({
                     </Box>
                   )}
                 </Box>
+              ) : (
+                <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', color: 'text.disabled', height: '100%' }}>
+                  <ImageIcon sx={{fontSize: 48}} />
+                  <Typography variant="body2" sx={{ mt: 1 }}>{t('painting.tools.notebook.imagePreviewArea')}</Typography>
+                  <Typography variant="caption" align="center" sx={{ mt: 0.5, px: 2 }}>
+                    {t('painting.tools.notebook.imagePreviewEmpty')}
+                  </Typography>
+                </Box>
+              )}
             </Paper>
-          </Grid>}
+          </Grid>
         </Grid>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={loading}>{t('painting.tools.common.cancel')}</Button>
         <Button 
-          data-tour="noteSave" onClick={handleSave}
+          onClick={handleSave} 
           variant="contained"
           disabled={loading || Boolean(titleError) || Boolean(characterError) || overLimit || structureOverLimit || (!!noteImageUrl && imageUrlError)}
           startIcon={loading ? <CircularProgress size={20} /> : <SaveIcon />}

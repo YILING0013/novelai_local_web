@@ -1,5 +1,3 @@
-import { fetchUrlAsBlob } from '../../../../utils/mediaAssets.js';
-
 const createCanvas = (width, height) => {
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(width));
@@ -469,41 +467,7 @@ export const getCanvasAlphaBounds = (canvas) => {
   };
 };
 
-/**
- * 从羽化或裁切前的原图读取可嵌入合成结果的生成元数据。
- * @param {object} source 原图地址及可用的缓存 Blob。
- * @param {HTMLImageElement|HTMLCanvasElement} image 原始尺寸的已解码图像。
- * @returns {Promise<Uint8Array[]>} PNG 文本块，包含可读的 NovelAI 隐写参数。
- */
-export async function readInpaintMetadata(source, image) {
-  let blob;
-  try {
-    blob = source.cachedBlob || await fetchUrlAsBlob(source.src);
-  } catch {
-    // 历史中的跨域图片可能仍可显示，但原始文件不允许浏览器读取。
-    return [];
-  }
-  const [{ encodePngTextChunk, readScrambleMetadata }, { NOVELAI_STEALTH_KEYWORD, readStealthMetadata }] = await Promise.all([
-    import('../ImageTools/scrambleMetadata.js'),
-    import('../ImageTools/ImageMetadataExtractor.js'),
-  ]);
-  const { chunks, keywords, isPng } = await readScrambleMetadata(blob);
-  if (isPng && !keywords.has(NOVELAI_STEALTH_KEYWORD)) {
-    const canvas = image.getContext ? image : createCanvas(image.width, image.height);
-    const context = canvas.getContext('2d');
-    if (canvas !== image) context.drawImage(image, 0, 0);
-    const stealth = readStealthMetadata(context.getImageData(0, 0, canvas.width, canvas.height));
-    if (stealth) chunks.push(encodePngTextChunk(NOVELAI_STEALTH_KEYWORD, JSON.stringify(stealth)));
-  }
-  return chunks;
-}
-
-/**
- * 导出重绘画布的可见范围，并将原生成元数据写入新的 PNG。
- * @param {object} options 合成画布、背景选项和需要保留的 PNG 文本块。
- * @returns {Promise<object|null>} PNG Blob 与画面尺寸，无可见像素时为空。
- */
-export const exportContentCanvas = async ({ contentCanvas, background = 'transparent', metadata = [] }) => {
+export const exportContentCanvas = ({ contentCanvas, background = 'transparent' }) => {
   const alphaBounds = getCanvasAlphaBounds(contentCanvas);
 
   if (!contentCanvas || !alphaBounds) {
@@ -530,13 +494,14 @@ export const exportContentCanvas = async ({ contentCanvas, background = 'transpa
     exportCanvas.height
   );
 
-  const png = await new Promise((resolve, reject) => {
-    exportCanvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('INPAINT_EXPORT_ENCODING_FAILED')), 'image/png');
-  });
-  const blob = metadata.length ? (await import('../ImageTools/scrambleMetadata.js')).appendPngTextChunks(png, metadata) : png;
   return {
-    blob,
+    dataUrl: exportCanvas.toDataURL('image/png'),
     width: exportCanvas.width,
     height: exportCanvas.height,
   };
+};
+
+export const dataUrlToBlob = async (dataUrl) => {
+  const response = await fetch(dataUrl);
+  return response.blob();
 };

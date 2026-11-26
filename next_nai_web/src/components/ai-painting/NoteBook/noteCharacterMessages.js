@@ -14,7 +14,7 @@ const noteCharacterMessages = {
     position: '网格位置', canvas: '画布编辑位置', center: '精确坐标',
     enabled: '启用角色', noCharacters: '还没有角色卡，可以直接添加，或在 JSON 编辑中粘贴已有数据。',
     savedCharacters: '角色控制卡', parsingFailed: '角色卡解析失败，请进入编辑修正 JSON。',
-    saveFailed: '保存失败，请重试。',
+    saveFailed: '保存失败，请重试。', visualHelp: '名称、正负提示词和位置会随笔记保存，之后仍可继续编辑。',
   },
   'en-US': {
     group: 'Group', ungrouped: 'Ungrouped', visual: 'Visual editor', json: 'JSON editor',
@@ -31,7 +31,7 @@ const noteCharacterMessages = {
     position: 'Grid position', canvas: 'Edit positions on canvas', center: 'Exact coordinates',
     enabled: 'Enable character', noCharacters: 'No character cards yet. Add one or paste existing data in the JSON editor.',
     savedCharacters: 'Character control cards', parsingFailed: 'Unable to parse character cards. Open the editor to correct the JSON.',
-    saveFailed: 'Unable to save. Please try again.',
+    saveFailed: 'Unable to save. Please try again.', visualHelp: 'Names, prompts, and positions are saved with the note and remain editable.',
   },
 };
 

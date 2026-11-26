@@ -12,8 +12,7 @@ import GalleryVersionsDialog from '../gallery/GalleryVersionsDialog';
  * @param {object} props 当前版本、参数读取函数和继续创作回调。
  * @returns {React.ReactNode} 紧凑版本栏和保存/历史对话框。
  */
-export default function WorkVersionBar({ context, onChange, getParameters, onContinue, onApply, disabled, practice }) {
-  const store = practice?.store ?? apiClient;
+export default function WorkVersionBar({ context, onChange, getParameters, onContinue, onApply, disabled }) {
   const { t } = useI18n();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [draft, setDraft] = useState(null);
@@ -27,17 +26,16 @@ export default function WorkVersionBar({ context, onChange, getParameters, onCon
     setError('');
     try {
       const result = draft.context
-        ? await store.createWorkVersion(draft.context.work_id, {
+        ? await apiClient.createWorkVersion(draft.context.work_id, {
           parent_id: draft.context.parent_version_id, parameters: draft.parameters,
           message, operation: 'prompt',
         })
-        : await store.createWork({ title });
+        : await apiClient.createWork({ title });
       onChange({
         work_id: result.work.id, parent_version_id: result.version?.id || null,
         work_title: result.work.title, number: result.version?.number || null,
       });
       setDraft(null);
-      practice?.notify(draft.context ? 'saveVersion' : 'newWork');
     } catch (failure) {
       setError(failure.data?.error || failure.message);
     } finally { setBusy(false); }
@@ -56,17 +54,17 @@ export default function WorkVersionBar({ context, onChange, getParameters, onCon
           {context ? context.number ? t('gallery.versionWorkspace.current', { title: context.work_title, number: context.number }) : t('gallery.versionWorkspace.waiting', { title: context.work_title }) : t('gallery.versionWorkspace.newHint')}
         </Typography>
       </Box>
-      {context?.parent_version_id && <Tooltip title={t('gallery.versionWorkspace.save')}><span className="work-action"><Button size="small" data-tour="versionSaveEntry" aria-label={t('gallery.versionWorkspace.save')} startIcon={<SaveOutlined />} disabled={disabled} onClick={() => {
+      {context?.parent_version_id && <Tooltip title={t('gallery.versionWorkspace.save')}><span className="work-action"><Button size="small" aria-label={t('gallery.versionWorkspace.save')} startIcon={<SaveOutlined />} disabled={disabled} onClick={() => {
         setError(''); setMessage('');
         const parameters = getParameters();
         setDraft({ parameters, context });
       }}><Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{t('gallery.versionWorkspace.save')}</Box></Button></span></Tooltip>}
       <Tooltip title={t(context ? 'gallery.versionWorkspace.history' : 'gallery.versionWorkspace.openWork')}><span className="work-action">
-        <Button size="small" data-tour="workOpen" aria-label={t(context ? 'gallery.versionWorkspace.history' : 'gallery.versionWorkspace.openWork')} startIcon={<AccountTree />} disabled={disabled} onClick={() => setHistoryOpen(true)}>
+        <Button size="small" aria-label={t(context ? 'gallery.versionWorkspace.history' : 'gallery.versionWorkspace.openWork')} startIcon={<AccountTree />} disabled={disabled} onClick={() => setHistoryOpen(true)}>
           <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{t(context ? 'gallery.versionWorkspace.history' : 'gallery.versionWorkspace.openWork')}</Box>
         </Button>
       </span></Tooltip>
-      <Tooltip title={t('gallery.versionWorkspace.newWork')}><span className="work-action"><Button size="small" data-tour="workNew" aria-label={t('gallery.versionWorkspace.newWork')} startIcon={<Add />} disabled={disabled} onClick={() => {
+      <Tooltip title={t('gallery.versionWorkspace.newWork')}><span className="work-action"><Button size="small" aria-label={t('gallery.versionWorkspace.newWork')} startIcon={<Add />} disabled={disabled} onClick={() => {
         setError(''); setMessage('');
         const parameters = getParameters();
         setTitle(parameters.positivePrompt?.slice(0, 60) || t('gallery.versionWorkspace.untitled'));
@@ -78,7 +76,7 @@ export default function WorkVersionBar({ context, onChange, getParameters, onCon
         <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{t('gallery.versionWorkspace.exitWork')}</Box>
       </Button></span></Tooltip>}
     </Stack>
-    <GalleryVersionsDialog practice={practice} open={historyOpen} onClose={() => setHistoryOpen(false)} initialWorkId={context?.work_id || null}
+    <GalleryVersionsDialog open={historyOpen} onClose={() => setHistoryOpen(false)} initialWorkId={context?.work_id || null}
       activeContext={context} onContextChange={onChange}
       onApply={(version) => { onApply(version); setHistoryOpen(false); }}
       onStartWork={(work) => { onChange({ work_id: work.id, work_title: work.title, parent_version_id: null, number: null }); setHistoryOpen(false); }}
@@ -89,7 +87,7 @@ export default function WorkVersionBar({ context, onChange, getParameters, onCon
         <Stack spacing={2} sx={{ pt: 1 }}>
           {error && <Alert severity="error">{error}</Alert>}
           <Typography variant="body2" color="text.secondary">{t(draft?.context ? 'gallery.versionWorkspace.saveHint' : 'gallery.versionWorkspace.createHint')}</Typography>
-          {!draft?.context && <TextField autoFocus data-tour="workTitle" fullWidth label={t('gallery.versionWorkspace.title')} value={title}
+          {!draft?.context && <TextField autoFocus fullWidth label={t('gallery.versionWorkspace.title')} value={title}
             onChange={(event) => setTitle(event.target.value)} inputProps={{ maxLength: 160 }} />}
           {draft?.context && <TextField fullWidth multiline minRows={2} label={t('gallery.versionWorkspace.message')} value={message}
             onChange={(event) => setMessage(event.target.value)} inputProps={{ maxLength: 2000 }} />}
@@ -97,7 +95,7 @@ export default function WorkVersionBar({ context, onChange, getParameters, onCon
       </DialogContent>
       <DialogActions>
         <Button disabled={busy} onClick={() => setDraft(null)}>{t('gallery.versionWorkspace.cancel')}</Button>
-        <Button variant="contained" disabled={busy || (!draft?.context && !title.trim())} data-tour="workSave" onClick={save}>
+        <Button variant="contained" disabled={busy || (!draft?.context && !title.trim())} onClick={save}>
           {t(draft?.context ? 'gallery.versionWorkspace.save' : 'gallery.versionWorkspace.newWork')}
         </Button>
       </DialogActions>

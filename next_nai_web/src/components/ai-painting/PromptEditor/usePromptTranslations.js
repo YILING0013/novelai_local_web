@@ -1,13 +1,10 @@
 'use client';
 
-import { useContext, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import apiClient from '@/utils/ApiClient';
 import { getCachedPromptTranslations, loadPromptTranslations, retryPromptTranslations } from './promptTranslation.mjs';
-import { getPreviewTagRanges } from './previewTags.mjs';
-import EditorExerciseContext from '@/components/tutorials/EditorExerciseContext';
 
 let warningShown = false;
-const sampleTranslations = { 'blue hair': '蓝发', 'red eyes': '红瞳' };
 
 /**
  * 用户停止输入三秒后查询翻译，正负提示词和展开编辑器共用缓存及进行中的请求。
@@ -16,9 +13,6 @@ const sampleTranslations = { 'blue hair': '蓝发', 'red eyes': '红瞳' };
  * @returns {object} 当前原文的 tags/译文，以及整次浏览器会话只出现一次的警告状态和重试操作。
  */
 export default function usePromptTranslations(text, { enabled = true, targetLanguage = 'auto' } = {}) {
-  const exercise = useContext(EditorExerciseContext);
-  const sample = enabled && exercise?.topic === 'translation';
-  enabled = enabled && !exercise;
   const [, setRevision] = useState(0);
   const [attempt, setAttempt] = useState(0);
   const [showError, setShowError] = useState(false);
@@ -57,8 +51,7 @@ export default function usePromptTranslations(text, { enabled = true, targetLang
   }, [text, enabled, targetLanguage, attempt]);
 
   // 每次缓存完成后用当前文字重新读取，不能复用旧请求的原文下标。
-  const snapshot = sample ? { tags: getPreviewTagRanges(text), translations: sampleTranslations }
-    : enabled ? getCachedPromptTranslations(text, targetLanguage) : { tags: [], translations: {} };
+  const snapshot = enabled ? getCachedPromptTranslations(text, targetLanguage) : { tags: [], translations: {} };
 
   return {
     ...snapshot, showError: enabled && showError,

@@ -1,38 +1,24 @@
-"use client";
-
-import React, { useEffect, useRef, useState } from 'react';
+// LockableSlider.jsx - 带锁定机制的滑块组件
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Box,
   ButtonBase,
-  IconButton,
-  InputBase,
   Popover,
   Slider,
   Typography,
+  Tooltip,
   alpha,
   useMediaQuery,
   useTheme,
+  IconButton
 } from '@mui/material';
 import {
-  InfoOutlined as InfoIcon,
-  Lock as LockIcon,
+  Info as InfoIcon,
   LockOpen as LockOpenIcon,
+  Lock as LockIcon
 } from '@mui/icons-material';
 import { useI18n } from '@/i18n/I18nProvider';
 
-const stepDecimals = (step) => {
-  const text = String(step);
-  return text.includes('.') ? text.split('.')[1].length : 0;
-};
-
-/**
- * 滑块与右侧紧凑数值框。数值框可直接输入、用上下方向键或鼠标滚轮按步长调整（Shift 为十倍步长）；
- * 手机端滑块需先轻点解锁，避免滚动参数区时误触。
- * @param {object} props label、value、min、max、step、onChange 为必填；inline 让标签与滑块同一行；
- *   disabled 同时禁用滑块和数值框；valueLabelFormat 只改变数值框未聚焦时的显示文字；
- *   lockable=false 用于用户主动打开的浮层，手机上无需再解锁。
- * @returns {React.ReactElement} 带标签的滑块行。
- */
 const LockableSlider = ({
   label,
   value,
@@ -42,219 +28,224 @@ const LockableSlider = ({
   onChange,
   tooltip,
   marks = false,
-  valueLabelFormat = null,
-  disabled = false,
-  inline = false,
-  lockable = true,
-  sx,
+  valueLabelFormat = null
 }) => {
   const theme = useTheme();
   const { t } = useI18n();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [isLocked, setIsLocked] = useState(true);
   const [labelAnchor, setLabelAnchor] = useState(null);
-  const [draft, setDraft] = useState(null);
   const timeoutRef = useRef(null);
-  const inputRef = useRef(null);
-  const latestRef = useRef(null);
-  // Enter/Esc 会立即让输入框失焦，失焦回调读取的必须是最新草稿，不能是上一轮渲染的值。
-  const draftRef = useRef(null);
-  const showLock = lockable && isMobile;
-  const locked = showLock && isLocked;
-  const decimals = stepDecimals(step);
-  const numericValue = Number(value);
-  const hasValue = value !== '' && value !== null && value !== undefined && Number.isFinite(numericValue);
-  const display = hasValue ? (valueLabelFormat ? String(valueLabelFormat(value)) : numericValue.toFixed(decimals)) : '';
-  // 数值框宽度只由上限决定，拖动时不会忽宽忽窄。
-  const inputChars = Math.max(2, String(Math.trunc(Math.abs(max))).length + (decimals ? decimals + 1 : 0) + (min < 0 ? 1 : 0));
-
-  const clampValue = (next) => {
-    const snapped = Math.round((next - min) / step) * step + min;
-    return Number(Math.min(max, Math.max(min, snapped)).toFixed(decimals));
-  };
-  latestRef.current = { value: numericValue, clampValue, onChange, step, disabled };
-
-  const resetLockTimer = () => {
-    clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => setIsLocked(true), 3000);
-  };
-
-  useEffect(() => () => clearTimeout(timeoutRef.current), []);
-
-  // 滚轮只在数值框上生效，滚动整个参数区时不会改到滑块。
+  const clickStartTimeRef = useRef(0);
+  const sliderContainerRef = useRef(null);
+  
+  // 如果是非移动端，则不启用锁定机制
   useEffect(() => {
-    const node = inputRef.current;
-    if (!node) return undefined;
-    const handleWheel = (event) => {
-      const current = latestRef.current;
-      if (current.disabled || !Number.isFinite(current.value)) return;
-      const delta = event.deltaY || event.deltaX;
-      if (!delta) return;
-      event.preventDefault();
-      const next = current.clampValue(current.value + (delta < 0 ? 1 : -1) * current.step * (event.shiftKey ? 10 : 1));
-      if (next === current.value) return;
-      // 快速连续滚动时父组件可能还没重渲染，先记下新值，下一格在此基础上累加。
-      current.value = next;
-      current.onChange(next);
-    };
-    node.addEventListener('wheel', handleWheel, { passive: false });
-    return () => node.removeEventListener('wheel', handleWheel);
-  }, []);
-
-  const updateDraft = (next) => {
-    draftRef.current = next;
-    setDraft(next);
+    if (!isMobile) {
+      setIsLocked(false);
+    }
+  }, [isMobile]);
+  
+  // 处理锁定/解锁点击事件
+  const handleSliderClick = (e) => {
+    // 只有在移动端才启用锁定机制
+    if (!isMobile) return;
+    
+    // 如果已经解锁，短按不做任何操作
+    if (!isLocked) return;
+    
+    // 记录点击开始时间
+    clickStartTimeRef.current = Date.now();
   };
-
-  const commitDraft = () => {
-    const text = draftRef.current;
-    if (text === null) return;
-    updateDraft(null);
-    const parsed = Number(text);
-    if (text.trim() === '' || !Number.isFinite(parsed)) return;
-    const next = clampValue(parsed);
-    if (next !== numericValue) onChange(next);
-  };
-
-  const handleInputKeyDown = (event) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      commitDraft();
-      event.currentTarget.blur();
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      updateDraft(null);
-      event.currentTarget.blur();
-    } else if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && hasValue) {
-      event.preventDefault();
-      updateDraft(null);
-      const next = clampValue(numericValue + (event.key === 'ArrowUp' ? 1 : -1) * step * (event.shiftKey ? 10 : 1));
-      if (next !== numericValue) onChange(next);
+  
+  const handleSliderTouchEnd = (e) => {
+    // 只有在移动端才启用锁定机制
+    if (!isMobile) return;
+    
+    // 如果已经解锁，不做任何操作
+    if (!isLocked) return;
+    
+    // 计算点击持续时间
+    const clickDuration = Date.now() - clickStartTimeRef.current;
+    
+    // 如果是短按（小于300ms），则解锁滑块
+    if (clickDuration < 300) {
+      setIsLocked(false);
+      
+      // 设置自动锁定定时器
+      resetLockTimer();
+      
+      // 阻止事件冒泡，防止触发其他点击事件
+      e.stopPropagation();
     }
   };
-
-  const labelText = (
-    <Typography component="span" noWrap sx={{ minWidth: 0, fontSize: '0.8125rem', lineHeight: 1.5, color: 'text.secondary', textAlign: 'left' }}>
-      {label}
-    </Typography>
-  );
-
+  
+  // 重置锁定计时器
+  const resetLockTimer = () => {
+    // 清除已有定时器
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+    
+    // 设置新定时器：3秒后自动锁定
+    timeoutRef.current = setTimeout(() => {
+      setIsLocked(true);
+    }, 3000);
+  };
+  
+  // 处理滑块值变化
+  const handleSliderChange = (_, newValue) => {
+    // 如果锁定状态，不允许调整滑块
+    if (isLocked && isMobile) return;
+    
+    // 调整值并通知父组件
+    onChange(newValue);
+    
+    // 重置锁定计时器
+    resetLockTimer();
+  };
+  
+  // 组件卸载时清除定时器
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
+  
+  // 手动锁定/解锁滑块
+  const toggleLock = (e) => {
+    e.stopPropagation();
+    setIsLocked(prev => !prev);
+    
+    // 如果解锁了，设置自动锁定计时器
+    if (isLocked) {
+      resetLockTimer();
+    } else {
+      // 如果手动锁定，清除定时器
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    }
+  };
+  
   return (
-    <Box sx={{ minWidth: 0, display: 'flex', flexDirection: inline ? 'row' : 'column', alignItems: inline ? 'center' : 'stretch', gap: inline ? 1 : 0, ...sx }}>
-      {tooltip ? (
+    <Box sx={{ mt: 1, minWidth: 0 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
         <ButtonBase
           aria-label={label}
           aria-haspopup="dialog"
           aria-expanded={Boolean(labelAnchor)}
           onClick={(event) => setLabelAnchor(event.currentTarget)}
-          sx={{ alignSelf: inline ? 'center' : 'flex-start', maxWidth: '100%', minWidth: 0, flexShrink: inline ? 0 : 1, gap: 0.5, borderRadius: 0.5, color: 'text.secondary', '&:hover': { color: 'text.primary' } }}
+          sx={{ flex: 1, minWidth: 0, justifyContent: 'flex-start', color: 'text.secondary', borderRadius: 0.5, '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}
         >
-          {labelText}
-          <InfoIcon sx={{ flexShrink: 0, fontSize: 14, opacity: 0.7 }} />
+          <Typography variant="body2" noWrap sx={{ minWidth: 0, fontSize: '0.9375rem', lineHeight: 1.5, textAlign: 'left' }}>
+            {label}
+          </Typography>
+          {tooltip && (
+            <Tooltip title={tooltip} arrow placement="top">
+              <InfoIcon sx={{ ml: 0.5, flexShrink: 0, fontSize: 16, opacity: 0.7 }} />
+            </Tooltip>
+          )}
         </ButtonBase>
-      ) : (
-        <Box sx={{ display: 'flex', minWidth: 0, flexShrink: inline ? 0 : 1 }}>{labelText}</Box>
-      )}
-
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, flex: inline ? '1 1 auto' : 'none' }}>
-        <Box
-          onClick={() => {
-            if (!locked || disabled) return;
-            setIsLocked(false);
-            resetLockTimer();
-          }}
-          sx={{
-            flex: 1,
-            minWidth: 56,
-            // 为圆点留出半径空间，避免两端被裁切。
-            px: '7px',
-            opacity: locked && !disabled ? 0.55 : 1,
-            cursor: locked ? 'pointer' : 'auto',
-            transition: theme.transitions.create('opacity', { duration: theme.transitions.duration.shorter }),
-          }}
-        >
-          <Slider
-            size="small"
-            value={hasValue ? numericValue : min}
-            min={min}
-            max={max}
-            step={step}
-            marks={marks}
-            disabled={disabled || locked}
-            valueLabelDisplay="off"
-            aria-label={label}
-            onChange={(_, nextValue) => {
-              if (locked) return;
-              updateDraft(null);
-              onChange(nextValue);
-              if (showLock) resetLockTimer();
-            }}
-            sx={{ display: 'block' }}
-          />
+        
+        <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+          <Typography variant="body2" fontWeight="medium" sx={{ minWidth: 36, textAlign: 'right', fontSize: '0.9375rem', fontVariantNumeric: 'tabular-nums' }}>
+            {valueLabelFormat ? valueLabelFormat(value) : value}
+          </Typography>
+          
+          {/* 仅在移动设备上显示锁定/解锁按钮 */}
+          {isMobile && (
+            <IconButton 
+              aria-label={isLocked
+                ? t('painting.tools.lockableSlider.unlock')
+                : t('painting.tools.lockableSlider.lock')}
+              title={t(isLocked ? 'painting.tools.lockableSlider.tapToUnlock' : 'painting.tools.lockableSlider.lock')}
+              size="small" 
+              onClick={toggleLock}
+              color={isLocked ? "default" : "primary"}
+              sx={{ 
+                padding: 0.5,
+                opacity: 0.8,
+                '&:hover': { opacity: 1 }
+              }}
+            >
+              {isLocked ? <LockIcon fontSize="small" /> : <LockOpenIcon fontSize="small" />}
+            </IconButton>
+          )}
         </Box>
-        <InputBase
-          ref={inputRef}
-          value={draft ?? display}
-          disabled={disabled}
-          onFocus={(event) => {
-            updateDraft(hasValue ? String(numericValue) : '');
-            event.target.select();
-          }}
-          onChange={(event) => updateDraft(event.target.value)}
-          onBlur={commitDraft}
-          onKeyDown={handleInputKeyDown}
-          inputProps={{ inputMode: decimals ? 'decimal' : 'numeric', 'aria-label': label, spellCheck: false }}
-          sx={{
-            flexShrink: 0,
-            width: `calc(${inputChars}ch + 14px)`,
-            height: 24,
-            borderRadius: 1,
-            fontSize: '0.75rem',
-            fontVariantNumeric: 'tabular-nums',
-            bgcolor: 'background.input',
-            cursor: 'ns-resize',
-            transition: theme.transitions.create(['background-color', 'box-shadow'], { duration: theme.transitions.duration.shorter }),
-            '&:hover': { boxShadow: `inset 0 0 0 1px ${alpha(theme.palette.text.primary, 0.24)}` },
-            '&.Mui-focused': { boxShadow: `inset 0 0 0 1px ${theme.palette.primary.main}` },
-            // 加倍选择器权重，避免外层工作区对输入框统一设置的内边距撑高数值框。
-            '&& .MuiInputBase-input': { p: 0, height: '100%', textAlign: 'center', cursor: 'inherit' },
-            '&&.Mui-focused .MuiInputBase-input': { cursor: 'text' },
-          }}
-        />
-        {showLock && (
-          <IconButton
-            aria-label={t(isLocked ? 'painting.tools.lockableSlider.unlock' : 'painting.tools.lockableSlider.lock')}
-            title={t(isLocked ? 'painting.tools.lockableSlider.tapToUnlock' : 'painting.tools.lockableSlider.lock')}
-            size="small"
-            disabled={disabled}
-            onClick={(event) => {
-              event.stopPropagation();
-              if (isLocked) resetLockTimer();
-              else clearTimeout(timeoutRef.current);
-              setIsLocked(!isLocked);
-            }}
-            sx={{ p: 0.25, color: isLocked ? 'text.secondary' : 'primary.main' }}
-          >
-            {isLocked ? <LockIcon sx={{ fontSize: 16 }} /> : <LockOpenIcon sx={{ fontSize: 16 }} />}
-          </IconButton>
-        )}
       </Box>
-
-      {tooltip && (
-        <Popover
-          open={Boolean(labelAnchor)}
-          anchorEl={labelAnchor}
-          onClose={() => setLabelAnchor(null)}
-          anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
-          transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-          slotProps={{ paper: { sx: { p: 1.5, width: 280, maxWidth: 'calc(100vw - 32px)' } } }}
-        >
-          <Box role="dialog" aria-label={label}>
-            <Typography variant="body2" fontWeight="medium" sx={{ overflowWrap: 'anywhere' }}>{label}</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75, overflowWrap: 'anywhere' }}>{tooltip}</Typography>
-          </Box>
-        </Popover>
-      )}
+      <Popover
+        open={Boolean(labelAnchor)}
+        anchorEl={labelAnchor}
+        onClose={() => setLabelAnchor(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        slotProps={{ paper: { sx: { p: 1.5, width: 280, maxWidth: 'calc(100vw - 32px)' } } }}
+      >
+        <Box role="dialog" aria-label={label}>
+          <Typography variant="body2" fontWeight="medium" sx={{ overflowWrap: 'anywhere' }}>{label}</Typography>
+          {tooltip && <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75, overflowWrap: 'anywhere' }}>{tooltip}</Typography>}
+        </Box>
+      </Popover>
+      
+      <Box 
+        ref={sliderContainerRef}
+        onClick={handleSliderClick}
+        onTouchEnd={handleSliderTouchEnd}
+        sx={{ 
+          position: 'relative',
+          // 为滑块圆点和两端刻度留出空间。
+          mx: 1,
+          opacity: isLocked && isMobile ? 0.6 : 1,
+          transition: 'opacity 0.2s',
+          cursor: isLocked && isMobile ? 'pointer' : 'auto',
+        }}
+      >
+        <Slider
+          value={value}
+          min={min}
+          max={max}
+          step={step}
+          onChange={handleSliderChange}
+          disabled={isLocked && isMobile}
+          valueLabelDisplay={isLocked && isMobile ? "off" : "auto"}
+          sx={{ 
+            color: isLocked && isMobile ? 'grey.400' : 'primary.main',
+            height: 3,
+            py: isMobile ? 1.5 : 1,
+            '& .MuiSlider-markLabel': { fontSize: '0.875rem' },
+            '& .MuiSlider-thumb': {
+              width: isMobile ? 18 : 14,
+              height: isMobile ? 18 : 14,
+              backgroundColor: isLocked && isMobile ? 'grey.400' : 'primary.main',
+              boxShadow: 'none',
+              '&:hover, &.Mui-focusVisible': {
+                boxShadow: `0px 0px 0px 8px ${alpha(
+                  theme.palette.primary.main,
+                  0.16
+                )}`,
+              },
+            },
+            // 在锁定状态下改变轨道颜色
+            '& .MuiSlider-rail': {
+              opacity: 0.25,
+              backgroundColor: isLocked && isMobile ? 'grey.300' : undefined,
+            },
+            '& .MuiSlider-track': {
+              opacity: isLocked && isMobile ? 0.5 : 1,
+              backgroundColor: isLocked && isMobile ? 'grey.400' : undefined,
+            },
+            // 标记
+            '& .MuiSlider-mark': {
+              backgroundColor: isLocked && isMobile ? 'grey.500' : '#bfbfbf',
+            },
+          }}
+          marks={marks}
+          aria-label={label}
+        />
+      </Box>
     </Box>
   );
 };

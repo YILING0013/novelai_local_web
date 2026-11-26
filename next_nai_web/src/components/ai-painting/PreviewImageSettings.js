@@ -4,8 +4,7 @@ import { useState } from 'react';
 import { Box, Button, Dialog, DialogTitle, IconButton, FormControlLabel, MenuItem, Popover, Stack, Switch, TextField, Tooltip, Typography } from '@mui/material';
 import { Close, EditOutlined, InfoOutlined, TuneRounded, WidgetsOutlined } from '@mui/icons-material';
 import { useI18n } from '@/i18n/I18nProvider';
-import { imageExportModes } from './tools/ImageTools/previewImageExport';
-import { formatWorkspaceShortcut } from './tools/ImageTools/workspaceShortcuts.mjs';
+import { getPrivacyShortcut, imageExportModes } from './tools/ImageTools/previewImageExport';
 import CustomImageMetadataEditor from './CustomImageMetadataEditor';
 import { hasImageWatermark } from './ImageProcessing/quickImageAdjustments';
 
@@ -14,18 +13,19 @@ import { hasImageWatermark } from './ImageProcessing/quickImageAdjustments';
  * @param {object} props 当前设置与更改回调。
  * @returns {React.ReactElement} 预览设置按钮与面板。
  */
-export default function PreviewImageSettings({ settings, onChange, getCurrentImage, onExerciseAction, presets = [] }) {
+export default function PreviewImageSettings({ settings, onChange, getCurrentImage, presets = [] }) {
   const { t } = useI18n();
   const [anchor, setAnchor] = useState(null);
   const [editing, setEditing] = useState(false);
   const label = (key) => t(`painting.workspace.gallery.${key}`);
+  const shortcut = settings.privacyShortcut.replace(/\b(Key|Digit)(?=[A-Z0-9](?:$|\+))/g, '');
   const watermarkPresets = presets.filter((preset) => hasImageWatermark(preset.settings));
   const watermarkPreset = watermarkPresets.find((preset) => preset.id === settings.autoWatermarkPresetId);
 
   return <>
     <Tooltip title={label('previewSettings')} arrow>
       <IconButton size="small" aria-label={label('previewSettings')} aria-haspopup="dialog" aria-expanded={Boolean(anchor)}
-        data-tour="previewSettings" onClick={(event) => { setAnchor(event.currentTarget); onExerciseAction?.('previewSettings'); }}
+        onClick={(event) => setAnchor(event.currentTarget)}
         sx={{ color: 'text.secondary', flexShrink: 0, width: { xs: 36, md: 32 }, height: { xs: 36, md: 32 } }}>
         <WidgetsOutlined fontSize="small" />
       </IconButton>
@@ -35,29 +35,24 @@ export default function PreviewImageSettings({ settings, onChange, getCurrentIma
       transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
       slotProps={{ paper: { sx: { width: 350, maxWidth: 'calc(100vw - 32px)', p: 2 }, role: 'dialog', 'aria-label': label('previewSettings') } }}>
       <Stack spacing={1.5}>
-        <Stack direction="row" alignItems="center" justifyContent="space-between">
-          <Typography variant="subtitle2">{label('previewSettings')}</Typography>
-          <IconButton size="small" aria-label={t('common.close')} data-tour="closePreviewSettings" onClick={() => setAnchor(null)}><Close fontSize="small" /></IconButton>
-        </Stack>
+        <Typography variant="subtitle2">{label('previewSettings')}</Typography>
         <Stack direction="row" alignItems="center">
           <FormControlLabel label={label('privacyMode')}
-            control={<Switch slotProps={{ input: { 'data-tour': 'privacyOn' } }} checked={settings.privacyMode} onChange={(event) => onChange({ privacyMode: event.target.checked })} />} />
+            control={<Switch checked={settings.privacyMode} onChange={(event) => onChange({ privacyMode: event.target.checked })} />} />
           <Tooltip title={label('privacyModeHelp')} arrow>
             <IconButton size="small" aria-label={label('privacyModeHelp')}><InfoOutlined fontSize="small" /></IconButton>
           </Tooltip>
         </Stack>
-        {settings.privacyMode && Object.entries({ privacyScope: ['both', 'display', 'history'], privacyReveal: ['hold', 'hover', 'toggle'] }).map(([key, options]) =>
-          <TextField key={key} select size="small" label={t('settings.interface.' + key)} value={settings[key]}
-            slotProps={{ select: { SelectDisplayProps: { 'data-tour': key } } }} onChange={(event) => onChange({ [key]: event.target.value })}>
-            {options.map(option => <MenuItem key={option} value={option}>{t('settings.interface.' + key + 'Options.' + option)}</MenuItem>)}
-          </TextField>)}
-        <Button size="small" onClick={() => {
-          setAnchor(null);
-          window.dispatchEvent(new CustomEvent('novelai:open-page', { detail: { pageId: 'settings', section: 'shortcuts' } }));
-        }} sx={{ justifyContent: 'space-between', gap: 1 }}>
-          {label('privacyShortcut')}
-          <Typography variant="caption" color="text.secondary">{formatWorkspaceShortcut(settings.privacyShortcut) || t('settings.shortcuts.unassigned')}</Typography>
-        </Button>
+        <TextField size="small" label={label('privacyShortcut')} value={shortcut}
+          helperText={label('privacyShortcutHint')}
+          slotProps={{ htmlInput: { readOnly: true } }}
+          onKeyDown={(event) => {
+            const nextShortcut = getPrivacyShortcut(event);
+            const clear = ['Backspace', 'Delete'].includes(event.code) && !nextShortcut;
+            if (!nextShortcut && !clear) return;
+            event.preventDefault();
+            onChange({ privacyShortcut: clear ? '' : nextShortcut, privacyShortcutCustomized: true });
+          }} />
         {[['copyMode', 'copy'], ['downloadMode', 'download']].map(([setting, action]) => (
           <TextField select size="small" key={setting} label={label(setting)} value={settings[setting]}
             onChange={(event) => onChange({ [setting]: event.target.value })}>

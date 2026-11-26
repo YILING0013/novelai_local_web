@@ -1,9 +1,0 @@
-{
-  "catalogFile": "catalog-57b4fb445bbc81af.bin.gz",
-  "wasmFile": "search-9e41236fe7e7d6ab.wasm",
-  "glueFile": "search-f89a0773aecfabd1.mjs",
-  "rowCount": 335971,
-  "topicCount": 13699,
-  "sourceCommit": "ffbdc211764b3c226c1eb93bb6942d59c3297ab9",
-  "sourceManifest": "2b6938a3aeae743884e0c64348b7426078ca0d4f17705b8137877b914ffdeb2a"
-}

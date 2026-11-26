@@ -1,6 +1,5 @@
 // RandomPromptConfig.js
-import React, { useContext, useState, useEffect, useCallback } from 'react';
-import EditorExerciseContext from '@/components/tutorials/EditorExerciseContext';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -35,13 +34,13 @@ import { getPublicToolErrorMessageKey } from '@/utils/publicToolErrors.mjs';
 import { forwardPaintingPanelError } from '../Generation/errorRecords.mjs';
 
 // 实现类别内部词条轮询逻辑的工具函数
-const processSequentialExtractionForCategoryItems = (category, storage) => {
+const processSequentialExtractionForCategoryItems = (category) => {
   if (!category || !category.items || category.items.length === 0) {
     return [];
   }
 
   const storageKey = `category_item_position_${category.id || category.name}`; // 使用ID确保唯一性
-  let currentPosition = parseInt(storage.getItem(storageKey), 10);
+  let currentPosition = parseInt(localStorage.getItem(storageKey), 10);
 
   if (isNaN(currentPosition) || currentPosition === null) {
     currentPosition = category.startPosition || 0;
@@ -60,16 +59,13 @@ const processSequentialExtractionForCategoryItems = (category, storage) => {
   }
 
   const nextPosition = (currentPosition + extractCount) % category.items.length;
-  storage.setItem(storageKey, nextPosition.toString());
+  localStorage.setItem(storageKey, nextPosition.toString());
 
   return result;
 };
 
 // 随机提示词配置对话框
 const RandomPromptConfig = ({ open, onClose, onInsert, onError = null }) => {
-  const exercise = useContext(EditorExerciseContext);
-  const fixture = exercise?.randomConfig;
-  const storage = exercise?.randomCursorStorage ?? globalThis.localStorage;
   const theme = useTheme();
   const { t } = useI18n();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -84,7 +80,7 @@ const RandomPromptConfig = ({ open, onClose, onInsert, onError = null }) => {
   const loadConfig = useCallback(async () => {
     setIsLoading(true);
     try {
-      const response = fixture ?? await apiClient.getRandomPromptConfig();
+      const response = await apiClient.getRandomPromptConfig();
       setCategories(response.categories || []);
       setCollections(response.collections || []);
       setIsEnabled(response.enabled !== false);
@@ -106,7 +102,7 @@ const RandomPromptConfig = ({ open, onClose, onInsert, onError = null }) => {
     } finally {
       setIsLoading(false);
     }
-  }, [onError, fixture]);
+  }, [onError]);
 
   useEffect(() => {
     if (open) {
@@ -117,11 +113,11 @@ const RandomPromptConfig = ({ open, onClose, onInsert, onError = null }) => {
   const saveConfig = async () => {
     setIsLoading(true);
     try {
-      const config = { categories, collections, enabled: isEnabled };
-      if (exercise) {
-        exercise.update({ randomConfig: config });
-        exercise.notify('saveRandom');
-      } else await apiClient.saveRandomPromptConfig(config);
+      await apiClient.saveRandomPromptConfig({
+        categories,
+        collections,
+        enabled: isEnabled
+      });
       setSnackbar({
         open: true,
         messageKey: 'painting.tools.randomPrompt.messages.saved',
@@ -152,18 +148,15 @@ const RandomPromptConfig = ({ open, onClose, onInsert, onError = null }) => {
   };
 
   const handleCategoryChange = (updatedCategories) => {
-    if (updatedCategories.length > categories.length && updatedCategories.some((item) => item.items.length)) exercise?.notify('addCategory');
     setCategories(updatedCategories);
   };
 
   const handleCollectionChange = (updatedCollections) => {
-    if (updatedCollections.length > collections.length && updatedCollections.some((item) => item.categoryRefs.length)) exercise?.notify('addCollection');
     setCollections(updatedCollections);
   };
 
   const handleEnableChange = (event) => {
     setIsEnabled(event.target.checked);
-    if (event.target.checked) exercise?.notify('enableRandom');
   };
 
   const handleInsertSyntax = (item, type) => {
@@ -182,7 +175,6 @@ const RandomPromptConfig = ({ open, onClose, onInsert, onError = null }) => {
   // 生成示例提示词
   const generateExample = (item, type) => {
     if (!item) return '';
-    exercise?.notify('sampleRandom');
 
     if (type === 'category') {
       const category = item;
@@ -192,7 +184,7 @@ const RandomPromptConfig = ({ open, onClose, onInsert, onError = null }) => {
 
       let selectedItems;
       if (extractMode === 'sequential') {
-        selectedItems = processSequentialExtractionForCategoryItems(category, storage);
+        selectedItems = processSequentialExtractionForCategoryItems(category);
       } else {
         selectedItems = [...items]
           .sort(() => 0.5 - Math.random())
@@ -235,7 +227,7 @@ const RandomPromptConfig = ({ open, onClose, onInsert, onError = null }) => {
         const numToPick = Math.min(numToExtract || 1, availableCategoriesInCollection.length);
         if (categoryExtractMode === 'sequential') {
           const storageKey = `collection_category_position_${collection.id || collection.name}`;
-          let currentCollectionCatPos = parseInt(storage.getItem(storageKey), 10);
+          let currentCollectionCatPos = parseInt(localStorage.getItem(storageKey), 10);
 
           if (isNaN(currentCollectionCatPos) || currentCollectionCatPos === null) {
             currentCollectionCatPos = categoryStartPosition || 0;
@@ -249,7 +241,7 @@ const RandomPromptConfig = ({ open, onClose, onInsert, onError = null }) => {
             categoriesToProcess.push(availableCategoriesInCollection[catIndex]);
           }
           const nextCollectionCatPos = (currentCollectionCatPos + numToPick) % availableCategoriesInCollection.length;
-          storage.setItem(storageKey, nextCollectionCatPos.toString());
+          localStorage.setItem(storageKey, nextCollectionCatPos.toString());
         } else {
           categoriesToProcess = [...availableCategoriesInCollection]
             .sort(() => 0.5 - Math.random())
@@ -267,7 +259,7 @@ const RandomPromptConfig = ({ open, onClose, onInsert, onError = null }) => {
         let selectedItemsFromCategory;
 
         if (extractMode === 'sequential') {
-          selectedItemsFromCategory = processSequentialExtractionForCategoryItems(category, storage);
+          selectedItemsFromCategory = processSequentialExtractionForCategoryItems(category);
         } else {
           selectedItemsFromCategory = [...items]
             .sort(() => 0.5 - Math.random())
@@ -340,7 +332,6 @@ const RandomPromptConfig = ({ open, onClose, onInsert, onError = null }) => {
           </Typography>
           <Box>
             <FormControlLabel
-              data-release-target="randomEnable"
               control={
                 <Switch
                   checked={isEnabled}
@@ -350,18 +341,17 @@ const RandomPromptConfig = ({ open, onClose, onInsert, onError = null }) => {
               }
               label={t('painting.tools.randomPrompt.enable')}
             />
-            <IconButton aria-label={t('painting.tools.common.close')} data-tour="configClose" onClick={onClose} size="small">
+            <IconButton aria-label={t('painting.tools.common.close')} onClick={onClose} size="small">
               <CloseIcon />
             </IconButton>
           </Box>
         </Box>
       </DialogTitle>
-      {exercise?.instructions && <Box sx={{ px: 2 }}>{exercise.instructions}</Box>}
 
       <Divider />
 
       <DialogContent sx={{ p: 0, display: 'flex', flexDirection: 'column' }}>
-        <Box data-release-target="randomTabs" sx={{ borderBottom: 1, borderColor: 'divider', px: isMobile ? 1 : 2 }}>
+        <Box sx={{ borderBottom: 1, borderColor: 'divider', px: isMobile ? 1 : 2 }}>
           <Tabs
             value={tabValue}
             onChange={handleTabChange}
@@ -370,7 +360,7 @@ const RandomPromptConfig = ({ open, onClose, onInsert, onError = null }) => {
             allowScrollButtonsMobile
           >
             <Tab label={t('painting.tools.randomPrompt.tabs.categories')} />
-            <Tab data-tour="collectionTab" label={t('painting.tools.randomPrompt.tabs.collections')} />
+            <Tab label={t('painting.tools.randomPrompt.tabs.collections')} />
             <Tab label={t('painting.tools.randomPrompt.tabs.help')} />
           </Tabs>
         </Box>
@@ -383,7 +373,6 @@ const RandomPromptConfig = ({ open, onClose, onInsert, onError = null }) => {
           <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
             {tabValue === 0 && (
               <CategoryForm
-                cursorStorage={storage}
                 categories={categories}
                 onChange={handleCategoryChange}
                 onInsert={item => handleInsertSyntax(item, 'category')}
@@ -393,7 +382,6 @@ const RandomPromptConfig = ({ open, onClose, onInsert, onError = null }) => {
 
             {tabValue === 1 && (
               <CollectionForm
-                cursorStorage={storage}
                 collections={collections}
                 categories={categories}
                 onChange={handleCollectionChange}
@@ -435,7 +423,7 @@ const RandomPromptConfig = ({ open, onClose, onInsert, onError = null }) => {
 
       <Divider />
 
-      <DialogActions data-release-target="randomActions" sx={{ p: isMobile ? 1.5 : 2 }}>
+      <DialogActions sx={{ p: isMobile ? 1.5 : 2 }}>
         <Button
           startIcon={<RefreshIcon />}
           onClick={loadConfig}
@@ -446,7 +434,7 @@ const RandomPromptConfig = ({ open, onClose, onInsert, onError = null }) => {
         </Button>
         <Box sx={{ flex: 1 }} />
         <Button
-          data-tour="configClose" onClick={onClose}
+          onClick={onClose}
           disabled={isLoading}
           size={isMobile ? "small" : "medium"}
         >
@@ -456,7 +444,7 @@ const RandomPromptConfig = ({ open, onClose, onInsert, onError = null }) => {
           variant="contained"
           color="primary"
           startIcon={<SaveIcon />}
-          data-tour="configSave" onClick={saveConfig}
+          onClick={saveConfig}
           disabled={isLoading}
           size={isMobile ? "small" : "medium"}
         >

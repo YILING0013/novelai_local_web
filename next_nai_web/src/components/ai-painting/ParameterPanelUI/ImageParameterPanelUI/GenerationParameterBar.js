@@ -106,13 +106,13 @@ export default function GenerationParameterBar({ params, maxSteps, isV5Medium, h
         transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
         marginThreshold={8}
         slotProps={{ backdrop: { sx: { backgroundColor: 'transparent' } }, paper: {
-          id: `${id}-editor`, 'data-tour-editor': editor?.key, role: 'dialog', 'aria-labelledby': `${id}-title`,
+          id: `${id}-editor`, role: 'dialog', 'aria-labelledby': `${id}-title`,
           sx: { width: 320, maxWidth: 'calc(100vw - 16px)', maxHeight: 'calc(100dvh - 176px)', p: 0, border: 1, borderColor: 'divider', borderRadius: 1.5, backgroundImage: 'none' },
         } }}
       >
         <Box sx={{ position: 'sticky', top: 0, zIndex: 1, bgcolor: 'background.paper', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, px: 2, py: 1.5, borderBottom: 1, borderColor: 'divider' }}>
           <Typography id={`${id}-title`} sx={{ fontSize: '0.9375rem', fontWeight: 600 }}>{title}</Typography>
-          <IconButton size="small" data-tour="dialogClose" onClick={closeEditor} aria-label={t('painting.workspace.actions.close')}><CloseIcon fontSize="small" /></IconButton>
+          <IconButton size="small" onClick={closeEditor} aria-label={t('painting.workspace.actions.close')}><CloseIcon fontSize="small" /></IconButton>
         </Box>
         <Box ref={observeContent} sx={{ p: 2 }}>
         {sliderField && (

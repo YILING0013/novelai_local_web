@@ -768,22 +768,7 @@ def _save_generated_images(images: list[dict], parameters: dict, *, version_para
                 label = str(image["seed"])
             else:
                 label = str(int(time.time() * 1000))
-            name = f"{prefix}_{label}"
-            if method == "custom":
-                now = datetime.now()
-                prompt = str(metadata.get("prompt") or metadata.get("positivePrompt") or "")
-                template = settings.get("fileNameTemplate") or "{prefix}_{seed}_{date}"
-                def token(match):
-                    key, limit = match.groups()
-                    size = min(int(limit or 0), 120)
-                    if key == "prompt":
-                        return prompt.strip()[:size or 32]
-                    if key == "random":
-                        return "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(size or 8))
-                    return {"prefix": prefix, "seed": str(image.get("seed", label)), "date": now.strftime("%Y-%m-%d"),
-                            "time": now.strftime("%H-%M-%S"), "timestamp": str(int(now.timestamp() * 1000))}.get(key, match[0])
-                name = re.sub(r"\{(\w+)(?::(\d{1,3}))?\}", token, template) or label
-            filename = re.sub(r'[<>:"/\\|?*\x00-\x1f\s]+', "_", name).strip("._-") or label
+            filename = re.sub(r'[<>:"/\\|?*\x00-\x1f\s]+', "_", f"{prefix}_{label}").strip("._-")
             filename = re.sub(r"_+", "_", filename)
             saved = current_app.extensions["image_library"].save_generated(
                 base64.b64decode(image["data"]), filename=filename, metadata=metadata,
@@ -2749,10 +2734,7 @@ def create_app(
         for candidate in candidates:
             resolved = candidate.resolve()
             if resolved.is_relative_to(output_root) and resolved.is_file():
-                response = send_file(resolved, conditional=True)
-                if frontend_path.startswith("tag-search/") and resolved.name.endswith(".bin.gz"):
-                    response.headers.pop("Content-Encoding", None)
-                return response
+                return send_file(resolved, conditional=True)
 
         # 缺失的静态资源不能回退为 HTML，否则浏览器会把 index 当作 JS/CSS。
         if frontend_path.startswith("_next/") or Path(frontend_path).suffix:
