@@ -10,7 +10,7 @@
   <a href="https://yihan.art">在线网站</a> ·
   <a href="https://github.com/YILING0013/novelai_local_web/releases/latest">下载 Windows 安装包</a> ·
   <a href="https://github.com/YILING0013/novelai_local_web/releases/latest/download/NovelAI-Local-Web.zip">下载本地 Web 包</a> ·
-  <a href="https://github.com/YILING0013/novelai_local_web/releases/tag/android-v0.1.7">下载 Android APK</a> ·
+  <a href="https://github.com/YILING0013/novelai_local_web/releases/tag/android-v0.1.8">下载 Android APK</a> ·
   <a href="#工作区与功能">界面与功能</a> ·
   <a href="#从源码运行与开发">源码运行</a>
 </p>
@@ -37,7 +37,7 @@ NovelAI Local 是采用 AGPL-3.0 的非官方社区项目，与 NovelAI / Anlata
 
 ### Android 本地版
 
-1. 从 [Android 发布页](https://github.com/YILING0013/novelai_local_web/releases/tag/android-v0.1.7) 下载签名 APK，打开文件并按 Android 提示安装。应用名为 **NovelAI Local**，可与 NovelAI Mobile 并装。由旧调试签名版迁移时，先导出重要图片、笔记和项目，再安装正式版。
+1. 从 [Android 发布页](https://github.com/YILING0013/novelai_local_web/releases/tag/android-v0.1.8) 下载签名 APK，打开文件并按 Android 提示安装。应用名为 **NovelAI Local**，可与 NovelAI Mobile 并装。由旧调试签名版迁移时，先导出重要图片、笔记和项目，再安装正式版。
 2. 在手机上直接用 NovelAI 官方账户登录。离线时可从登录页打开**本机工具**，浏览本机图库、编辑图片或使用已下载的模型。在线生成、官方标签补充、机器翻译和模型下载需要网络。
 3. 左上角侧栏切换绘画、局部重绘、漫画、图像处理和画廊；画布底部打开生成参数及常用工具，顶部更多菜单打开账户和设置。点按生成栏的订阅或点数入口可查看 Anlas 明细。
 4. 在右上角的**应用更新**手动检查新版。正式版支持应用内下载并交由 Android 确认安装。应用会校验安装包摘要、包名和签名。连续生成期间保持应用运行，系统结束应用后可在画廊查看已保存的图片。
