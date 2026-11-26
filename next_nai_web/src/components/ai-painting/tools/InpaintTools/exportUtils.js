@@ -284,13 +284,15 @@ export const cropWorldRectToDataUrl = (options) => {
   return canvas.toDataURL('image/png');
 };
 
-export const worldRectHasVisibleContent = ({
+/** 视口含非透明像素时按重绘强度报价和发送请求，空白视口使用文生图。 */
+export const getViewportInpaintParameters = ({
   contentCanvas,
   contentBounds,
   worldRect,
+  inpaintStrength,
 }) => {
   if (!contentCanvas || !contentBounds || !worldRect) {
-    return false;
+    return null;
   }
 
   const sampleLeft = Math.max(contentBounds.x, Math.floor(worldRect.x));
@@ -301,7 +303,7 @@ export const worldRectHasVisibleContent = ({
   const sampleHeight = sampleBottom - sampleTop;
 
   if (sampleWidth <= 0 || sampleHeight <= 0) {
-    return false;
+    return null;
   }
 
   const ctx = contentCanvas.getContext('2d');
@@ -314,13 +316,12 @@ export const worldRectHasVisibleContent = ({
 
   for (let index = 3; index < imageData.data.length; index += 4) {
     if (imageData.data[index] > 0) {
-      return true;
+      return { image: true, mask: true, inpaintStrength };
     }
   }
 
-  return false;
+  return null;
 };
-
 export const mergePatchIntoContentCanvas = async ({
   contentCanvas,
   contentBounds,

@@ -1,9 +1,11 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
-import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, MenuItem, Stack, TextField, Typography } from '@mui/material';
-import { Add, ArrowBack, Close, ExpandMore, History, Restore, SaveOutlined, EditOutlined, DeleteOutline } from '@mui/icons-material';
+import React, { useEffect, useRef, useState } from 'react';
+import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, MenuItem, Stack, TextField, Tooltip, Typography } from '@mui/material';
+import { Add, ArrowBack, Close, ExpandMore, History, Restore, SaveOutlined, EditOutlined, DeleteOutline, UploadOutlined, DownloadOutlined } from '@mui/icons-material';
 import workVersionStorage from './workVersionStorage.mjs';
+import { exportWorkArchive, importWorkArchive } from './workVersionArchive.mjs';
+import { downloadBlobToFile } from '@/utils/mediaAssets';
 import apiClient from '@/utils/ApiClient';
 import { useI18n } from '@/i18n/I18nProvider';
 import GalleryMetadataFields from './GalleryMetadataFields';
@@ -47,6 +49,7 @@ export default function GalleryVersionsDialog({ open, onClose, imageIds = [], in
   const [candidate, setCandidate] = useState(imageEntry);
   const [revision, setRevision] = useState(0);
   const [workSearch, setWorkSearch] = useState('');
+  const importInput = useRef(null);
   const [selectedWorks, setSelectedWorks] = useState([]);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [messageDraft, setMessageDraft] = useState(null);
@@ -166,6 +169,18 @@ export default function GalleryVersionsDialog({ open, onClose, imageIds = [], in
           <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
             <TextField size="small" label={zh ? '搜索作品' : 'Search works'} value={workSearch} onChange={(event) => setWorkSearch(event.target.value)} sx={{ flex: 1, minWidth: 150, maxWidth: 360 }} />
             <Button startIcon={<Add />} onClick={() => { setCreating(true); setTitle(candidate?.title || ''); setMessage(''); setAttachImages(Boolean(candidateId)); chooseDraft(candidate ? { ...candidate.parameters, positivePrompt: candidate.prompt || '', negativePrompt: candidate.negative_prompt || '' } : {}); }}>{t('gallery.version.newWork')}</Button>
+            {!practice && <><Tooltip title={t('gallery.version.backupHint')}><span><Button size="small" startIcon={<DownloadOutlined />} disabled={locked || !works.length} onClick={async () => {
+              setBusy(true); setError('');
+              try { const blob = await exportWorkArchive(selectedWorks.length ? selectedWorks : null); await downloadBlobToFile(blob, 'novelai-works-' + new Date().toISOString().slice(0, 10) + '.zip'); }
+              catch (failure) { setError(t(failure.message)); } finally { setBusy(false); }
+            }}>{t(selectedWorks.length ? 'gallery.version.exportSelected' : 'gallery.version.exportAll')}</Button></span></Tooltip>
+            <Tooltip title={t('gallery.version.importHint')}><span><Button size="small" startIcon={<UploadOutlined />} disabled={locked} onClick={() => importInput.current?.click()}>{t('gallery.version.import')}</Button></span></Tooltip>
+            <input ref={importInput} type="file" accept=".zip,application/zip" hidden onChange={async (event) => {
+              const file = event.target.files?.[0]; event.target.value = ''; if (!file) return;
+              setBusy(true); setError(''); setNotice('');
+              try { const result = await importWorkArchive(file); setWorks((await store.getWorks()).works); setNotice(t('gallery.version.imported', { count: result.imported })); }
+              catch (failure) { setError(t(failure.message)); } finally { setBusy(false); }
+            }} /></>}
             <FormControlLabel sx={{ m: 0 }} control={<Checkbox size="small" disabled={!visibleWorks.length || locked} checked={visibleWorks.length > 0 && visibleWorks.every((item) => selectedWorks.includes(item.id))} indeterminate={visibleWorks.some((item) => selectedWorks.includes(item.id)) && !visibleWorks.every((item) => selectedWorks.includes(item.id))} onChange={(_, checked) => setSelectedWorks(checked ? [...new Set([...selectedWorks, ...visibleWorks.map((item) => item.id)])] : selectedWorks.filter((id) => !visibleWorks.some((item) => item.id === id)))} />} label={zh ? '全选' : 'Select all'} />
             {selectedWorks.length > 0 && <><Chip size="small" label={zh ? `已选 ${selectedWorks.length}` : `${selectedWorks.length} selected`} /><Button size="small" onClick={() => setSelectedWorks([])}>{zh ? '取消选择' : 'Clear selection'}</Button><Button color="error" startIcon={<DeleteOutline />} disabled={locked || selectedWorks.length > 100} onClick={() => setDeleteOpen(true)}>{zh ? '删除作品' : 'Delete works'}</Button></>}
             {selectedWorks.length > 100 && <Typography variant="caption" color="error">{zh ? '每次最多删除 100 个作品' : 'Select at most 100 works per deletion'}</Typography>}

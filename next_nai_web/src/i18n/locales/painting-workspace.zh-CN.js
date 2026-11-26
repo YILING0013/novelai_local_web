@@ -304,6 +304,7 @@ const paintingWorkspacezhCN = {
         "generateBatchImages": "生成 {count} 张图像 · {width}×{height}",
         "generateImage": "生成图像",
         "viewErrorDetails": "查看错误详情",
+        "shortDetails": "详情",
         "errorDetails": "错误详情",
         "close": "关闭",
         "viewBatchDetails": "查看批量生成详情",

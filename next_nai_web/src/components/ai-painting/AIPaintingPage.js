@@ -401,7 +401,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, releaseGuideAct
     drawerBg: theme.palette.background.paper,
   };
   const {
-    currentItem,
+    currentItem, selectedByGeneration,
     generatedItems,
     generate,
     generatePreview,
@@ -466,14 +466,20 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, releaseGuideAct
   const [processingGalleryRequest, setProcessingGalleryRequest] = useState(null);
   const [parameterEditorState, setParameterEditorState] = useState(null);
   const [parameterEditorKey, setParameterEditorKey] = useState(0);
-  const [leftPanelMode, setLeftPanelMode] = useState('generation');
-  const [adjustmentItemId, setAdjustmentItemId] = useState(null);
+  const [leftPanelMode, setPanelMode] = useState('generation');
+  const setLeftPanelMode = useCallback((mode) => {
+    if (mode !== 'generation') setAdjustmentSource(undefined);
+    setPanelMode(mode);
+  }, []);
+  const [adjustmentSource, setAdjustmentSource] = useState(undefined);
   const [adjustmentPanel, setAdjustmentPanel] = useState(null);
   const [quickImagePresets, setQuickImagePresets] = useState([]);
-  const adjustmentActive = adjustmentItemId !== null && currentItem?.id === adjustmentItemId && leftPanelMode === 'generation';
-  useEffect(() => {
-    if (adjustmentItemId !== null && !adjustmentActive) setAdjustmentItemId(null);
-  }, [adjustmentActive, adjustmentItemId]);
+  const adjustmentActive = adjustmentSource !== undefined && leftPanelMode === 'generation';
+  const displayPrivacy = previewSettings.privacyMode && previewSettings.privacyScope !== 'history';
+  const toggleAdjustment = () => {
+    setMobileDrawerOpen(false);
+    setAdjustmentSource(adjustmentActive ? undefined : currentItem?.type === 'image' ? currentItem : null);
+  };
   useEffect(() => {
     let active = true;
     void readQuickImagePresets().then((presets) => { if (active) setQuickImagePresets(presets); })
@@ -1430,8 +1436,10 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, releaseGuideAct
     event.preventDefault();
     event.stopPropagation();
     const imageFile = readDroppedFiles(event.dataTransfer).find((file) => file.type?.startsWith('image/'));
-    if (imageFile) void openImageImport(imageFile);
-  }, [openImageImport]);
+    if (!imageFile) return;
+    if (adjustmentActive) setAdjustmentSource({ id: crypto.randomUUID(), cachedBlob: imageFile });
+    else void openImageImport(imageFile);
+  }, [adjustmentActive, openImageImport]);
 
   const handleUseDroppedImage = async (target, file) => {
     closePageImageImport();
@@ -1542,7 +1550,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, releaseGuideAct
   };
 
 
-  const handleExportInpaintToGallery = useCallback((item) => {
+  const handleExportInpaintToHistory = useCallback((item) => {
     appendGeneratedItem({
       ...item,
       originalSrc: item.src,
@@ -2730,72 +2738,43 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, releaseGuideAct
           sx={{ zIndex: 9999 }} // 确保最高层级
         >
           <Alert
-            onClose={handleCloseNotification}
             severity={notification.severity}
-            variant="filled"  // 使用填充样式使错误更明显
-            sx={{
-              width: '100%',
-              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
-              ...(notification.severity === 'error' && {
-                fontWeight: 'medium',
-              })
-            }}
-            action={
-              (notification.actions?.length > 0 || notification.errorRecord) ? (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  {notification.actions.map((action, index) => (
-                    <Button
-                      key={index}
-                      color={action.color || 'inherit'}
-                      size="small"
-                      onClick={() => {
-                        if (action.action && typeof action.action === 'function') {
-                          action.action();
-                        }
-                        // 执行操作后关闭通知
-                        handleCloseNotification();
-                      }}
-                    >
-                      {action.text}
-                    </Button>
-                  ))}
-                  {notification.errorRecord && (
-                    <Button
-                      color="inherit"
-                      size="small"
-                      onClick={() => {
-                        setErrorSummaryOpen(true);
-                        handleCloseNotification();
-                      }}
-                    >
-                      {t('painting.workspace.actions.errorDetails')}
-                    </Button>
-                  )}
-                  <IconButton
-                    aria-label={t('painting.workspace.actions.close')}
-                    color="inherit"
-                    size="small"
-                    onClick={handleCloseNotification}
-                  >
-                    <CloseIcon fontSize="small" />
-                  </IconButton>
-                </Box>
-              ) : null
-            }
+            variant="filled"
+            icon={false}
+            sx={{ width: '100%', py: 0.5, px: 1.5, boxShadow: 3,
+              '& .MuiAlert-message': { width: '100%', py: 0.5, overflowWrap: 'anywhere' } }}
           >
-            <Box>
-              <Typography variant="body2" component="div">
-                {notification.message}
-              </Typography>
+            <IconButton
+              aria-label={t('painting.workspace.actions.close')}
+              size="small" color="inherit" onClick={handleCloseNotification}
+              sx={{ float: 'right', ml: 0.5 }}
+            ><CloseIcon fontSize="small" /></IconButton>
+            <Typography variant="body2" component="div">
+              {notification.message}
               {notification.errorRecord && (
-                <Typography variant="caption" component="div" sx={{ mt: 0.5, opacity: 0.92 }}>
-                  {t('painting.workspace.errorRecords.code')}: {notification.errorRecord.code}
-                  {notification.errorRecord.errorId
-                    ? ` · ${t('painting.workspace.errorRecords.errorId')}: ${notification.errorRecord.errorId}`
-                    : ''}
-                </Typography>
+                <Box component="button" type="button" onClick={() => {
+                  setErrorSummaryOpen(true);
+                  handleCloseNotification();
+                }} sx={{ ml: 0.75, p: 0, border: 0, bgcolor: 'transparent', color: 'inherit',
+                  font: 'inherit', textDecoration: 'underline', cursor: 'pointer' }}>
+                  {t('painting.workspace.actions.shortDetails')}
+                </Box>
               )}
-            </Box>
+              {notification.actions?.map((action, index) => (
+                <Button key={index} size="small" color="inherit" sx={{ minWidth: 0, px: 0.75, py: 0 }}
+                  onClick={() => { action.action?.(); handleCloseNotification(); }}>
+                  {action.text}
+                </Button>
+              ))}
+            </Typography>
+            {notification.errorRecord && (
+              <Typography variant="caption" component="div" sx={{ mt: 0.5, opacity: 0.92 }}>
+                {t('painting.workspace.errorRecords.code')}: {notification.errorRecord.code}
+                {notification.errorRecord.errorId
+                  ? ` · ${t('painting.workspace.errorRecords.errorId')}: ${notification.errorRecord.errorId}`
+                  : ''}
+              </Typography>
+            )}
           </Alert>
         </Snackbar>
 
@@ -3022,21 +3001,22 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, releaseGuideAct
                   disableReferenceAction={hasActiveVibes}
                   previewSettings={previewSettings} privacyMode={previewSettings.privacyMode && previewSettings.privacyScope !== 'history'}
                   imageDrag={previewCanDrag ? { ...previewDrag, mode: previewSettings.copyMode } : null}
-                  onAdjustImage={() => {
-                    setMobileDrawerOpen(false);
-                    setAdjustmentItemId((id) => id === currentItem?.id ? null : currentItem?.id ?? null);
-                  }}
-                  adjustmentPreview={adjustmentActive ? <QuickImageAdjustment key={currentItem.id}
-                    item={currentItem} panel={adjustmentPanel} privacyMode={previewSettings.privacyMode}
+                  selectedByGeneration={selectedByGeneration}
+                  onAdjustImage={toggleAdjustment}
+                  onUploadAdjustmentImage={(file) => setAdjustmentSource({ id: crypto.randomUUID(), cachedBlob: file })}
+                  adjustmentActive={adjustmentActive}
+                  adjustmentPreview={adjustmentActive && adjustmentSource ? <QuickImageAdjustment key={adjustmentSource.id}
+                    item={adjustmentSource} panel={adjustmentPanel} privacyMode={displayPrivacy}
+                    privacyReveal={previewSettings.privacyReveal} previewSettings={previewSettings}
                     presets={quickImagePresets} onPresetsChange={setQuickImagePresets}
-                    onClose={() => setAdjustmentItemId(null)} onApply={(blob, width, height) => {
+                    onClose={() => setAdjustmentSource(undefined)} onApply={(blob, width, height) => {
                       const src = createObjectUrlFromBlob(blob);
                       appendGeneratedItem({
                         type: 'image', src, originalSrc: src, downloadSrc: src, cachedBlob: blob, width, height,
-                        objectUrlToRevoke: src, seed: currentItem.seed, prompt: currentItem.prompt,
-                        model: currentItem.model, galleryParameters: currentItem.galleryParameters, isComposited: true,
+                        objectUrlToRevoke: src, seed: adjustmentSource.seed, prompt: adjustmentSource.prompt,
+                        model: adjustmentSource.model, galleryParameters: adjustmentSource.galleryParameters, isComposited: true,
                       });
-                      setAdjustmentItemId(null);
+                      setAdjustmentSource(undefined);
                     }} /> : null}
                   onImageTool={handleImageTool}
                   imageToolsDisabled={tutorialPromptActive || imageToolBusy || batchStatus.active || inpaintPreviewBatch.active}
@@ -3060,8 +3040,8 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, releaseGuideAct
                   currentItemId={currentItem?.id}
                   onSelectItem={handleSelectPreview}
                   onImportImages={importHistoryImages}
-                  onAdjustImage={currentItem && (() => setAdjustmentItemId(id => id === currentItem.id ? null : currentItem.id))}
-                  adjustmentActive={Boolean(adjustmentItemId)}
+                  onAdjustImage={toggleAdjustment}
+                  adjustmentActive={adjustmentActive}
                   onDeleteItem={handleDeletePreview}
                   previewSettings={previewSettings}
                   quickImagePresets={quickImagePresets}
@@ -3092,7 +3072,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, releaseGuideAct
                   generatedItems={generatedItems}
                   outputResolution={{ width: generationParams.width, height: generationParams.height }}
                   isMobile={isMobile}
-                  onExportToGallery={handleExportInpaintToGallery}
+                  onExportToHistory={handleExportInpaintToHistory}
                   showNotification={showNotification}
                   isGenerating={isGenerating}
                   generationStatus={generationStatus}
@@ -3514,7 +3494,7 @@ const AIPaintingPageContent = ({ userId, accountSnapshot = null, releaseGuideAct
             <Box data-mobile-parameter-footer ref={setDrawerToolbarContainer} sx={{ px: 2, pt: 1, flexShrink: 0, bgcolor: 'background.paper', borderTop: 1, borderColor: 'divider' }} />
           </SwipeableDrawer>
         )}
-        {isMobile && adjustmentActive && <Box ref={setAdjustmentPanel} sx={{
+        {isMobile && adjustmentActive && adjustmentSource && <Box ref={setAdjustmentPanel} sx={{
           height: '41dvh', overflowY: 'auto', flexShrink: 0, px: 0.5,
           bgcolor: 'background.paper', borderTop: 1, borderColor: 'divider',
         }} />}

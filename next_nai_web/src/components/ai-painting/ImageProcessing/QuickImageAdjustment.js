@@ -15,6 +15,8 @@ import { Eraser } from 'lucide-react';
 import { useI18n } from '@/i18n/I18nProvider';
 import { downloadBlobToFile, fetchUrlAsBlob } from '@/utils/mediaAssets';
 import { readDroppedFiles } from '../tools/ImageTools/previewImageDragData.mjs';
+import { transparencyBackgroundSx } from '../tools/ImageTools/previewImageExport';
+import ImagePrivacyCover, { imagePrivacySx } from '../ImagePrivacyCover';
 import Curves from './compositor/components/Curves';
 import { ADJUSTMENT_RANGES, DEFAULT_ADJUSTMENTS, GRADING_CHANNELS, HSL_CHANNELS } from './compositor/lib/model';
 import { parseCubeLut } from './compositor/lib/lut';
@@ -103,7 +105,7 @@ function ColorControl({ label, value, onChange }) {
  * @param {object} props 当前图像、参数区挂载点、快捷预设和保存回调。
  * @returns {React.ReactElement} 支持马赛克画笔和水印摆放的预览及调整面板。
  */
-export default function QuickImageAdjustment({ item, panel, privacyMode, presets, onPresetsChange, onClose, onApply, onExerciseAction }) {
+export default function QuickImageAdjustment({ item, panel, privacyMode, privacyReveal, previewSettings, presets, onPresetsChange, onClose, onApply, onExerciseAction }) {
   const { t } = useI18n();
   const text = (key) => t(`painting.workspace.adjustment.${key}`);
   const canvasRef = useRef(null);
@@ -678,9 +680,15 @@ export default function QuickImageAdjustment({ item, panel, privacyMode, presets
     </Dialog>
   </Stack>;
 
+  const ratio = source ? source.preview.width / source.preview.height : 1;
   return <>
+    <Box sx={(theme) => ({
+      position: 'relative', width: `min(${item.width || '100%'}${item.width ? 'px' : ''}, 100cqw, ${ratio * 100}cqh)`,
+      aspectRatio: String(ratio), borderRadius: 1, boxShadow: theme.shadows[8],
+      visibility: previewReady ? 'visible' : 'hidden', ...transparencyBackgroundSx(previewSettings, theme), ...imagePrivacySx,
+    })}>
       <Box component="canvas" ref={canvasRef} className={canvasTool ? 'image-adjustment-canvas' : undefined}
-        data-private-image data-adjustment-preview-ready={previewReady} aria-label={text('preview')}
+        data-private-image aria-label={text('preview')}
         sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', borderRadius: 'inherit', visibility: previewReady ? 'visible' : 'hidden',
           touchAction: canvasTool ? 'none' : 'auto', cursor: activeBrush ? 'none' : canvasTool ? 'move' : 'inherit' }}
         onPointerDown={(event) => {
@@ -715,6 +723,8 @@ export default function QuickImageAdjustment({ item, panel, privacyMode, presets
           setDraft(null);
         }} />
       {activeBrush && <span ref={brushRing} className={ui.brushRing} data-erase={brush === 'erase'} aria-hidden />}
+      {privacyMode && <ImagePrivacyCover mode={privacyReveal} />}
+    </Box>
     {panel && createPortal(controls, panel)}
   </>;
 }

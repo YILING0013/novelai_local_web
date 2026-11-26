@@ -79,12 +79,14 @@ function ColorField({ label, value, onChange }) {
  * @param {object} props pages 为可见页面，active 表示标签是否可见，sectionRequest 指定从画廊跳入的分区。
  * @returns {React.ReactElement} 分类导航、设置内容与始终可见的保存栏。
  */
-export default function SettingsPage({ pages = [], active = true, sectionRequest = null, chooseDirectory, fixedOutputDirectory = false, desktopPreferences, onDirtyChange, mobileLayout = false, onSectionChange, onBack, appVersion }) {
+export default function SettingsPage({ pages = [], active = true, sectionRequest = null, chooseDirectory, fixedOutputDirectory = false, desktopPreferences, onDirtyChange, mobileLayout: nativeMobile = false, onSectionChange, onBack, appVersion }) {
   const theme = useTheme();
   const { t, locale, setLocale } = useI18n();
   const mobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const mobileLayout = nativeMobile || mobile;
   const { savedSettings, previewTheme, reloadFromStorage } = useAppTheme();
-  const [section, setSection] = useState(mobileLayout ? null : desktopPreferences ? 'desktop' : 'appearance');
+  const [selectedSection, setSection] = useState(null);
+  const section = selectedSection || (mobileLayout ? null : desktopPreferences ? 'desktop' : 'appearance');
   const promptSettings = usePromptEditorSettings();
   const [interfaceDraft, setInterfaceDraft] = useState({});
   const [shortcutError, setShortcutError] = useState(null);

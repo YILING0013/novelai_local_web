@@ -3,7 +3,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Tab, Tabs, Tooltip, Typography, alpha, useMediaQuery, useTheme } from '@mui/material';
-import { AccountCircle, Brightness4, Brightness7, Brush, ChevronLeft, CollectionsOutlined, AutoAwesome, Logout, PersonOutline, PhotoFilter, SchoolOutlined, Settings, ZoomInMap } from '@mui/icons-material';
+import { AccountCircle, Brightness4, Brightness7, Brush, ChevronLeft, CollectionsOutlined, LocalOffer, Logout, PersonOutline, PhotoFilter, SchoolOutlined, Settings, Hd } from '@mui/icons-material';
 import { PanelLeft } from 'lucide-react';
 import { open as pick } from '@tauri-apps/plugin-dialog';
 import DesktopTitleBar from '@/desktop/DesktopTitleBar';
@@ -28,7 +28,7 @@ const Account=lazy(()=>import('@/components/account/AccountDialog'));
 const pages=[
   [ID.AI_PAINTING,'pages.aiPainting',Brush],[ID.GALLERY,'pages.gallery',CollectionsOutlined],
   [ID.IMAGE_PROCESSING,'painting.workspace.tabs.imageProcessing',PhotoFilter],
-  [ID.IMAGE_TAGGING,'pages.imageTagging',AutoAwesome],[ID.LOCAL_UPSCALING,'pages.localUpscaling',ZoomInMap],
+  [ID.IMAGE_TAGGING,'pages.imageTagging',LocalOffer],[ID.LOCAL_UPSCALING,'pages.localUpscaling',Hd],
   [ID.TUTORIALS,'pages.tutorials',SchoolOutlined],
   [ID.SETTINGS,'pages.settings',Settings]];
 export default function Workspace({ local, onLogin, android = false, appVersion, TitleBar = DesktopTitleBar,
@@ -67,7 +67,7 @@ export default function Workspace({ local, onLogin, android = false, appVersion,
   const comic=useRef(null);
   const settingsReturn = useRef({});
   const settingsSection = params.get('section');
-  const sectionRequest = useMemo(() => android ? { section: settingsSection } : null, [android, settingsSection]);
+  const sectionRequest = useMemo(() => ({ section: settingsSection }), [settingsSection]);
   useEffect(() => {
     if (active !== ID.SETTINGS) settingsReturn.current = Object.fromEntries(params);
   }, [active, params]);
@@ -108,7 +108,7 @@ export default function Workspace({ local, onLogin, android = false, appVersion,
   useEffect(()=>{if(!local)api.getSession().then(s=>{if(!s.authenticated)onLogin();else {setAccount(s.account_snapshot);api.getAccount().then(r=>setAccount(r.account_snapshot)).catch(e=>{if(e.status===401)onLogin()})}}).catch(e=>setError(e.message));},[local]); // window hand-off happens once
   const bridge=useMemo(()=>({share(items,reader){setGenerated(items);comic.current=reader},open(request){setIncoming(request);select(ID.IMAGE_PROCESSING)}}),[select]);
   useEffect(()=>{
-    const goto=e=>{if(android && e.detail?.pageId===ID.SETTINGS){
+    const goto=e=>{if(e.detail?.pageId===ID.SETTINGS){
       setParams({page:ID.SETTINGS,section:e.detail.section});
     }else if(e.detail===ID.AI_PAINTING&&sessionStorage.getItem('novelai:pending-image-processing')){
       try{setIncoming(JSON.parse(sessionStorage.getItem('novelai:pending-image-processing')));sessionStorage.removeItem('novelai:pending-image-processing');select(ID.IMAGE_PROCESSING)}catch(err){setError(err.message)}
@@ -159,7 +159,7 @@ export default function Workspace({ local, onLogin, android = false, appVersion,
     if(id===ID.IMAGE_PROCESSING)return <Editor active={on} generatedItems={generated} getCurrentComicPage={()=>comic.current?.()}
       galleryRequest={sharedImageRequest || incoming} onGalleryRequestHandled={sharedImageRequest ? onSharedImageRequestHandled : () => setIncoming(null)}/>;
     if(id===ID.SETTINGS)return <Preferences active={on} pages={nav} onDirtyChange={setDirty} fixedOutputDirectory={android} mobileLayout={android}
-      sectionRequest={sectionRequest} appVersion={appVersion} onBack={android ? closeSettings : undefined} onSectionChange={(section) => {
+      sectionRequest={sectionRequest} appVersion={appVersion} onBack={closeSettings} onSectionChange={(section) => {
         if (section) setParams({ page: ID.SETTINGS, section }, { state: { settingsParent: true } });
         else if (window.history.state?.usr?.settingsParent) navigate(-1);
         else setParams({ page: ID.SETTINGS }, { replace: true });

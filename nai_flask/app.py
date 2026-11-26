@@ -2197,6 +2197,24 @@ def create_app(
         _log_local_json("read", "notes", notebook["notes"])
         return jsonify(notebook)
 
+    @app.post("/api/local/works/archive-assets")
+    @session_required(csrf=True)
+    def stage_archive_asset() -> Response:
+        """读取一张归档图片并生成供作品版本使用的独立快照。"""
+        file = request.files.get("files")
+        if not file:
+            raise ApiError("A snapshot file is required.")
+        content = file.read(32 * 1024 * 1024 + 1)
+        if not content or len(content) > 32 * 1024 * 1024:
+            raise ApiError("Invalid snapshot size.")
+        return jsonify(app.extensions["image_library"].versions.stage_archive_asset(content))
+
+    @app.post("/api/local/works/archive")
+    @session_required(csrf=True)
+    def restore_work_archive() -> Response:
+        """使用已验证的快照，一次恢复归档中的全部作品和版本。"""
+        return jsonify(app.extensions["image_library"].versions.restore_archive(_request_json()))
+
     @app.get("/api/local/works")
     @session_required()
     def works_list() -> Response:
@@ -2356,6 +2374,13 @@ def create_app(
         files = request.files.getlist("files")
         if not files or len(files) > 30:
             raise ApiError("Upload between 1 and 30 images at a time.")
+        try:
+            archive_entry = json.loads(request.form.get("archive_entry") or "{}")
+        except ValueError as exc:
+            raise ApiError("Invalid archive entry.") from exc
+        if not isinstance(archive_entry, dict) or (archive_entry and
+                not re.fullmatch(r"archive_[a-f0-9]{64}", str(archive_entry.get("restore_id", "")))):
+            raise ApiError("Invalid archive entry.")
         items, errors = [], []
         for upload in files:
             try:
@@ -2363,7 +2388,11 @@ def create_app(
                 if len(raw) > 30 * 1024 * 1024:
                     raise ValueError("Image exceeds 30 MiB.")
                 items.append(app.extensions["image_library"].import_image(
-                    raw, upload.filename or "image", group_id=request.form.get("group_id") or None))
+                    raw, upload.filename or "image", source=request.form.get("source", "references"),
+                    group_id=request.form.get("group_id") or None, title=archive_entry.get("title", ""),
+                    prompt=archive_entry.get("prompt"), negative_prompt=archive_entry.get("negative_prompt"),
+                    style_prompt=archive_entry.get("style_prompt", ""), parameters=archive_entry.get("parameters"),
+                    image_id=archive_entry.get("restore_id"), archived_at=archive_entry.get("created_at")))
             except (OSError, ValueError, LocalStoreError, ExposableError, sqlite3.Error) as exc:
                 errors.append({"filename": upload.filename, "error": str(exc)})
         return jsonify({"items": items, "errors": errors})

@@ -4,6 +4,7 @@ import base64
 import io
 import json
 import sqlite3
+import uuid
 
 import pytest
 from PIL import Image
@@ -524,3 +525,33 @@ def test_message_and_bulk_delete_require_session_and_csrf(client, app):
     assert client.patch(version_path, json={"message": "改动"}, headers=headers).json["version"]["message"] == "改动"
     assert client.post("/api/local/works/batch-delete", json={"ids": [work_id]}, headers=headers).json["deleted_ids"] == [work_id]
     assert client.get(f"/api/local/works/{work_id}").status_code == 404
+
+def test_restore_archive_routes_keep_snapshot_branches_and_rollback(client):
+    """两条分支共享已经脱离图库的原图；失败的批次不留下作品。"""
+    headers = {"Origin": ORIGIN, "X-CSRF-Token": login(client)}
+    raw = base64.b64decode(PNG_BASE64)
+    upload = client.post("/api/local/works/archive-assets", headers=headers, data={"files": (io.BytesIO(raw), "root.png")})
+    assert upload.status_code == 200
+    digest = upload.get_json()["id"]
+    work_id, root, left, right = [str(uuid.uuid4()) for _ in range(4)]
+    time = "2026-01-01T00:00:00.000Z"
+    blueprint = {"positions": {right: {"x": 15, "y": 30}}, "edge_notes": {right: "branch"}, "hidden_node_ids": [], "groups": []}
+    work = {"id": work_id, "title": "同名作品", "created_at": time, "updated_at": time, "blueprint": blueprint,
+            "latest_version_id": right, "version_count": 3}
+    image = {"id": "archive-image", "asset_id": "snapshot", "filename": "root.png", "source": "outputs", "title": "原图",
+             "created_at": time, "width": 2, "height": 2}
+    versions = [{"id": node, "work_id": work_id, "number": number, "parent_id": parent, "message": str(number),
+                 "operation": "commit", "created_at": time, "parameters": {"seed": number}, "images": [image]}
+                for number, node, parent in [(1, root, None), (2, left, root), (3, right, root)]]
+    body = {"works": [work], "versions": versions, "asset_ids": {}}
+    assert client.post("/api/local/works/archive", json=body, headers=headers).status_code == 400
+    assert client.get("/api/local/works").get_json()["works"] == []
+    body["asset_ids"]["snapshot"] = digest
+    assert client.post("/api/local/works/archive", json=body, headers=headers).get_json()["work_ids"] == [work_id]
+    detail = client.get(f"/api/local/works/{work_id}").get_json()
+    assert detail["blueprint"] == blueprint
+    assert [v["parent_id"] for v in detail["versions"]] == [None, root, root]
+    assert client.get(detail["versions"][2]["images"][0]["url"]).data == raw
+    assert client.get("/api/local/gallery?source=outputs").get_json()["total"] == 0
+    assert client.post("/api/local/works/archive", json=body, headers=headers).status_code == 400
+    assert len(client.get("/api/local/works").get_json()["works"]) == 1

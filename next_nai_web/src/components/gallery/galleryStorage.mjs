@@ -280,7 +280,7 @@ export async function getGalleryEntry(id, target, optional = false) {
  */
 export function validateGalleryEntry(entry) {
   const baseId = `${entry?.source}-${entry?.hash}`;
-  const copyId = typeof entry?.id === 'string' && entry.source === 'outputs' && entry.id.startsWith(`${baseId}-`)
+  const copyId = typeof entry?.id === 'string' && (entry.source === 'outputs' || (entry.source === 'references' && typeof entry.original_local_id === 'string')) && entry.id.startsWith(`${baseId}-`)
     && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(entry.id.slice(baseId.length + 1));
   if (!entry || !GALLERY_SOURCES.includes(entry.source) || !/^[a-f0-9]{64}$/.test(entry.hash)
     || (entry.id !== baseId && !copyId) || !['png', 'jpg', 'webp', 'gif', 'bmp'].includes(entry.extension)

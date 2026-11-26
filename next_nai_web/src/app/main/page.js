@@ -41,8 +41,8 @@ import {
   Brush as BrushIcon,
   CollectionsOutlined as GalleryIcon,
   PhotoFilter as ImageProcessingIcon,
-  AutoAwesome as TaggingIcon,
-  ZoomInMap as UpscalingIcon,
+  LocalOffer as TaggingIcon,
+  Hd as UpscalingIcon,
   ChevronLeft as ChevronLeftIcon,
   ChevronRight as ChevronRightIcon,
   Close as CloseIcon,
@@ -113,6 +113,11 @@ export default function MainPage() {
   const [openPages, setOpenPages] = useState([]);
   const [workContext, setWorkContext] = useState(null);
   const [activePage, setActivePage] = useState(null);
+  const settingsSource = useRef(null);
+  const [settingsRequest, setSettingsRequest] = useState(null);
+  useEffect(() => {
+    if (activePage && activePage !== PAGE_IDS.SETTINGS) settingsSource.current = activePage;
+  }, [activePage]);
   const [paintHost, setPaintHost] = useState(null);
   const [generatedItems, setGeneratedItems] = useState([]);
   const [processingRequest, setProcessingRequest] = useState(null);
@@ -254,7 +259,8 @@ export default function MainPage() {
 
   useEffect(() => {
     const openRequestedPage = (event) => {
-      let pageId = event.detail;
+      let pageId = event.detail?.pageId || event.detail;
+      if (pageId === PAGE_IDS.SETTINGS) setSettingsRequest({ section: event.detail?.section || null });
       if ([PAGE_IDS.REFERENCE_GALLERY, PAGE_IDS.LOCAL_GALLERY, PAGE_IDS.GALLERY].includes(pageId)) {
         if (pageId !== PAGE_IDS.GALLERY) setRequestedGallerySource(pageId === PAGE_IDS.REFERENCE_GALLERY ? 'references' : 'outputs');
         pageId = PAGE_IDS.GALLERY;
@@ -462,7 +468,7 @@ export default function MainPage() {
                       ? <ImageProcessingWorkspace active={page.id === activePage} generatedItems={generatedItems} getCurrentComicPage={() => comicRef.current?.()}
                           galleryRequest={processingRequest} onGalleryRequestHandled={() => setProcessingRequest(null)} />
                       : page.id === PAGE_IDS.SETTINGS
-                      ? React.cloneElement(page.component, { pages: visiblePages, active: page.id === activePage })
+                      ? React.cloneElement(page.component, { pages: visiblePages, active: page.id === activePage, sectionRequest: settingsRequest, onBack: () => setActivePage(settingsSource.current || PAGE_IDS.AI_PAINTING) })
                       : page.id === PAGE_IDS.TUTORIALS
                       ? <TutorialsPage active={activePage === PAGE_IDS.TUTORIALS} onStartGuide={startTutorial} />
                       : page.id === PAGE_IDS.AI_PAINTING

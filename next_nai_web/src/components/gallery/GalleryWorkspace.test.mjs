@@ -59,6 +59,9 @@ function renderComponent(filename, props, apiOverrides = {}) {
     '@/utils/browserCapabilities.mjs': { copyTextToClipboard: async () => {}, createClientId: () => 'synthetic-editor-request' },
     '@/i18n/I18nProvider': { useI18n: () => ({ t: translation }) },
     './GalleryDetailDialog': { __esModule: true, default: 'GalleryDetailDialog' },
+    '@/utils/mediaAssets': { downloadBlobToFile: async () => {} },
+    './galleryArchive.mjs': {},
+    './workVersionArchive.mjs': {},
     './GalleryMetadataDialog': { __esModule: true, default: 'GalleryMetadataDialog' },
     './GalleryVersionsDialog': { __esModule: true, default: 'GalleryVersionsDialog' },
     './VersionBlueprintCanvas': { __esModule: true, default: 'VersionBlueprintCanvas' },
@@ -162,7 +165,7 @@ test('参考图库一次上传多张图片，标题与提示词留空也会导�
   });
   const tree = gallery.render();
   await gallery.flush();
-  const input = findNode(tree, (node) => node.type === 'input' && node.props.type === 'file');
+  const input = findNode(tree, (node) => node.type === 'input' && node.props.type === 'file' && node.props.multiple);
   input.props.onChange({ target: { files: [new File(['a'], 'a.png', { type: 'image/png' }), new File(['b'], 'b.png', { type: 'image/png' })], value: '' } });
   await gallery.flush();
   assert.equal(uploads.length, 1);
@@ -184,7 +187,7 @@ test('混合大小的批量上传按 60 MiB 和 30 张限制拆分，并保持�
   });
   const tree = gallery.render();
   await gallery.flush();
-  const input = findNode(tree, (node) => node.type === 'input' && node.props.type === 'file');
+  const input = findNode(tree, (node) => node.type === 'input' && node.props.type === 'file' && node.props.multiple);
   input.props.onChange({ target: { files, value: '' } });
   await gallery.flush();
   assert.deepEqual(uploads.map((batch) => batch.length), [20, 30, 2]);

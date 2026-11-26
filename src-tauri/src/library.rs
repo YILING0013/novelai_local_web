@@ -48,7 +48,17 @@ pub fn import(
     }
     let pic = image::load_from_memory_with_format(bytes, format)
         .map_err(|_| Fault::bad("Invalid image."))?;
-    let key = id();
+    let key = match extra["restore_id"].as_str() {
+        Some(key)
+            if key.len() == 72
+                && key.starts_with("archive_")
+                && key[8..].bytes().all(|c| c.is_ascii_hexdigit()) =>
+        {
+            key.to_owned()
+        }
+        Some(_) => return Err(Fault::bad("Invalid archive entry ID.")),
+        None => id(),
+    };
     let hash = format!("{:x}", Sha256::digest(bytes));
     let objects = core.root.join("objects");
     let blob = objects.join(&hash);
@@ -80,7 +90,17 @@ pub fn import(
         .or(params["prompt"].as_str())
         .or(meta["Description"].as_str())
         .unwrap_or("");
-    let item = json!({"id":key,"digest":hash,"mime_type":format.to_mime_type(),"source":src,"filename":filename,"relative_path":filename,"title":extra["title"].as_str().filter(|s|!s.is_empty()).unwrap_or(&filename),"prompt":prompt,"negative_prompt":params.get("negativePrompt").unwrap_or(&params["uc"]),"model":params["model"],"group_id":extra["group_id"],"width":w,"height":h,"byte_size":bytes.len(),"size":bytes.len(),"created_at":now(),"updated_at":now(),"trashed_at":null,"missing":false,"parameters":params,"metadata":meta,"metadata_document":document,"metadata_bindings":bindings,"metadata_shared_paths":paths,"url":format!("/api/local/gallery/{key}/file"),"thumbnail_url":format!("/api/local/gallery/{key}/thumbnail")});
+    let created_at = extra["created_at"]
+        .as_i64()
+        .and_then(chrono::DateTime::from_timestamp_millis)
+        .map(|date| date.to_rfc3339())
+        .unwrap_or_else(now);
+    let updated_at = extra["updated_at"]
+        .as_i64()
+        .and_then(chrono::DateTime::from_timestamp_millis)
+        .map(|date| date.to_rfc3339())
+        .unwrap_or_else(|| created_at.clone());
+    let item = json!({"id":key,"digest":hash,"mime_type":format.to_mime_type(),"source":src,"filename":filename,"relative_path":filename,"title":extra["title"].as_str().filter(|s|!s.is_empty()).unwrap_or(&filename),"prompt":prompt,"negative_prompt":extra.get("negative_prompt").or(params.get("negativePrompt")).unwrap_or(&params["uc"]),"style_prompt":extra["style_prompt"],"model":params["model"],"group_id":extra["group_id"],"width":w,"height":h,"byte_size":bytes.len(),"size":bytes.len(),"created_at":created_at,"updated_at":updated_at,"trashed_at":null,"missing":false,"parameters":params,"metadata":meta,"metadata_document":document,"metadata_bindings":bindings,"metadata_shared_paths":paths,"url":format!("/api/local/gallery/{key}/file"),"thumbnail_url":format!("/api/local/gallery/{key}/thumbnail")});
     put(db, "image", &key, &item)?;
     Ok(item)
 }
@@ -183,6 +203,22 @@ pub fn handle(core: &Core, method: &str, path: &[&str], q: &Query, b: &V) -> Res
         (["directories"], "GET") => {
             json!({"path":"","parent":null,"directories":[],"roots":[],"suggested_export_directory":"","use_document_picker":true})
         }
+        (["works", "archive-assets"], "POST") => {
+            let files = b["files"]
+                .as_array()
+                .filter(|files| files.len() == 1)
+                .ok_or_else(|| Fault::bad("Select one archived image."))?;
+            let file = &files[0];
+            let data = STANDARD
+                .decode(s(file, "data"))
+                .map_err(|_| Fault::bad("Invalid image data."))?;
+            // 快照使用内容寻址的原图和缩略图，事务结束时不留下普通图库条目。
+            let image = import(core, &db, "outputs", s(file, "name"), &data, &json!({}))?;
+            let digest = s(&image, "digest");
+            put(&db, "asset", digest, &image)?;
+            del(&db, "image", s(&image, "id"))?;
+            json!({"id": digest})
+        }
         (["gallery", "import"], "POST") => {
             if let Some(group) = b["group_id"].as_str().filter(|k| !k.is_empty()) {
                 if get(&db, "groups", group)?["source"]
@@ -202,7 +238,30 @@ pub fn handle(core: &Core, method: &str, path: &[&str], q: &Query, b: &V) -> Res
                     .decode(s(f, "data"))
                     .map_err(|_| Fault::bad("Invalid base64."))
                     .and_then(|data| {
-                        let mut v = import(core, &db, "references", s(f, "name"), &data, b)?;
+                        let src = b["source"].as_str().unwrap_or("references");
+                        let mut extra = if let Some(entry) = b["archive_entry"].as_str() {
+                            serde_json::from_str(entry)
+                                .map_err(|_| Fault::bad("Invalid archive entry."))?
+                        } else {
+                            b.clone()
+                        };
+                        if !extra.is_object() {
+                            return Err(Fault::bad("Invalid archive entry."));
+                        }
+                        extra["group_id"] = b["group_id"].clone();
+                        if let Some(key) = extra["restore_id"].as_str() {
+                            if let Some(existing) = load(&db, "image", key)? {
+                                if existing["source"] == src
+                                    && existing["digest"] == format!("{:x}", Sha256::digest(&data))
+                                {
+                                    return Ok(existing);
+                                }
+                                return Err(Fault::bad(
+                                    "Archive entry conflicts with an existing image.",
+                                ));
+                            }
+                        }
+                        let mut v = import(core, &db, src, s(f, "name"), &data, &extra)?;
                         if let Err(e) = crate::gallery_files::save_new(core, &db, &mut v, &data) {
                             del(&db, "image", s(&v, "id"))?;
                             return Err(e);

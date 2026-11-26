@@ -344,11 +344,11 @@ class LocalImageLibrary:
             (id,source,root,relative_path,filename,title,prompt,negative_prompt,style_prompt,
              parameters_json,metadata_json,metadata_document_json,width,height,created_at,mtime_ns,byte_size,group_id)
             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
-            image_id, source, str(root), relative_path, path.name, values["title"],
+            image_id, source, str(root), relative_path, values.get("filename", path.name), values["title"],
             values["prompt"], values["negative_prompt"], values["style_prompt"],
             json.dumps(parameters, ensure_ascii=False), json.dumps(inspected["metadata"], ensure_ascii=False),
             json.dumps(inspected["metadata_document"], ensure_ascii=False), inspected["width"], inspected["height"],
-            datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
+            values.get("created_at") or datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
             stat.st_mtime_ns, stat.st_size, values["group_id"],
         ))
         return self._record(self._row(db, image_id))
@@ -492,7 +492,7 @@ class LocalImageLibrary:
             return original
 
     def import_image(self, image_bytes, filename, source="references", title="", prompt=None,
-                     negative_prompt=None, style_prompt="", parameters=None, group_id=None, image_id=None):
+                     negative_prompt=None, style_prompt="", parameters=None, group_id=None, image_id=None, archived_at=None):
         """
         导入图片为独立本地文件，并保留原始文件字节和元数据。
 
@@ -507,6 +507,7 @@ class LocalImageLibrary:
             parameters: 可选 UI 参数。
             group_id: 可选同来源分组。
             image_id: 迁移时可指定稳定 ID；已存在时保留已有记录。
+            archived_at: 归档中的原始创建时间，使用毫秒时间戳。
 
         Returns:
             新增或已存在的图片详情。
@@ -516,7 +517,12 @@ class LocalImageLibrary:
             if image_id:
                 existing = db.execute("SELECT * FROM library_images WHERE id=?", (image_id,)).fetchone()
                 if existing:
-                    return self._record(self._row(db, image_id))
+                    row = self._row(db, image_id)
+                    if image_id.startswith("archive_"):
+                        stored = self._contained(self._root(row["source"]), row["trash_path"] if row["trashed_at"] else row["relative_path"])
+                        if row["source"] != source or stored.read_bytes() != image_bytes:
+                            raise ExposableError("Archive entry conflicts with an existing image.", 409, "LIBRARY_IMPORT_CONFLICT")
+                    return self._record(row)
                 if not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", image_id):
                     raise ExposableError("The imported image ID is invalid.", code="LIBRARY_IMAGE_ID_INVALID")
             image_id = image_id or uuid.uuid4().hex
@@ -527,6 +533,12 @@ class LocalImageLibrary:
                 raise ExposableError("The image parameters must be a JSON object.", code="LIBRARY_EDIT_INVALID")
             if not image_bytes or len(image_bytes) > MAX_IMAGE_BYTES:
                 raise ExposableError("The image must contain at most 30 MiB.", code="LIBRARY_IMAGE_TOO_LARGE")
+            created_at = None
+            if archived_at is not None:
+                try:
+                    created_at = datetime.fromtimestamp(archived_at / 1000, timezone.utc).isoformat()
+                except (TypeError, OSError, ValueError, OverflowError) as exc:
+                    raise ExposableError("Invalid archive date.", code="LIBRARY_EDIT_INVALID") from exc
             inspected = _inspect_image(io.BytesIO(image_bytes))
             self._check_group(db, group_id, source)
             original_name = str(filename or "image").replace("\\", "/").split("/")[-1]
@@ -551,6 +563,8 @@ class LocalImageLibrary:
                     overrides["prompt"] = normalized.get("positivePrompt", inspected["parameters"].get("positivePrompt", ""))
                 if negative_prompt is None:
                     overrides["negative_prompt"] = normalized.get("negativePrompt", inspected["parameters"].get("negativePrompt", ""))
+            if created_at:
+                overrides.update(created_at=created_at, filename=original_name)
             return self._index_file(db, path, source, image_id=image_id, overrides=overrides)
 
     def save_generated(self, image_bytes, filename=None, metadata=None):

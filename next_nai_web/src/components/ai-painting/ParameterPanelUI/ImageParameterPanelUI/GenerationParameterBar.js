@@ -3,11 +3,11 @@
 import React, { useCallback, useId, useRef, useState } from 'react';
 import {
   Box, ButtonBase, FormControl, IconButton, InputAdornment, InputLabel,
-  MenuItem, MenuList, Popover, Select, Slider, TextField, Tooltip, Typography,
+  MenuItem, MenuList, Popover, Select, TextField, Tooltip, Typography,
 } from '@mui/material';
 import {
   ArrowRight as ArrowRightIcon, Check as CheckIcon, Close as CloseIcon,
-  InfoOutlined as InfoIcon, Refresh as RefreshIcon, Shuffle as ShuffleIcon,
+  Refresh as RefreshIcon, Shuffle as ShuffleIcon,
 } from '@mui/icons-material';
 import LockableSlider from '@/components/muiWrappers/LockableSlider';
 import ExtraConfiguration from './ExtraConfiguration';
@@ -117,29 +117,14 @@ export default function GenerationParameterBar({ params, maxSteps, isV5Medium, h
         </Box>
         <Box ref={observeContent} sx={{ p: 2 }}>
         {sliderField && (
-          <>
-            <TextField
-              autoFocus fullWidth size="small" type="number" label={title}
-              value={params[sliderField.key]}
-              onChange={event => {
-                if (event.target.value === '') return;
-                const value = Number(Number(event.target.value).toFixed(sliderField.key === 'steps' ? 0 : 1));
-                handleParamChange(sliderField.key, Math.min(sliderField.max, Math.max(sliderField.min, value)));
-              }}
-              slotProps={{
-                htmlInput: { min: sliderField.min, max: sliderField.max, step: sliderField.step },
-                input: { readOnly: sliderField.readOnly, endAdornment: <InputAdornment position="end"><Tooltip title={t(`painting.workspace.parameters.${sliderField.help}`)} arrow><InfoIcon sx={{ fontSize: 18 }} /></Tooltip></InputAdornment> },
-              }}
-            />
-            {/* 主动打开浮层后直接编辑，避免手机上还要额外解锁滑块。 */}
-            <Box sx={{ mx: 1, mt: 1 }}>
-              <Slider
-                aria-label={title} value={params[sliderField.key]} min={sliderField.min} max={sliderField.max} step={sliderField.step}
-                disabled={sliderField.readOnly} valueLabelDisplay="auto"
-                onChange={(_, value) => handleParamChange(sliderField.key, Number(value.toFixed(sliderField.key === 'steps' ? 0 : 1)))}
-              />
-            </Box>
-          </>
+          <LockableSlider
+            key={sliderField.key}
+            label={title} value={params[sliderField.key]}
+            min={sliderField.min} max={sliderField.max} step={sliderField.step}
+            disabled={sliderField.readOnly}
+            tooltip={t(`painting.workspace.parameters.${sliderField.help}`)}
+            onChange={value => handleParamChange(sliderField.key, value)}
+          />
         )}
         {editor?.key === 'seed' && (
           <TextField

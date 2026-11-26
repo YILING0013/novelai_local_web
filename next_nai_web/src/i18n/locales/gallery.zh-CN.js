@@ -1,5 +1,27 @@
 const gallery = {
   "gallery": {
+    "errors": {
+      "missingWork": "作品或版本不存在，请确认当前存储位置后重新打开作品。",
+      "firstVersionImage": "请先生成或选择首张图片，再保存提示词版本。",
+      "writeConflict": "当前浏览器不支持安全并发保存作品，请更新浏览器后重试。",
+      "notInTrash": "图片已恢复或尚未移入回收站，未执行彻底删除。请刷新图库后重试。",
+      "operation": "操作失败，请检查存储空间、目录权限或文件格式后重试。",
+      "quota": "浏览器存储空间不足。请先导出 ZIP 备份，或切换至本地目录后重试。",
+      "directoryPermission": "目录未连接或读写权限已失效，请在“存储位置”中重新授权或重新选择目录。",
+      "databaseBlocked": "图库数据库被其他页面占用，请关闭本站其他标签页后重试。",
+      "missingImage": "图片文件缺失或不可读取，请检查所选目录或备份完整性。",
+      "invalidData": "图库记录格式无效，未按无效记录继续操作。",
+      "imageType": "请使用可解码的 PNG、JPEG、WebP、GIF 或 BMP 图片，单张不超过 32 MiB。",
+      "archiveFormat": "不支持此 ZIP 备份格式或版本；请选择本站备份或包含图片的 ZIP。",
+      "archiveSize": "压缩包或解压总量超过 256 MiB，或图片超过 32 MiB。请分批导出或导入。",
+      "archiveChecksum": "备份图片校验失败，文件可能损坏；已保存的图片保留，可重新导入完整备份。"
+    },
+    "importArchive": "导入 ZIP",
+    "exportArchive": "导出画廊 ZIP",
+    "exportSelected": "导出所选 ZIP",
+    "importProgress": "已导入 {imported} 张，跳过 {skipped} 张，共 {total} 张。中断前成功保存的图片会保留。",
+    "exportProgress": "正在打包 {done} / {total}",
+    "archiveExported": "ZIP 备份已生成并开始下载。",
     "metadataEdit": {
       "add": "添加",
       "addField": "添加字段",
@@ -48,6 +70,12 @@ const gallery = {
       "clearMask": "清除遮罩"
     },
     "version": {
+      "backupHint": "备份作品、版本图片和蓝图。普通图库 ZIP 不包含这些记录。",
+      "exportSelected": "导出所选作品",
+      "exportAll": "导出全部作品",
+      "import": "导入作品 ZIP",
+      "importHint": "导入到当前存储位置，保留已有作品。",
+      "imported": "已导入 {count} 个作品。",
       "title": "作品蓝图", "hint": "在图片蓝图中比较、批注和整理创作分支；从任意节点复用参数继续。",
       "chooseWork": "选择作品", "allWorks": "全部作品", "newWork": "新建作品", "emptyWorks": "还没有作品。新建空作品，或从已有图片开始。",
       "workTitle": "作品名称", "history": "版本与分支", "noMessage": "未填写说明", "root": "初始版本", "parentNumber": "来自 v{number}",

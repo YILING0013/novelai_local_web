@@ -8,6 +8,7 @@ import json
 import math
 import os
 import re
+import sqlite3
 import tempfile
 import uuid
 from datetime import datetime, timezone
@@ -265,6 +266,74 @@ class ImageVersionStore:
         row = db.execute("SELECT * FROM work_versions WHERE id=?", (version_id,)).fetchone()
         return {"work": self._work(db, work_id), "version": self._version(db, row)}
 
+    def restore_archive(self, body):
+        """
+        一次事务写入已重映射的作品、版本和蓝图，图片引用先前校验的内容哈希。
+
+        Args:
+            body: 作品列表、版本列表及归档图片到快照的对应关系。
+
+        Returns:
+            新建的作品数量和编号。
+        """
+        works, versions, asset_ids = body.get("works"), body.get("versions"), body.get("asset_ids")
+        if not isinstance(works, list) or len(works) > 1000 or not isinstance(versions, list) or len(versions) > 10000 or not isinstance(asset_ids, dict):
+            raise ExposableError("Invalid work archive.", code="VERSION_ARCHIVE_INVALID")
+        try:
+            with self.library.lock, self.library._connect() as db:
+                owners = {}
+                for work in works:
+                    key, title = str(uuid.UUID(work["id"])), work["title"]
+                    if key != work["id"] or not isinstance(title, str) or not title.strip() or len(title) > 200:
+                        raise ValueError("Invalid archived work")
+                    db.execute("INSERT INTO works VALUES(?,?,?,?)", (key, title, work["created_at"], work["updated_at"]))
+                    owners[key] = []
+                parents = {}
+                for version in sorted(versions, key=lambda item: item["number"]):
+                    key, owner, parent = str(uuid.UUID(version["id"])), version["work_id"], version.get("parent_id")
+                    number = version["number"]
+                    if (key != version["id"] or owner not in owners or type(number) is not int
+                            or number != len(owners[owner]) + 1 or (parents.get(parent) != owner if parent else number != 1)
+                            or not isinstance(version["images"], list) or len(version["images"]) > 30):
+                        raise ValueError("Invalid archived version")
+                    owners[owner].append(key)
+                    parents[key] = owner
+                    db.execute("""INSERT INTO work_versions(id,work_id,parent_id,number,message,operation,created_at,parameters_json)
+                        VALUES(?,?,?,?,?,?,?,?)""", (key, owner, parent, number, version["message"], version["operation"],
+                                                   version["created_at"], json.dumps(safe_version_parameters(version["parameters"]), ensure_ascii=False)))
+                    for index, image in enumerate(version["images"]):
+                        digest = asset_ids.get(image["asset_id"])
+                        if not digest or not db.execute("SELECT 1 FROM version_assets WHERE id=?", (digest,)).fetchone():
+                            raise ExposableError("Archived snapshot is missing.", code="VERSION_ASSET_NOT_FOUND")
+                        summary = {field: image[field] for field in ("id", "filename", "title", "width", "height", "created_at", "source")}
+                        db.execute("INSERT INTO version_images VALUES(?,?,?,?,?)", (key, index, summary["id"], digest, json.dumps(summary, ensure_ascii=False)))
+                for work in works:
+                    nodes = owners[work["id"]]
+                    if work["version_count"] != len(nodes) or work["latest_version_id"] != (nodes[-1] if nodes else None):
+                        raise ValueError("Invalid archived version count")
+                    self._save_blueprint(db, work["id"], work["blueprint"])
+        except (KeyError, ValueError, TypeError, AttributeError, sqlite3.IntegrityError) as exc:
+            raise ExposableError("Invalid work archive.", code="VERSION_ARCHIVE_INVALID") from exc
+        return {"imported": len(works), "work_ids": [work["id"] for work in works]}
+
+    def stage_archive_asset(self, content):
+        """
+        将归档图片保存到按内容去重的版本快照目录。
+
+        Args:
+            content: 单张归档原图字节。
+
+        Returns:
+            可由版本记录引用的内容哈希。
+        """
+        from .local_image_library import FORMAT_SUFFIXES, _inspect_image
+        inspected = _inspect_image(io.BytesIO(content))
+        row = {"id": "", "source": "outputs", "filename": "", "title": "", "created_at": "", "width": inspected["width"],
+               "height": inspected["height"], "relative_path": "snapshot" + FORMAT_SUFFIXES[inspected["format"]]}
+        with self.library.lock, self.library._connect() as db:
+            digest, _ = self._snapshot_image(db, row, content, inspected)
+        return {"id": digest}
+
     def list_works(self):
         """
         按最近提交时间读取作品摘要。
@@ -325,47 +394,50 @@ class ImageVersionStore:
         Returns:
             已保存的画布状态。
         """
+        with self.library.lock, self.library._connect() as db:
+            return self._save_blueprint(db, work_id, blueprint)
+
+    def _save_blueprint(self, db, work_id, blueprint):
         if not isinstance(blueprint, dict) or set(blueprint) != {"positions", "edge_notes", "hidden_node_ids", "groups"}:
             raise ExposableError("The blueprint structure is invalid.", code="BLUEPRINT_INVALID")
         positions, notes = blueprint["positions"], blueprint["edge_notes"]
         hidden, groups = blueprint["hidden_node_ids"], blueprint["groups"]
         if not isinstance(positions, dict) or not isinstance(notes, dict) or not isinstance(hidden, list) or not isinstance(groups, list):
             raise ExposableError("The blueprint fields are invalid.", code="BLUEPRINT_INVALID")
-        with self.library.lock, self.library._connect() as db:
-            self._work(db, work_id)
-            nodes = {row["id"]: row["parent_id"] for row in db.execute("SELECT id,parent_id FROM work_versions WHERE work_id=?", (work_id,))}
-            for node_id, position in positions.items():
-                if node_id not in nodes:
-                    raise ExposableError("Blueprint nodes must belong to this work.", code="BLUEPRINT_NODE_INVALID")
-                if (not isinstance(position, dict) or set(position) != {"x", "y"}
-                        or any(type(value) not in (int, float) or not math.isfinite(value) for value in position.values())):
-                    raise ExposableError("Node positions must contain finite coordinates.", code="BLUEPRINT_POSITION_INVALID")
-            for node_id, note in notes.items():
-                if node_id not in nodes or nodes[node_id] is None:
-                    raise ExposableError("An edge note must refer to a child version in this work.", code="BLUEPRINT_EDGE_INVALID")
-                if not isinstance(note, str) or len(note) > 2000:
-                    raise ExposableError("An edge note must contain at most 2000 characters.", code="BLUEPRINT_NOTE_INVALID")
-            if any(not isinstance(node_id, str) or node_id not in nodes for node_id in hidden) or len(set(hidden)) != len(hidden):
-                raise ExposableError("Hidden nodes must be unique versions in this work.", code="BLUEPRINT_NODE_INVALID")
-            group_ids, grouped_nodes = set(), set()
-            for group in groups:
-                if not isinstance(group, dict) or set(group) != {"id", "title", "node_ids", "collapsed"}:
-                    raise ExposableError("The blueprint group structure is invalid.", code="BLUEPRINT_GROUP_INVALID")
-                group_id, title, node_ids = group["id"], group["title"], group["node_ids"]
-                if not isinstance(group_id, str) or not group_id or len(group_id) > 80 or group_id in group_ids:
-                    raise ExposableError("Blueprint group IDs must be unique and contain at most 80 characters.", code="BLUEPRINT_GROUP_INVALID")
-                if not isinstance(title, str) or not title.strip() or len(title) > 120 or type(group["collapsed"]) is not bool:
-                    raise ExposableError("A group needs a title of at most 120 characters and a collapsed flag.", code="BLUEPRINT_GROUP_INVALID")
-                if (not isinstance(node_ids, list) or any(not isinstance(node_id, str) or node_id not in nodes for node_id in node_ids)
-                        or len(set(node_ids)) != len(node_ids) or grouped_nodes.intersection(node_ids)):
-                    raise ExposableError("Each version may belong to only one blueprint group in this work.", code="BLUEPRINT_GROUP_NODES_INVALID")
-                group_ids.add(group_id)
-                grouped_nodes.update(node_ids)
-            # 画布可以反复编辑；版本表和参数快照只由提交接口追加。
-            db.execute("""INSERT INTO work_blueprints(work_id,blueprint_json) VALUES(?,?)
-                ON CONFLICT(work_id) DO UPDATE SET blueprint_json=excluded.blueprint_json""",
-                       (work_id, json.dumps(blueprint, ensure_ascii=False, allow_nan=False)))
-            return blueprint
+        self._work(db, work_id)
+        nodes = {row["id"]: row["parent_id"] for row in db.execute("SELECT id,parent_id FROM work_versions WHERE work_id=?", (work_id,))}
+        for node_id, position in positions.items():
+            if node_id not in nodes:
+                raise ExposableError("Blueprint nodes must belong to this work.", code="BLUEPRINT_NODE_INVALID")
+            if (not isinstance(position, dict) or set(position) != {"x", "y"}
+                    or any(type(value) not in (int, float) or not math.isfinite(value) for value in position.values())):
+                raise ExposableError("Node positions must contain finite coordinates.", code="BLUEPRINT_POSITION_INVALID")
+        for node_id, note in notes.items():
+            if node_id not in nodes or nodes[node_id] is None:
+                raise ExposableError("An edge note must refer to a child version in this work.", code="BLUEPRINT_EDGE_INVALID")
+            if not isinstance(note, str) or len(note) > 2000:
+                raise ExposableError("An edge note must contain at most 2000 characters.", code="BLUEPRINT_NOTE_INVALID")
+        if any(not isinstance(node_id, str) or node_id not in nodes for node_id in hidden) or len(set(hidden)) != len(hidden):
+            raise ExposableError("Hidden nodes must be unique versions in this work.", code="BLUEPRINT_NODE_INVALID")
+        group_ids, grouped_nodes = set(), set()
+        for group in groups:
+            if not isinstance(group, dict) or set(group) != {"id", "title", "node_ids", "collapsed"}:
+                raise ExposableError("The blueprint group structure is invalid.", code="BLUEPRINT_GROUP_INVALID")
+            group_id, title, node_ids = group["id"], group["title"], group["node_ids"]
+            if not isinstance(group_id, str) or not group_id or len(group_id) > 80 or group_id in group_ids:
+                raise ExposableError("Blueprint group IDs must be unique and contain at most 80 characters.", code="BLUEPRINT_GROUP_INVALID")
+            if not isinstance(title, str) or not title.strip() or len(title) > 120 or type(group["collapsed"]) is not bool:
+                raise ExposableError("A group needs a title of at most 120 characters and a collapsed flag.", code="BLUEPRINT_GROUP_INVALID")
+            if (not isinstance(node_ids, list) or any(not isinstance(node_id, str) or node_id not in nodes for node_id in node_ids)
+                    or len(set(node_ids)) != len(node_ids) or grouped_nodes.intersection(node_ids)):
+                raise ExposableError("Each version may belong to only one blueprint group in this work.", code="BLUEPRINT_GROUP_NODES_INVALID")
+            group_ids.add(group_id)
+            grouped_nodes.update(node_ids)
+        # 画布可以反复编辑；版本表和参数快照只由提交接口追加。
+        db.execute("""INSERT INTO work_blueprints(work_id,blueprint_json) VALUES(?,?)
+            ON CONFLICT(work_id) DO UPDATE SET blueprint_json=excluded.blueprint_json""",
+                   (work_id, json.dumps(blueprint, ensure_ascii=False, allow_nan=False)))
+        return blueprint
 
     def create_version(self, work_id, body):
         """

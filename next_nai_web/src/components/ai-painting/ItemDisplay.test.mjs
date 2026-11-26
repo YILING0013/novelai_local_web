@@ -53,6 +53,7 @@ function createDisplay(source = 'default', locale = 'zh-CN') {
         return slots[index].value;
       },
       useCallback(callback, deps) { return dependencies.react.useMemo(() => callback, deps); },
+      useLayoutEffect(effect, deps) { return dependencies.react.useEffect(effect, deps); },
       useEffect(effect, deps) {
         const index = cursor++;
         const previous = slots[index];
@@ -79,7 +80,7 @@ function createDisplay(source = 'default', locale = 'zh-CN') {
   const load = (code) => {
     const exports = {};
     runInNewContext(code, {
-      exports, React, CustomEvent, localStorage: { getItem: key => key === 'novelai:inspiration-visible' ? 'true' : null },
+      exports, React, CustomEvent, document: new EventTarget(), localStorage: { getItem: key => key === 'novelai:inspiration-visible' ? 'true' : null },
       require: (name) => dependencies[name] || {},
       window: {
         innerWidth: 1200,

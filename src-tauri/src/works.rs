@@ -245,6 +245,93 @@ fn commit(db: &Connection, work: &mut V, b: &V) -> Res<V> {
     put(db, "work", &key, work)?;
     Ok(v)
 }
+// 归档的版本可能有多个分支，按原编号写入，不能使用默认接到最新节点的提交操作。
+fn restore_archive(db: &Connection, body: &V) -> Res<V> {
+    let invalid = || Fault::bad("Invalid work archive.");
+    let works = body["works"]
+        .as_array()
+        .filter(|v| v.len() <= 1000)
+        .ok_or_else(invalid)?;
+    let versions = body["versions"]
+        .as_array()
+        .filter(|v| v.len() <= 10000)
+        .ok_or_else(invalid)?;
+    let assets = body["asset_ids"].as_object().ok_or_else(invalid)?;
+    let mut imported = std::collections::HashMap::new();
+    for row in works {
+        let key = field(row, "id", 100)?;
+        if uuid::Uuid::parse_str(&key).is_err()
+            || load(db, "work", &key)?.is_some()
+            || imported.contains_key(&key)
+        {
+            return Err(invalid());
+        }
+        let title = field(row, "title", 200)?;
+        imported.insert(key.clone(), json!({"id": key, "title": title, "created_at": row["created_at"],
+            "updated_at": row["updated_at"], "latest_version_id": null, "version_count": 0, "thumbnail_url": null}));
+    }
+    let mut ordered: Vec<_> = versions.iter().collect();
+    ordered.sort_by_key(|v| v["number"].as_u64().unwrap_or(0));
+    for row in ordered {
+        let key = field(row, "id", 100)?;
+        let owner = field(row, "work_id", 100)?;
+        let work = imported.get_mut(&owner).ok_or_else(invalid)?;
+        let number = row["number"].as_u64().ok_or_else(invalid)?;
+        if uuid::Uuid::parse_str(&key).is_err()
+            || load(db, "version", &key)?.is_some()
+            || number != work["version_count"].as_u64().unwrap_or(0) + 1
+        {
+            return Err(invalid());
+        }
+        if let Some(parent) = row["parent_id"].as_str() {
+            if get(db, "version", parent)?["work_id"] != owner {
+                return Err(invalid());
+            }
+        } else if number != 1 {
+            return Err(invalid());
+        }
+        let mut version = row.clone();
+        version["parameters"] = safe(&row["parameters"])?;
+        let images = version["images"]
+            .as_array_mut()
+            .filter(|v| v.len() <= 30)
+            .ok_or_else(invalid)?;
+        for image in images.iter_mut() {
+            let hash = assets
+                .get(s(image, "asset_id"))
+                .and_then(V::as_str)
+                .ok_or_else(invalid)?;
+            let stored = get(db, "asset", hash)?;
+            image["width"] = stored["width"].clone();
+            image["height"] = stored["height"].clone();
+            image["asset_id"] = json!(hash);
+            image["available"] = json!(true);
+            image["gallery_available"] = json!(false);
+            image["url"] = json!(format!("/api/local/versions/assets/{hash}"));
+            image["thumbnail_url"] = json!(format!("/api/local/versions/assets/{hash}/thumbnail"));
+        }
+        if let Some(first) = images.first() {
+            work["thumbnail_url"] = first["thumbnail_url"].clone();
+        }
+        work["latest_version_id"] = json!(key);
+        work["version_count"] = json!(number);
+        put(db, "version", &key, &version)?;
+    }
+    for row in works {
+        let key = s(row, "id");
+        let work = &imported[key];
+        if work["version_count"] != row["version_count"]
+            || work["latest_version_id"] != row["latest_version_id"]
+        {
+            return Err(invalid());
+        }
+        put(db, "work", key, work)?;
+        handle(db, "PATCH", &["works", key, "blueprint"], &row["blueprint"])?;
+    }
+    Ok(
+        json!({"imported": works.len(), "work_ids": works.iter().map(|w| &w["id"]).collect::<Vec<_>>() }),
+    )
+}
 pub fn handle(db: &Connection, m: &str, p: &[&str], b: &V) -> Res<V> {
     Ok(match (p, m) {
         (["works"], "GET") => {
@@ -264,6 +351,7 @@ pub fn handle(db: &Connection, m: &str, p: &[&str], b: &V) -> Res<V> {
             };
             json!({"work":w,"version":v})
         }
+        (["works", "archive"], "POST") => restore_archive(db, b)?,
         (["works", "batch-delete"], "POST") => {
             let ids = b["ids"]
                 .as_array()

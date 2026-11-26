@@ -211,9 +211,21 @@ export function AppThemeProvider({ children }) {
           outlined: ({ theme }) => ({ borderColor: theme.palette.divider }),
         },
       },
+      MuiSnackbar: {
+        styleOverrides: {
+          root: ({ theme }) => ({
+            '& .MuiAlert-standard, & .MuiAlert-outlined': {
+              backgroundColor: theme.palette.background.paper,
+              backgroundImage: 'none',
+              boxShadow: theme.shadows[4],
+            },
+          }),
+        },
+      },
       MuiDialog: {
         styleOverrides: {
           paper: ({ theme }) => ({
+            backgroundColor: theme.palette.background.paper,
             borderRadius: 12,
             border: `1px solid ${theme.palette.divider}`,
             boxShadow: theme.palette.mode === 'dark'

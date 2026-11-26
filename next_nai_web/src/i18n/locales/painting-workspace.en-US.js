@@ -304,6 +304,7 @@ const paintingWorkspaceenUS = {
         "generateBatchImages": "Generate {count} images · {width}×{height}",
         "generateImage": "Generate image",
         "viewErrorDetails": "View error details",
+        "shortDetails": "Details",
         "errorDetails": "Error details",
         "close": "Close",
         "viewBatchDetails": "View batch details",

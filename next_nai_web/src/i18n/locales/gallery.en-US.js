@@ -1,5 +1,27 @@
 const gallery = {
   "gallery": {
+    "errors": {
+      "missingWork": "The work or version no longer exists. Check the storage location and reopen the work.",
+      "firstVersionImage": "Generate or select the first image before saving a prompt version.",
+      "writeConflict": "This browser does not support safe concurrent work saves. Update your browser and try again.",
+      "notInTrash": "The image was restored or is not in the recycle bin, so it was not permanently deleted. Refresh the gallery and retry.",
+      "operation": "Operation failed. Check storage space, folder permissions or the file format and retry.",
+      "quota": "Browser storage is full. Export a ZIP backup, or switch to a local folder and retry.",
+      "directoryPermission": "The folder is disconnected or permission expired. Authorize or select it again under Storage location.",
+      "databaseBlocked": "Another tab is blocking the gallery database. Close other tabs for this site and retry.",
+      "missingImage": "An image is missing or unreadable. Check the selected folder or backup integrity.",
+      "invalidData": "Invalid gallery record. The operation did not continue with that record.",
+      "imageType": "Use a decodable PNG, JPEG, WebP, GIF or BMP image, no larger than 32 MiB each.",
+      "archiveFormat": "Unsupported ZIP format or version. Choose a gallery backup or a ZIP containing images.",
+      "archiveSize": "The archive or extracted total exceeds 256 MiB, or an image exceeds 32 MiB. Export or import smaller batches.",
+      "archiveChecksum": "Backup image verification failed; it may be corrupted. Saved images remain. Retry with a complete backup."
+    },
+    "importArchive": "Import ZIP",
+    "exportArchive": "Export gallery ZIP",
+    "exportSelected": "Export selected ZIP",
+    "importProgress": "Imported {imported}, skipped {skipped}, total {total}. Successfully saved images remain if interrupted.",
+    "exportProgress": "Packing {done} / {total}",
+    "archiveExported": "The ZIP backup is ready and the download has started.",
     "metadataEdit": {
       "add": "Add",
       "addField": "Add field",
@@ -48,6 +70,12 @@ const gallery = {
       "clearMask": "Clear mask"
     },
     "version": {
+      "backupHint": "Back up works, version images and blueprints. Regular gallery ZIP files do not include these records.",
+      "exportSelected": "Export selected works",
+      "exportAll": "Export all works",
+      "import": "Import works ZIP",
+      "importHint": "Import into the current storage location and keep existing works.",
+      "imported": "Imported {count} works.",
       "title": "Work blueprints", "hint": "Compare, annotate and organize image branches. Reuse any node's parameters to continue.",
       "chooseWork": "Choose a work", "allWorks": "All works", "newWork": "New work", "emptyWorks": "No works yet. Create an empty work or start with an existing image.",
       "workTitle": "Work title", "history": "Versions and branches", "noMessage": "No description", "root": "Initial version", "parentNumber": "From v{number}",

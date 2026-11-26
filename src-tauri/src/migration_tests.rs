@@ -529,3 +529,54 @@ fn full_payloads_and_tool_costs_match_flask_oracles() {
         );
     }
 }
+
+#[test]
+fn archived_native_work_restores_branches_and_independent_snapshot() {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    let dir = tempfile::tempdir().unwrap();
+    let core = Core::open(dir.path(), dir.path()).unwrap();
+    let call = |method, path: &[&str], body: &V| {
+        crate::library::handle(&core, method, path, &Default::default(), body)
+    };
+    let mut encoded = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::new_rgba8(2, 2)
+        .write_to(&mut encoded, image::ImageFormat::Png)
+        .unwrap();
+    let data = encoded.into_inner();
+    let file = json!({"files":[{"name":"snapshot.png","data":STANDARD.encode(&data)}]});
+    let asset = call("POST", &["works", "archive-assets"], &file).unwrap();
+    let work = id();
+    let nodes = [id(), id(), id()];
+    let time = now();
+    let blueprint = json!({"positions":{&nodes[2]:{"x":15,"y":30}},"edge_notes":{&nodes[2]:"branch"},"hidden_node_ids":[],"groups":[]});
+    let versions = nodes.iter().enumerate().map(|(index,key)| json!({"id":key,"work_id":work,"parent_id":if index>0 {Some(&nodes[0])} else {None},
+        "number":index+1,"created_at":time,"operation":"commit","message":"branch","parameters":{"seed":index},
+        "images":[{"id":"image","asset_id":"snapshot","source":"outputs","width":2,"height":2,"filename":"snapshot.png","title":"snapshot"}]})).collect::<Vec<_>>();
+    let mut body = json!({"works":[{"id":work,"title":"同名作品","created_at":time,"updated_at":time,"version_count":3,"latest_version_id":nodes[2],"blueprint":blueprint}],
+        "versions":versions,"asset_ids":{}});
+    assert!(call("POST", &["works", "archive"], &body).is_err());
+    assert_eq!(
+        call("GET", &["works"], &V::Null).unwrap()["works"],
+        json!([])
+    );
+    body["asset_ids"]["snapshot"] = asset["id"].clone();
+    assert_eq!(
+        call("POST", &["works", "archive"], &body).unwrap()["work_ids"],
+        json!([work])
+    );
+    let detail = call("GET", &["works", &work], &V::Null).unwrap();
+    assert_eq!(detail["blueprint"], blueprint);
+    let restored = call("GET", &["works", &work, "versions", &nodes[2]], &V::Null).unwrap();
+    assert_eq!(restored["version"]["parent_id"], nodes[0]);
+    assert_eq!(restored["version"]["images"][0]["asset_id"], asset["id"]);
+    assert_eq!(
+        std::fs::read(
+            core.root
+                .join("objects")
+                .join(asset["id"].as_str().unwrap())
+        )
+        .unwrap(),
+        data
+    );
+    assert!(call("POST", &["works", "archive"], &body).is_err());
+}

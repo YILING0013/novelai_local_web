@@ -8,6 +8,8 @@ import { AddPhotoAlternateOutlined, CheckBoxOutlined, Close, CreateNewFolderOutl
 import apiClient from '@/utils/ApiClient';
 import { useI18n } from '@/i18n/I18nProvider';
 import GalleryDetailDialog from './GalleryDetailDialog';
+import { downloadBlobToFile } from '@/utils/mediaAssets';
+import { exportGalleryArchive, importGalleryArchive } from './galleryArchive.mjs';
 import GalleryMetadataDialog from './GalleryMetadataDialog';
 import GalleryVersionsDialog from './GalleryVersionsDialog';
 
@@ -62,6 +64,7 @@ export default function GalleryWorkspace({ androidLayout = false, source = 'outp
   const [deleteCollection, setDeleteCollection] = useState(null);
   const [sourceMenu, setSourceMenu] = useState(null);
   const [actionsMenu, setActionsMenu] = useState(null);
+  const archiveInput = useRef(null);
   const fileInputRef = useRef(null);
   const scrollRef = useRef(null);
   const moreRef = useRef(null);
@@ -277,6 +280,20 @@ export default function GalleryWorkspace({ androidLayout = false, source = 'outp
   };
 
   const detailIndex = items.findIndex((item) => item.id === detailId);
+  const archive = async (file) => {
+    setBusy(true); setError('');
+    try {
+      if (file) {
+        const result = await importGalleryArchive(file, source);
+        setNotice(t('gallery.importProgress', { ...result, total: result.imported + result.skipped }));
+        setRevision(value => value + 1);
+      } else {
+        const blob = await exportGalleryArchive(source, selecting ? [...selected] : null);
+        await downloadBlobToFile(blob, 'novelai-' + source + '-' + new Date().toISOString().slice(0, 10) + '.zip');
+      }
+    } catch (failure) { setError(t(failure.message)); }
+    finally { setBusy(false); }
+  };
   const selectedIds = [...selected];
   const actionButtonSx = { minHeight: 34, px: 1.25, whiteSpace: 'nowrap', '& .MuiButton-startIcon': { mr: 0.5 }, '& .MuiButton-startIcon .MuiSvgIcon-root': { fontSize: 18 } };
 
@@ -320,7 +337,12 @@ export default function GalleryWorkspace({ androidLayout = false, source = 'outp
           onClick={(event) => setActionsMenu(event.currentTarget)}><MoreVert /></IconButton>
       </Stack>}
       </Stack>
+      <input ref={archiveInput} hidden type="file" accept=".zip,application/zip" onChange={event => {
+        const file = event.target.files[0]; event.target.value = ''; if (file) void archive(file);
+      }} />
       <Menu anchorEl={actionsMenu} open={Boolean(actionsMenu)} onClose={() => setActionsMenu(null)}>
+        <MenuItem disabled={busy} onClick={() => { setActionsMenu(null); archiveInput.current.click(); }}>{t('gallery.importArchive')}</MenuItem>
+        <MenuItem disabled={busy || (selecting && !selected.size)} onClick={() => { setActionsMenu(null); void archive(); }}>{t(selecting ? 'gallery.exportSelected' : 'gallery.exportArchive')}</MenuItem>
         <MenuItem onClick={() => { setActionsMenu(null); setShowFilters(!showFilters); }}><FilterAltOutlined sx={{ mr: 1.5 }} />{t('gallery.smart.filters')}</MenuItem>
         <MenuItem onClick={() => { setActionsMenu(null); window.dispatchEvent(new CustomEvent('novelai:open-page', { detail: { pageId: 'settings', section: 'gallery' } })); }}>
           <SettingsOutlined sx={{ mr: 1.5 }} />{t('settings.sections.gallery.title')}
@@ -339,6 +361,12 @@ export default function GalleryWorkspace({ androidLayout = false, source = 'outp
         <Box sx={{ display: 'flex', flexWrap: compactAndroid ? 'nowrap' : 'wrap', alignItems: 'center', gap: compactAndroid ? 0 : 0.5, ml: { md: 'auto' }, flexShrink: compactAndroid ? 0 : undefined }}>
           {!compactAndroid && <>
           <Button size="small" sx={actionButtonSx} startIcon={<History />} disabled={busy} onClick={() => setVersionTarget({ imageIds: [] })}>{t('gallery.version.title')}</Button>
+          <Button size="small" sx={actionButtonSx} disabled={busy} onClick={() => archiveInput.current.click()}>{t('gallery.importArchive')}</Button>
+          <Tooltip title={t('settings.sections.gallery.title')}><IconButton size="small" aria-label={t('settings.sections.gallery.title')}
+            onClick={() => window.dispatchEvent(new CustomEvent('novelai:open-page', { detail: { pageId: 'settings', section: 'gallery' } }))}>
+            <SettingsOutlined />
+          </IconButton></Tooltip>
+          <Button size="small" sx={actionButtonSx} disabled={busy || (selecting && !selected.size)} onClick={() => void archive()}>{t(selecting ? 'gallery.exportSelected' : 'gallery.exportArchive')}</Button>
           <Button size="small" sx={actionButtonSx} startIcon={<FilterAltOutlined />} variant={showFilters ? 'outlined' : 'text'} onClick={() => setShowFilters(!showFilters)}>{t('gallery.smart.filters')}</Button>
           {source === 'references' && !trash && <Button size="small" variant="contained" sx={actionButtonSx} startIcon={<AddPhotoAlternateOutlined />} disabled={busy} onClick={() => fileInputRef.current.click()}>{t('gallery.import')}</Button>}
           </>}

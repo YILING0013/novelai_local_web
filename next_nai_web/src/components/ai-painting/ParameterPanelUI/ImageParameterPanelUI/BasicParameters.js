@@ -10,7 +10,7 @@ import {
   Button,
   Grid,
   IconButton,
-  Chip,
+  ToggleButton, ToggleButtonGroup,
   InputAdornment,
 } from '@mui/material';
 import {
@@ -142,6 +142,7 @@ const BasicParameters = ({
   );
 
   // 通过 Portal 移动控件位置，尺寸限制和所有参数修改仍由当前面板统一管理。
+  const activePreset = sizePresets.findIndex((preset) => params.width === preset.width && params.height === preset.height);
   const parameterBar = <GenerationParameterBar
     params={params}
     maxSteps={maxSteps}
@@ -224,25 +225,24 @@ const BasicParameters = ({
             </Grid>
           </Grid>
 
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
-            {sizePresets.map((preset, index) => (
-              <Chip
-                data-tour={preset.width > preset.height ? 'landscape' : undefined}
-                key={index}
-                label={t(preset.labelKey, { width: preset.width, height: preset.height })}
-                size="small"
-                variant={params.width === preset.width && params.height === preset.height ? "filled" : "outlined"}
-                onClick={() => handleSizePresetClick(preset.width, preset.height)}
-                color="primary"
-                sx={{
-                  borderRadius: 1,
-                  flex: '1 0 auto',
-                  height: 28,
-                  '& .MuiChip-label': { px: 0.75, fontSize: '0.75rem', lineHeight: 1.25, whiteSpace: 'nowrap' },
-                }}
-              />
-            ))}
-          </Box>
+        <ToggleButtonGroup
+          exclusive
+          fullWidth
+          size="small"
+          value={activePreset}
+          aria-label={t('painting.workspace.parameters.imageSize')}
+          onChange={(_, index) => {
+            if (index === null || index < 0) return;
+            handleSizePresetClick(sizePresets[index].width, sizePresets[index].height);
+          }}
+          sx={{ mt: 1 }}
+        >
+          {sizePresets.map((preset, index) => (
+            <ToggleButton data-tour={preset.width > preset.height ? 'landscape' : undefined} key={preset.labelKey} value={index} sx={{ minWidth: 0, px: 0.5, fontSize: '0.75rem', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+              {t(preset.labelKey, { width: preset.width, height: preset.height })}
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
         </Box>
 
       {parameterToolbarContainer ? createPortal(parameterBar, parameterToolbarContainer) : parameterBar}

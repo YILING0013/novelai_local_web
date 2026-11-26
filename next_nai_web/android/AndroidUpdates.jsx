@@ -143,12 +143,13 @@ export function AndroidUpdateProvider({ children }) {
           {status === 'ready' && <Typography>{needsPermission
             ? (zh ? '请在系统设置允许此应用安装，然后返回继续。' : 'Allow installs from this app in Android Settings, then return to continue.')
             : (zh ? 'APK 已通过校验，可以安装。' : 'The APK has been verified and is ready to install.')}</Typography>}
-          <Button component="a" href="https://github.com/YILING0013/novelai_local_web/releases" sx={{ alignSelf: 'flex-start' }}>
-            {zh ? 'GitHub 发布记录' : 'GitHub releases'}
-          </Button>
+
         </Stack>
       </DialogContent>
-      <DialogActions>
+      <DialogActions disableSpacing sx={{ flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'stretch', sm: 'center' }, gap: 1 }}>
+        <Button component="a" href="https://github.com/YILING0013/novelai_local_web/releases">
+            {zh ? 'GitHub 发布记录' : 'GitHub releases'}
+          </Button>
         <Button onClick={close}>{zh ? '关闭' : 'Close'}</Button>
         {['idle', 'current'].includes(status) && <Button onClick={() => { void check(true); }}>{zh ? '检查更新' : 'Check for updates'}</Button>}
         {status === 'available' && <Button variant="contained" onClick={download}>{zh ? '下载更新' : 'Download update'}</Button>}

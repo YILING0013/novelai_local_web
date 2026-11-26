@@ -152,10 +152,7 @@ test('Medium 普通和大图模式均固定 14 步和采样器，保留 CFG，�
     assert.equal(getParams().promptGuidanceRescale, 0);
     const stepsTree = openParameter('samplingSteps');
     assert.equal(slider(stepsTree, 'samplingSteps').props.disabled, true);
-    const steps = findNode(stepsTree, (node) => node.type === 'TextField'
-      && node.props.label === 'painting.workspace.parameters.samplingSteps');
-    assert.equal(steps.props.value, 14);
-    assert.equal(steps.props.slotProps.input.readOnly, true);
+    assert.equal(slider(stepsTree, 'samplingSteps').props.value, 14);
     const samplerTree = openParameter('sampler');
     assert.equal(findNode(samplerTree, node => node.type === 'MenuItem' && node.props.selected).props.disabled, true);
     assert.ok(slider(openParameter('cfgScale'), 'cfgScale'));
@@ -170,7 +167,7 @@ test('启用大图、拖动步数至 50、切回普通模式后数值与实际�
   const { panel, getParams, openParameter, renderToolbar } = createPanel();
   modeButton(panel.render()).props.onClick();
   assert.equal(slider(openParameter('samplingSteps'), 'samplingSteps').props.max, 50);
-  slider(renderToolbar(), 'samplingSteps').props.onChange({}, 50);
+  slider(renderToolbar(), 'samplingSteps').props.onChange(50);
   assert.equal(slider(renderToolbar(), 'samplingSteps').props.value, 50);
   modeButton(panel.render()).props.onClick();
   const steps = slider(renderToolbar(), 'samplingSteps').props;
@@ -232,15 +229,14 @@ test('LockableSlider 的数值标签与圆点共同跟随外部值，桌面拖�
 test('CFG 输入和滑块保留 10 以上的参数，并限制到界面上限 20', () => {
   const controls = createPanel({ guidanceScale: 10.1 });
   const tree = controls.openParameter('cfgScale');
-  const input = findNode(tree, node => node.type === 'TextField' && node.props.label === 'painting.workspace.parameters.cfgScale');
-  const cfgSlider = slider(tree, 'cfgScale');
-  assert.equal(input.props.value, 10.1);
-  assert.equal(input.props.slotProps.htmlInput.max, 20);
-  assert.equal(cfgSlider.props.max, 20);
-  cfgSlider.props.onChange({}, 18.5);
+  const cfg = slider(tree, 'cfgScale');
+  assert.equal(cfg.props.value, 10.1);
+  assert.equal(cfg.props.max, 20);
+  cfg.props.onChange(18.5);
   assert.equal(controls.getParams().guidanceScale, 18.5);
-  input.props.onChange({ target: { value: '20' } });
-  assert.equal(controls.getParams().guidanceScale, 20);
-  input.props.onChange({ target: { value: '21' } });
+  const editor = createControls('../../../muiWrappers/LockableSlider.js', { ...cfg.props, value: 18.5 });
+  const input = () => findNode(editor.render(), node => typeof node.props?.onBlur === 'function' && node.props.onChange);
+  input().props.onChange({ target: { value: '21' } });
+  input().props.onBlur();
   assert.equal(controls.getParams().guidanceScale, 20);
 });

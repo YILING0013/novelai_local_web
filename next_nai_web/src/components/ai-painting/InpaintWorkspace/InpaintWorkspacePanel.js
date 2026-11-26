@@ -11,7 +11,7 @@ import {
   ClickAwayListener,
   FormControlLabel,
   IconButton,
-  Paper,
+  Menu, MenuItem, Paper,
   Popper,
   Slider,
   Stack,
@@ -63,7 +63,7 @@ import {
 import {
   createFeatheredPatchCanvas,
   cropWorldRectToDataUrl,
-  worldRectHasVisibleContent,
+  getViewportInpaintParameters,
   exportContentCanvas,
   extractMaskedPatchCanvas,
   getCanvasAlphaBounds,
@@ -539,7 +539,7 @@ const InpaintWorkspacePanel = forwardRef(({
   generatedItems,
   outputResolution,
   isMobile,
-  onExportToGallery,
+  onExportToHistory,
   showNotification,
   isGenerating = false,
   generationStatus = { status: 'idle', queuePosition: null, progress: 0, error: null },
@@ -613,6 +613,7 @@ const InpaintWorkspacePanel = forwardRef(({
   const [featherPopoverOpen, setFeatherPopoverOpen] = useState(false);
   const featherAnchorRef = useRef(null);
   const [inpaintStrength, setInpaintStrength] = useState(1.0);
+  const [exportMenuAnchor, setExportMenuAnchor] = useState(null);
   const [settingsPopoverOpen, setSettingsPopoverOpen] = useState(false);
   const settingsAnchorRef = useRef(null);
   const [compareSliderPosition, setCompareSliderPosition] = useState(0.5);
@@ -621,13 +622,6 @@ const InpaintWorkspacePanel = forwardRef(({
   const outputAspectRatio = getAspectRatio(outputResolution);
   const hasSourceImage = Boolean(sourceImage && contentCanvasRef.current && contentBoundsRef.current);
 
-  useEffect(() => {
-    if (!onCostParametersChange) return;
-
-    onCostParametersChange(hasSourceImage
-      ? { image: true, mask: true, inpaintStrength }
-      : null);
-  }, [hasSourceImage, inpaintStrength, onCostParametersChange]);
 
   const pendingPatch = pendingPatches[activePendingPatchIndex] || null;
   const pendingPatchCount = pendingPatches.length;
@@ -1183,11 +1177,8 @@ const InpaintWorkspacePanel = forwardRef(({
     });
   }, [imageOverlayColor, imageOverlayOpacity, strokes]);
 
-  const buildGenerationPayload = useCallback(() => {
-    if (!hasSourceImage || !viewportRect || !outputResolution?.width || !outputResolution?.height) {
-      return null;
-    }
-
+  const getGenerationRegion = useCallback(() => {
+    if (!viewportRect || !hasSourceImage) return null;
     const sourceSnapshot = buildSourceContentSnapshot();
     if (!sourceSnapshot?.canvas || !sourceSnapshot?.bounds) {
       return null;
@@ -1200,15 +1191,30 @@ const InpaintWorkspacePanel = forwardRef(({
       sceneTransform.scale
     );
 
-    const outputWidth = outputResolution.width;
-    const outputHeight = outputResolution.height;
-    const hasVisibleContent = worldRectHasVisibleContent({
+    const editParameters = getViewportInpaintParameters({
       contentCanvas: sourceSnapshot.canvas,
       contentBounds: sourceSnapshot.bounds,
       worldRect,
+      inpaintStrength,
     });
+    return { sourceSnapshot, worldRect, editParameters };
+  }, [buildSourceContentSnapshot, hasSourceImage, sceneTransform, viewportRect, inpaintStrength]);
 
-    if (!hasVisibleContent) {
+  useEffect(() => {
+    if (!onCostParametersChange) return;
+    // 拖动结束后核对视口内实际像素；空白视口走文生图，使用完整强度计费。
+    if (dragState) return;
+    onCostParametersChange(getGenerationRegion()?.editParameters ?? null);
+  }, [dragState, getGenerationRegion, onCostParametersChange, sourceImage]);
+
+  const buildGenerationPayload = useCallback(() => {
+    const region = getGenerationRegion();
+    if (!region || !outputResolution?.width || !outputResolution?.height) return null;
+    const { sourceSnapshot, worldRect, editParameters } = region;
+    const outputWidth = outputResolution.width;
+    const outputHeight = outputResolution.height;
+
+    if (!editParameters) {
       return {
         worldRect,
         outputWidth,
@@ -1234,7 +1240,7 @@ const InpaintWorkspacePanel = forwardRef(({
       generationMode: 'inpaint',
       disabledOriginalImage,
       colorCorrect,
-      inpaintStrength,
+      inpaintStrength: editParameters.inpaintStrength,
       baseImage: cropWorldRectToDataUrl({
         contentCanvas: sourceSnapshot.canvas,
         contentBounds: sourceSnapshot.bounds,
@@ -1245,7 +1251,7 @@ const InpaintWorkspacePanel = forwardRef(({
       mask: maskData.dataUrl,
       maskCanvas: maskData.canvas,
     };
-  }, [buildSourceContentSnapshot, colorCorrect, disabledOriginalImage, expandPixels, hasSourceImage, inpaintStrength, maskStrokes, outputResolution, sceneTransform, viewportRect]);
+  }, [getGenerationRegion, colorCorrect, disabledOriginalImage, expandPixels, maskStrokes, outputResolution]);
 
   const preserveMaskStrokesAfterGeneration = useCallback(() => {
     const preservedMaskStrokes = filterStrokesByTarget(stateRef.current.strokes, MASK_DRAW_TARGET)
@@ -1385,7 +1391,7 @@ const InpaintWorkspacePanel = forwardRef(({
       });
 
       if (exportResult) {
-        onExportToGallery?.({
+        onExportToHistory?.({
           src: await readFileAsDataUrl(exportResult.blob),
           cachedBlob: exportResult.blob,
           width: exportResult.width,
@@ -1409,7 +1415,7 @@ const InpaintWorkspacePanel = forwardRef(({
     } else {
       showNotification?.(t('painting.workspace.inpaint.previewClosedWithoutApply'), 'info');
     }
-  }, [clearPendingPatchSession, onExportToGallery, patchFeather, preserveMaskStrokesAfterGeneration, showNotification, t]);
+  }, [clearPendingPatchSession, onExportToHistory, patchFeather, preserveMaskStrokesAfterGeneration, showNotification, t]);
 
   const handleSelectPreviousPendingPatch = useCallback(() => {
     if (pendingPatchesRef.current.length <= 1) {
@@ -1448,7 +1454,7 @@ const InpaintWorkspacePanel = forwardRef(({
     commitHistorySnapshot({ strokes: nextStrokes });
   }, [commitHistorySnapshot, paintTarget, pendingPatch]);
 
-  const exportWorkspace = useCallback(async (background, shouldExportToGallery = false) => {
+  const exportWorkspace = useCallback(async (background, sendToHistory = false) => {
     if (!contentCanvasRef.current) {
       showNotification?.(t('painting.workspace.inpaint.nothingToExport'), 'warning');
       return null;
@@ -1466,8 +1472,8 @@ const InpaintWorkspacePanel = forwardRef(({
       return null;
     }
 
-    if (shouldExportToGallery) {
-      onExportToGallery?.({
+    if (sendToHistory) {
+      onExportToHistory?.({
         src: await readFileAsDataUrl(exportResult.blob),
         cachedBlob: exportResult.blob,
         width: exportResult.width,
@@ -1475,7 +1481,7 @@ const InpaintWorkspacePanel = forwardRef(({
         seed: imageMetadata?.seed ?? '',
         prompt: imageMetadata?.prompt || t('painting.workspace.inpaint.exportPromptFallback'),
       });
-      showNotification?.(t('painting.workspace.inpaint.exportedToGallery'), 'success');
+      showNotification?.(t('painting.workspace.inpaint.exportedToHistory'), 'success');
       return exportResult;
     }
 
@@ -1483,7 +1489,7 @@ const InpaintWorkspacePanel = forwardRef(({
     if (await saveAs(exportResult.blob, fileName) === false) return null;
     showNotification?.(t('painting.workspace.inpaint.fileExported'), 'success');
     return exportResult;
-  }, [onExportToGallery, showNotification, t]);
+  }, [onExportToHistory, showNotification, t]);
 
   const startUploadFlow = useCallback(() => {
     fileInputRef.current?.click();
@@ -2610,15 +2616,30 @@ const InpaintWorkspacePanel = forwardRef(({
               }}
             >
               <Stack direction="row" spacing={0.5} sx={{ overflowX: 'auto', touchAction: 'pan-x' }}>
-                {[
-                  { key: 'transparentBackground', icon: <FileDownloadIcon />, action: () => exportWorkspace('transparent', false) },
-                  { key: 'whiteBackground', icon: <FileDownloadIcon />, action: () => exportWorkspace('white', false) },
-                  { key: 'toGallery', icon: <ImageIcon />, action: () => exportWorkspace('transparent', true), variant: 'contained' },
-                ].map(({ key, icon, action, variant }) => <Tooltip key={key} title={t(`painting.workspace.inpaint.${key}`)}>
-                  <span style={{ display: 'inline-flex' }}><Button aria-label={t(`painting.workspace.inpaint.${key}`)} size="small" variant={variant || 'outlined'} startIcon={icon} onClick={action} sx={actionButtonSx}>
-                    {!isMobile && t(`painting.workspace.inpaint.${key}`)}
-                  </Button></span>
-                </Tooltip>)}
+              <Tooltip title={t('painting.workspace.inpaint.exportImage')}>
+                <span style={{ display: 'inline-flex' }}><Button aria-label={t('painting.workspace.inpaint.exportImage')} aria-haspopup="menu" aria-expanded={Boolean(exportMenuAnchor)}
+                  size="small" variant="outlined" startIcon={<FileDownloadIcon />} endIcon={isMobile ? null : <KeyboardArrowDownIcon />}
+                  onClick={(event) => setExportMenuAnchor(event.currentTarget)} sx={{ ...actionButtonSx, '& .MuiButton-endIcon': { ml: 0.25 } }}>
+                  {!isMobile && t('painting.workspace.inpaint.exportImage')}
+                </Button></span>
+              </Tooltip>
+              <Tooltip title={t('painting.workspace.inpaint.toHistory')}>
+                <span style={{ display: 'inline-flex' }}><Button aria-label={t('painting.workspace.inpaint.toHistory')} size="small" variant="contained" startIcon={<ImageIcon />}
+                  onClick={() => exportWorkspace('transparent', true)} sx={actionButtonSx}>
+                  {!isMobile && t('painting.workspace.inpaint.toHistory')}
+                </Button></span>
+              </Tooltip>
+              <Menu anchorEl={exportMenuAnchor} open={Boolean(exportMenuAnchor)} onClose={() => setExportMenuAnchor(null)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'top', horizontal: 'right' }}>
+                {['transparentBackground', 'whiteBackground'].map((key) => (
+                  <MenuItem key={key} dense onClick={() => {
+                    setExportMenuAnchor(null);
+                    exportWorkspace(key === 'transparentBackground' ? 'transparent' : 'white', false);
+                  }}>
+                    {t(`painting.workspace.inpaint.${key}`)}
+                  </MenuItem>
+                ))}
+              </Menu>
               </Stack>
             </Paper>
 

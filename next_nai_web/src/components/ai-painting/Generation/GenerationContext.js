@@ -30,6 +30,7 @@ export const GenerationProvider = ({ children, demoImages = null, owner, directo
   } = useImageGeneration(applyAutomaticWatermark);
   const [generatedItems, setGeneratedItems] = useState(demoImages ?? []);
   const [currentItem, setCurrentItem] = useState(demoImages?.[0] ?? null);
+  const [selectedByGeneration, setSelectedByGeneration] = useState(false);
   const generatedItemsRef = useRef([]);
   const writes = useRef(Promise.resolve());
   const removed = useRef(new Set());
@@ -69,6 +70,7 @@ export const GenerationProvider = ({ children, demoImages = null, owner, directo
       id: item.id || `image-${Date.now()}-${Math.random()}`,
     };
     setGeneratedItems((previous) => [...previous, normalizedItem]);
+    setSelectedByGeneration(normalizedItem.isGenerationResult === true);
     setCurrentItem(normalizedItem);
     persist(normalizedItem);
     return normalizedItem;
@@ -87,7 +89,7 @@ export const GenerationProvider = ({ children, demoImages = null, owner, directo
   const generate = useCallback(async (params) => {
     resetGeneration();
     const imageResult = await startGeneration(params);
-    return imageResult ? appendGeneratedItem({ ...imageResult, type: 'image' }) : null;
+    return imageResult ? appendGeneratedItem({ ...imageResult, type: 'image', isGenerationResult: true }) : null;
   }, [appendGeneratedItem, resetGeneration, startGeneration]);
 
   const generatePreview = useCallback(async (params) => {
@@ -101,7 +103,7 @@ export const GenerationProvider = ({ children, demoImages = null, owner, directo
     return startBatchGeneration(
       params,
       (newImage) => {
-        const newItem = appendGeneratedItem({ ...newImage, type: 'image' });
+        const newItem = appendGeneratedItem({ ...newImage, type: 'image', isGenerationResult: true });
         if (typeof onImageCallback === 'function') onImageCallback(newItem);
       },
       onErrorNotify,
@@ -111,6 +113,7 @@ export const GenerationProvider = ({ children, demoImages = null, owner, directo
   const selectItem = useCallback((itemId) => {
     const selected = generatedItems.find((item) => item.id === itemId);
     if (selected) {
+      setSelectedByGeneration(false);
       setCurrentItem(selected);
       if (owner) sessionStorage.setItem("nai-local-selected-image", itemId);
     }
@@ -125,7 +128,7 @@ export const GenerationProvider = ({ children, demoImages = null, owner, directo
     setGeneratedItems((previous) => {
       const remaining = previous.filter((item) => item.id !== itemId);
       revokeGeneratedItemUrls(itemToDelete);
-      if (currentItem?.id === itemId) setCurrentItem(remaining.at(-1) || null);
+      if (currentItem?.id === itemId) { setSelectedByGeneration(false); setCurrentItem(remaining.at(-1) || null); }
       return remaining;
     });
   }, [currentItem, persist]);
@@ -134,7 +137,7 @@ export const GenerationProvider = ({ children, demoImages = null, owner, directo
     isGenerating,
     generationStatus,
     generatedItems,
-    currentItem,
+    currentItem, selectedByGeneration,
     batchStatus,
     generate,
     generatePreview,
